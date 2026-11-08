@@ -1,10 +1,14 @@
 # Hatch
 
+> ⚠️ **Warning: this tool intentionally gives command-line access to the machine it runs on.**
+> Anyone who can open the Hatch page gets a shell there, and widgets can run commands and read files by design.
+> Run it only inside a VM, container or other isolated environment, never on your own host or a machine with data you care about.
+
 A browser terminal for isolated boxes, grown into a small desktop. One server per box serves a page that is mostly a real
 terminal attached to **tmux**, surrounded by windows and gadgets: paste or drop images and files into the box, a live
 progress diagram that Claude updates, file browser and editor, output windows for commands, a git window, widgets
 ("show me live CPU state"), a command palette, notifications and more. Claude drives the page with a small CLI,
-`hatch` (or the MCP server `hatch-mcp`); it is a personal tool and may never be published.
+`hatch` (or the MCP server `hatch-mcp`).
 
 Zero npm dependencies: Node 20+, python3 (standard library, for the pty), tmux, and vendored xterm.js and Mermaid.
 
