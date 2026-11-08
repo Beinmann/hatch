@@ -95,6 +95,9 @@ test('clear empties a scratch state dir and says what it removed; it needs --yes
   const no = run(); assert.equal(no.status, 1); assert.match(no.stderr, /--yes/); assert.ok(fs.existsSync(path.join(state, 'config.json')), 'nothing removed without confirmation');
   const r = run('--yes'); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /removed 2 entries/); assert.match(r.stdout, /widgets/);
   assert.deepEqual(fs.readdirSync(state), []);
+  fs.writeFileSync(path.join(state, 'allowed-hosts'), 'box.example.test\n'); fs.writeFileSync(path.join(state, 'config.json'), '{}');
+  const k = run('--yes'); assert.equal(k.status, 0, k.stderr); assert.match(k.stdout, /removed 1 entries/);
+  assert.deepEqual(fs.readdirSync(state), ['allowed-hosts'], 'the allowed host names survive clear');
 });
 test('clear refuses while a server runs on the state dir (daemon pid or answering port)', async () => {
   const d = tmp(); const state = path.join(d, '.hatch'); fs.mkdirSync(state);

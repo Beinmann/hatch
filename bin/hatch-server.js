@@ -16,7 +16,7 @@ usage:
   hatch-server serve [--host H] [--port N] [--state DIR] [--session NAME] [--cwd DIR] [--root DIR] [--view-only] [--tmux-status] [--yes]
   hatch-server start|stop|restart|status [serve options]   run the server in the background (pid in <state>/hatch.pid, log in <state>/log/daemon.log)
   hatch-server agent init [--target claude|codex|both]     add persistent project instructions (same as hatch agent init)
-  hatch-server clear [--state DIR] [--yes]   delete everything in the state dir (widgets, notes, trash, token) to recover from a bad state; asks first, refuses while a server uses it
+  hatch-server clear [--state DIR] [--yes]   delete everything in the state dir except allowed-hosts (widgets, notes, trash, token) to recover from a bad state; asks first, refuses while a server uses it
   hatch-server url [--state DIR]       print the URL with the token again
   hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it
   hatch-server doctor [--state DIR]    check node, python3, tmux, state dir, server
@@ -99,8 +99,8 @@ if (cmd === 'clear') {
     const up = await makeClient(dir)('GET', '/api/health').then(() => true, (e) => e.code !== 2 && !/cannot reach/.test(e.message));
     if (up) fail(`a Hatch server is answering on the port in ${path.join(dir, 'config.json')}. ${stop}`);
   }
-  const names = fs.readdirSync(dir);
-  if (!names.length) { console.log(`${dir} is already empty`); process.exit(0); }
+  const names = fs.readdirSync(dir).filter((n) => n !== 'allowed-hosts'); // kept: the host names would otherwise be refused after the next start
+  if (!names.length) { console.log(`${dir} has nothing to clear`); process.exit(0); }
   if (o.yes !== 'true') {
     if (!process.stdin.isTTY || !process.stderr.isTTY) fail(`no terminal to ask on. Pass --yes to delete everything in ${dir}.`);
     const rl = (await import('node:readline/promises')).createInterface({ input: process.stdin, output: process.stderr });

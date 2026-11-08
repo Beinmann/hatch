@@ -7,7 +7,7 @@ Start with `hatch-server doctor` (node, python3, tmux, optional tools, state dir
 | Symptom | Cause and fix |
 |---|---|
 | Page shows "Token needed" / 401 | Open the URL printed by `hatch-server serve` (ends in `?t=...`), or run `hatch-server url` again. A browser keeps the token in a cookie; clear it if you changed the token. |
-| `Host ... is not allowed` (403) | The DNS-rebinding guard. IP addresses and `localhost` always work; add other names to `allowedHosts` in `.hatch/config.json` or to `HATCH_ALLOW_HOSTS`. |
+| `Host ... is not allowed` (403) | The DNS-rebinding guard. IP addresses and `localhost` always work; add other names, one per line, to `.hatch/allowed-hosts` (survives `hatch-server clear`), or to `allowedHosts` in `.hatch/config.json`, or to `HATCH_ALLOW_HOSTS`; restart Hatch afterwards. |
 | Banner "The terminal cannot start: ... tmux" | tmux is not installed or not on PATH for the server. Install it (`apt install tmux`) and press Reconnect. |
 | Terminal text is garbled after a reconnect | Press Reconnect; in tmux `Ctrl+B r` (if bound) or `tmux refresh-client` repaints. |
 | `cannot create the state dir ... (EACCES)` | Start `hatch-server serve` in a writable directory or pass `--state DIR`. |

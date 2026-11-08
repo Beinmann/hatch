@@ -12,7 +12,7 @@ import { createState, loadConfig, saveConfig, layout, atomicWrite, NAME_RE } fro
 import { createTerminal, TerminalError } from './terminal.js';
 import { saveUpload, sniff, MIME, MAX_BYTES, UploadError } from './uploads.js';
 import { createSources, checkSource, runOnce as runSourceOnce, ARG_RE } from './sources.js';
-import { hostAllowed } from './hosts.js';
+import { hostAllowed, readAllowedHostsFile, hostRefusedMessage } from './hosts.js';
 import * as fsapi from './files.js';
 import { pickEditor, vimRequest, which } from './editor.js';
 import { createWatches, checkWatches } from './watches.js';
@@ -64,6 +64,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const configWarnings = [];
   const cfg = loadConfig(stateDir, { session }, { warn: (message) => configWarnings.push(message) });
   const l = layout(stateDir);
+  const allowedHosts = [...(cfg.allowedHosts || []), ...readAllowedHostsFile(stateDir, (m) => configWarnings.push(m))]; // kept apart from cfg: cfg is written back to config.json
   const logFile = path.join(l.log, 'server.log');
   const log = (m) => { try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${m}\n`); } catch { /* logging must never break the server */ } };
 
@@ -597,7 +598,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
 
   const server = http.createServer(async (req, res) => {
     try {
-      if (!hostAllowed(req.headers.host, cfg.allowedHosts)) throw new HttpError(403, `Host ${req.headers.host} is not allowed (DNS rebinding guard). Add it to HATCH_ALLOW_HOSTS or "allowedHosts" in config.json.`);
+      if (!hostAllowed(req.headers.host, allowedHosts)) throw new HttpError(403, hostRefusedMessage(req.headers.host));
       await route(req, res, new URL(req.url, 'http://x'));
     } catch (e) {
       const status = e.status || (e instanceof TerminalError ? 400 : 500);
@@ -611,7 +612,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   server.on('upgrade', (req, socket, head) => {
     const u = new URL(req.url, 'http://x'); let prox = parseProxyPath(u.pathname);
     if (prox) prox = { ...prox, rest: prox.rest + u.search };
-    if (!prox || !hostAllowed(req.headers.host, cfg.allowedHosts) || viewOnly || levelOf(req) !== 'full' || prox.port === server.address()?.port) { socket.on('error', () => {}); socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return; }
+    if (!prox || !hostAllowed(req.headers.host, allowedHosts) || viewOnly || levelOf(req) !== 'full' || prox.port === server.address()?.port) { socket.on('error', () => {}); socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return; }
     proxyUpgrade(req, socket, head, prox);
   });
 

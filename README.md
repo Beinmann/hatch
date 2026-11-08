@@ -39,7 +39,7 @@ Background control: `hatch-server start`, `hatch-server stop`, `hatch-server res
 Options: `hatch-server serve [--host H] [--port N] [--state DIR] [--session NAME] [--cwd DIR] [--root DIR] [--view-only] [--tmux-status] [--yes]` (`--tmux-status` mirrors the running progress step into the session's tmux status line).
 The default host is `0.0.0.0` (reachable from your LAN) and the server prints who can reach it; use `--host 127.0.0.1`
 to limit it. Requests with an unexpected `Host` header are refused (DNS rebinding guard): add names to
-`HATCH_ALLOW_HOSTS` or `allowedHosts` in `config.json`.
+`HATCH_ALLOW_HOSTS`, `allowedHosts` in `config.json`, or one per line in `.hatch/allowed-hosts` (`hatch-server clear` keeps that file).
 
 Sharing and limiting:
 - `hatch-server url --view` prints a watch-only link for the same running instance (a second token that can only look;
