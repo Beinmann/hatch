@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<!-- TCP ports listening on the box, with the owning process when it can be read. Open one in a window: palette > "Open port N in a window". -->
+<style>
+  body{margin:0;padding:8px 10px;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.6 var(--mono,monospace)}
+  .r{display:grid;grid-template-columns:54px 1fr auto;gap:8px} .r b{color:var(--accent,#4fd1c0);font-weight:500} .r i{opacity:.55;font-style:normal}
+</style>
+<div id="out">scanning...</div>
+<script src="/sdk.js"></script>
+<script>
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  hatch.on('ports', (v) => {
+    if (v.error) { out.textContent = v.error; return; }
+    out.innerHTML = v.ports.length ? v.ports.map((p) => `<div class="r"><b>${p.port}</b><span>${esc(p.process || '')}</span><i>${esc(p.scope)}</i></div>`).join('') : 'nothing is listening';
+  });
+</script>

@@ -1,0 +1,7 @@
+.hatch/
+node_modules/
+*.tmp
+
+# Local crash artifacts
+core
+core.[0-9]*

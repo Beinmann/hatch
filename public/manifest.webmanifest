@@ -1,0 +1,11 @@
+{
+  "name": "Hatch",
+  "short_name": "Hatch",
+  "description": "Browser terminal and desktop for isolated boxes",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a1010",
+  "theme_color": "#0a1010",
+  "icons": [ { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" } ]
+}

@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; }
+  body {
+    font: 12px/1.3 var(--mono, ui-monospace, monospace);
+    color: #fff; background: #222 center / cover no-repeat fixed;
+    transition: background-image .3s;
+  }
+  #panel { background: rgba(0,0,0,.55); backdrop-filter: blur(4px); padding: 8px; min-height: 100vh; box-sizing: border-box; }
+  button { font: inherit; cursor: pointer; color: #fff; border: 1px solid rgba(255,255,255,.5);
+    background: rgba(255,255,255,.15); border-radius: 4px; padding: 4px 10px; }
+  button:disabled { opacity: .5; cursor: wait; }
+  #msg { margin-left: 8px; opacity: .8; }
+  #meta { margin-top: 6px; opacity: .85; font-size: 11px; word-break: break-all; user-select: text; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin-top: 8px; }
+  .cell { position: relative; aspect-ratio: 16 / 9; }
+  .cell img { width: 100%; height: 100%; object-fit: cover; border: 2px solid transparent;
+    border-radius: 3px; cursor: pointer; box-sizing: border-box; display: block; }
+  .cell.sel img { border-color: #fff; }
+  .x { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; padding: 0; line-height: 14px;
+    border-radius: 9px; background: rgba(0,0,0,.7); border-color: rgba(255,255,255,.6); font-size: 12px; }
+  .ask { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; background: rgba(0,0,0,.82); border-radius: 3px; font-size: 11px; }
+  .ask button { padding: 1px 8px; font-size: 11px; }
+  .ask .yes { background: #b3261e; border-color: #e57368; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <button id="go">Random background</button><span id="msg">saved images: 0</span>
+  <div id="meta"></div>
+  <div id="grid"></div>
+</div>
+<script src="/sdk.js"></script>
+<script>
+  // Background roulette: downloads random photos (picsum.photos, needs internet access), keeps them in this widget's
+  // data/ folder and sets the clicked one as Hatch's page background. The sources in widget.json do the work on the
+  // server; hatch.call passes the file name to them as $HATCH_ARG.
+  var go = document.getElementById('go'), grid = document.getElementById('grid'),
+      msg = document.getElementById('msg'), panel = document.getElementById('panel'), metaEl = document.getElementById('meta');
+  var imgs = [], current = null, busy = false, confirming = null;
+  var MIN_H = 240, MAX_H = 720, lastH = 0;
+
+  function url(n) { return '/widgets/' + hatch.name + '/data/' + encodeURIComponent(n); }
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} }
+  function mk(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+
+  // what is known about an image: file name plus the sidecar written at download time (older images have none)
+  function describe(i) {
+    var m = i.m, info = m && m.info;
+    if (!m) return i.n + ' (no source information)';
+    return i.n + '\n' + (info && info.author ? 'by ' + info.author + '\n' : '') + 'picsum.photos/id/' + m.id +
+      (info && info.url ? '\n' + info.url : '') + '\ndownloaded ' + (m.downloaded || '?') + (m.width ? ', ' + m.width + 'x' + m.height : '');
+  }
+
+  // grow or shrink the window with the grid (the page scrolls beyond MAX_H)
+  function fit() {
+    var h = Math.max(MIN_H, Math.min(MAX_H, Math.ceil(panel.scrollHeight) + 34));
+    if (h !== lastH) { lastH = h; hatch.resize(window.innerWidth, h); }
+  }
+
+  function showCurrent() {
+    var it = imgs.find(function (i) { return i.n === current; });
+    document.body.style.backgroundImage = it ? 'url(' + url(it.n) + ')' : '';
+  }
+
+  function render() {
+    grid.innerHTML = '';
+    imgs.forEach(function (i) {
+      var c = mk('div', 'cell' + (i.n === current ? ' sel' : ''));
+      var t = document.createElement('img');
+      t.src = url(i.n); t.title = describe(i); t.loading = 'lazy';
+      t.onclick = function () { choose(i.n); };
+      c.appendChild(t);
+      var x = mk('button', 'x', '\u00d7'); x.title = 'Delete this image';
+      x.onclick = function (e) { e.stopPropagation(); confirming = i.n; render(); };
+      c.appendChild(x);
+      if (confirming === i.n) {
+        var a = mk('div', 'ask'); a.appendChild(mk('div', '', 'Delete?'));
+        var yes = mk('button', 'yes', 'Delete'), no = mk('button', '', 'Cancel');
+        yes.onclick = function () { confirming = null; remove(i.n); };
+        no.onclick = function () { confirming = null; render(); };
+        a.appendChild(yes); a.appendChild(no); c.appendChild(a);
+      }
+      grid.appendChild(c);
+    });
+    var cur = imgs.find(function (i) { return i.n === current; });
+    metaEl.textContent = cur ? describe(cur).replace(/\n/g, ' \u00b7 ') : '';
+    if (!busy) msg.textContent = imgs.length ? 'saved images: ' + imgs.length : 'no images yet: click the button (downloads from picsum.photos)';
+    fit();
+  }
+
+  // gallery, dl and del answer {json: [{n: file name, m: sidecar or null}, ...]}, newest first
+  function setList(v) {
+    var list = v && v.json;
+    if (!Array.isArray(list)) return;
+    imgs = list.map(function (e) { return typeof e === 'string' ? { n: e, m: null } : e; });
+    if (!imgs.some(function (i) { return i.n === current; })) {
+      var saved = store('bg');
+      current = imgs.some(function (i) { return i.n === saved; }) ? saved : (imgs[0] && imgs[0].n);
+    }
+    showCurrent();
+    render();
+  }
+
+  function status(text) { msg.textContent = text; }
+  function failed(e) { busy = false; go.disabled = false; status('failed: ' + e.message); }
+
+  function choose(name) {
+    current = name; store('bg', name); showCurrent(); render();
+    status('setting Hatch background...');
+    hatch.call('pick', name).then(function () { status('Hatch background set'); }, failed);
+  }
+
+  function remove(name) {
+    status('deleting...');
+    hatch.call('del', name).then(function (v) { setList(v); status('deleted'); }, failed);
+  }
+
+  go.onclick = function () {
+    busy = true; go.disabled = true; status('downloading...');
+    hatch.call('dl').then(function (v) {
+      busy = false; go.disabled = false;
+      var before = imgs.map(function (i) { return i.n; });
+      setList(v);
+      var fresh = imgs.find(function (i) { return before.indexOf(i.n) < 0; }) || imgs[0];
+      if (fresh) { current = fresh.n; store('bg', current); showCurrent(); render(); }
+      status('Hatch background set');
+    }, failed);
+  };
+
+  hatch.on('gallery', function (v) { if (v && v.error) status('failed: ' + v.error); else if (!busy) setList(v); });
+  addEventListener('resize', fit);
+</script>
+</body>
+</html>

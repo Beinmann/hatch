@@ -1,0 +1,2 @@
+{ "title": "Clock", "w": 300, "h": 190, "placement": "float",
+  "sources": [ { "name": "up", "kind": "exec", "cmd": "uptime -p; hostname", "everyMs": 30000 } ] }

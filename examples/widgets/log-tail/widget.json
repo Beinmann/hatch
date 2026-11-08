@@ -1,0 +1,2 @@
+{ "title": "Log tail", "w": 520, "h": 260, "placement": "float",
+  "sources": [ { "name": "log", "kind": "tail", "path": "/var/log/syslog" } ] }

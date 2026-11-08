@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body{margin:0;padding:10px 12px;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.8 var(--mono,monospace)}
+  div{display:flex;justify-content:space-between} span:first-child{opacity:.65}
+</style>
+<div><span>load</span><span id="load">-</span></div>
+<div><span>mem</span><span id="mem">-</span></div>
+<div><span>disk /</span><span id="disk">-</span></div>
+<div><span>net down</span><span id="rx">-</span></div>
+<div><span>net up</span><span id="tx">-</span></div>
+<script src="/sdk.js"></script>
+<script>
+  const gb = (n) => (n / 1073741824).toFixed(1) + ' GB';
+  const rate = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB/s' : (n / 1024).toFixed(0) + ' KB/s';
+  hatch.on('load', (v) => { load.textContent = `${v.l1} ${v.l5} ${v.l15}`; });
+  hatch.on('mem', (v) => { mem.textContent = `${gb(v.used)} / ${gb(v.total)} (${v.pct.toFixed(0)}%)`; });
+  hatch.on('disk', (v) => { disk.textContent = `${gb(v.used)} / ${gb(v.total)} (${v.pct.toFixed(0)}%)`; });
+  hatch.on('net', (v) => { rx.textContent = rate(v.rxBps); tx.textContent = rate(v.txBps); });
+</script>

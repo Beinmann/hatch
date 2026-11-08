@@ -1,0 +1,10 @@
+{
+  "name": "hatch",
+  "version": "0.1.0",
+  "description": "A browser terminal for isolated boxes: tmux in the page, plus images, progress diagrams and live widgets that Claude drives with a small CLI.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "bin": { "hatch": "bin/hatch.js", "hatch-server": "bin/hatch-server.js", "hatch-ui": "bin/ui.js", "hatch-mcp": "bin/mcp.js" },
+  "scripts": { "test": "node --test \"test/*.test.js\"", "start": "node bin/hatch-server.js serve" }
+}

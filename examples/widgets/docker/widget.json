@@ -1,0 +1,3 @@
+{ "title": "Docker", "w": 560, "h": 240, "placement": "float",
+  "sources": [ { "name": "ps", "kind": "exec", "everyMs": 3000,
+    "cmd": "command -v docker >/dev/null 2>&1 || { echo 'docker is not installed on this box (install it to see containers here)'; exit 0; }; docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}' 2>&1 | head -30" } ] }

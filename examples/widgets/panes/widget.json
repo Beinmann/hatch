@@ -1,0 +1,3 @@
+{ "title": "tmux windows", "w": 520, "h": 300, "placement": "float",
+  "sources": [ { "name": "p", "kind": "exec", "everyMs": 2000,
+    "cmd": "S={{session}}; for w in $(tmux list-windows -t \"$S\" -F '#{window_index}' 2>/dev/null); do n=$(tmux display-message -p -t \"$S:$w\" '#{window_name}'); echo \"@@ $w $n\"; tmux capture-pane -p -t \"$S:$w\" 2>/dev/null | sed 's/[[:space:]]*$//' | grep -v '^$' | tail -6; done" } ] }

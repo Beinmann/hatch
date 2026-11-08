@@ -1,0 +1,32 @@
+# Troubleshooting
+
+Start with `hatch-server doctor` (node, python3, tmux, optional tools, state dir, server reachable) and the server log
+(`.hatch/log/server.log`, or palette > Show server log). The page also writes its own JavaScript errors there as
+`client error: ...`.
+
+| Symptom | Cause and fix |
+|---|---|
+| Page shows "Token needed" / 401 | Open the URL printed by `hatch-server serve` (ends in `?t=...`), or run `hatch-server url` again. A browser keeps the token in a cookie; clear it if you changed the token. |
+| `Host ... is not allowed` (403) | The DNS-rebinding guard. IP addresses and `localhost` always work; add other names to `allowedHosts` in `.hatch/config.json` or to `HATCH_ALLOW_HOSTS`. |
+| Banner "The terminal cannot start: ... tmux" | tmux is not installed or not on PATH for the server. Install it (`apt install tmux`) and press Reconnect. |
+| Terminal text is garbled after a reconnect | Press Reconnect; in tmux `Ctrl+B r` (if bound) or `tmux refresh-client` repaints. |
+| `cannot create the state dir ... (EACCES)` | Start `hatch-server serve` in a writable directory or pass `--state DIR`. |
+| `port 7070 is in use` | Another Hatch (or program) listens there: `--port N`, or find it with palette > Open port ... / `hatch ports`. |
+| `hatch: cannot reach Hatch` (exit 2) | The server is not running (start `hatch-server serve`), or `hatch` found another state dir: pass `--state DIR` or set `HATCH_STATE`. |
+| Pasting an image does nothing | Use Ctrl+V while the page has focus (not the browser's address bar). On `http://` over a LAN address some browsers restrict the clipboard; dropping the file onto the terminal always works. |
+| No desktop notifications | They need permission (Settings > Enable desktop notifications) and a secure context (`https://` or localhost). Toasts, the title blink and the notification log work without. |
+| Copy button instead of silent copy | Browsers only allow clipboard writes right after a click; that is what the Copy button is for. |
+| A widget stays empty | Check the source name in `widget.json`, the browser console, and `hatch widget list`. `exec` sources show their error in the widget data (`error`). Widgets cannot make network requests. |
+| A dev server shown with `hatch open` is blank | Pages that build URLs in JavaScript may not work through the proxy: serve them on a reachable address and use `--direct`. |
+| Windows are hidden or off-screen | Check the workspace chips in the header, the taskbar, and palette > Tile floating windows. |
+| Something looks wrong only in my browser | Note the browser and version, then look for `client error:` lines in the server log. Tested engines: Chromium, Firefox and WebKit (headless). |
+| `import` refuses an archive | Only commands, watches, schedules, bookmarks, custom.css/js and widgets are accepted, and only as plain files and folders. |
+
+If the server will not start at all: run it in the foreground (`hatch-server serve`) and read the first error line; every
+startup error says what to change.
+
+If startup repairs `config.json`, the warning chip and server log name a `config.invalid-*.json` backup in the state directory.
+That private backup contains the exact original bytes; review it to recover custom settings. Valid unrelated fields survive
+field repairs. Recovery may generate a new access token or tmux session name when the original value was unusable; use the URL
+printed by the new server. The warning clears on the next clean restart. If the backup cannot be written, recovery stops and
+leaves the original configuration intact. CLI commands report malformed connection settings without changing the file.

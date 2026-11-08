@@ -1,0 +1,2 @@
+{ "title": "Listening ports", "w": 380, "h": 260, "placement": "float",
+  "sources": [ { "name": "ports", "kind": "metric", "id": "ports", "everyMs": 3000 } ] }

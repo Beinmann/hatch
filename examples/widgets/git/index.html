@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<!-- Magit-lite: branch, changed files and recent commits. The command runs where `hatch-server serve` was started; change `cmd` in widget.json to point elsewhere. -->
+<style>
+  body{margin:0;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.45 var(--mono,monospace)}
+  pre{margin:0;padding:8px 10px;white-space:pre-wrap;word-break:break-all}
+  .m{color:#f59e0b}.a{color:#4fd1c0}.d{color:#f87171}.h{color:var(--accent,#4fd1c0);font-weight:bold}
+</style>
+<pre id="out">loading...</pre>
+<script src="/sdk.js"></script>
+<script>
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  hatch.on('status', (v) => {
+    if (v.error) { out.textContent = v.error; return; }
+    out.innerHTML = esc(v.out).split('\n').map((l, i) => i === 0 && l.startsWith('##') ? `<span class="h">${l}</span>`
+      : /^ ?M|^.M/.test(l) ? `<span class="m">${l}</span>` : /^(\?\?|A)/.test(l) ? `<span class="a">${l}</span>` : /^ ?D/.test(l) ? `<span class="d">${l}</span>` : l).join('\n');
+  });
+</script>

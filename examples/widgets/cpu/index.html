@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body{margin:0;padding:10px 12px;background:var(--bg,#111);color:var(--fg,#eee);font:12px var(--mono,monospace)}
+  .row{display:grid;grid-template-columns:44px 1fr 48px;gap:8px;align-items:center;margin:5px 0}
+  .bar{height:10px;background:#ffffff22;border-radius:3px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--accent,#4fd1c0);transition:width .4s}
+  b{font-weight:500;text-align:right}
+</style>
+<div id="rows"></div>
+<script src="/sdk.js"></script>
+<script>
+  const rows = document.getElementById('rows');
+  const row = (key, label) => {
+    let r = document.getElementById(key);
+    if (!r) { r = document.createElement('div'); r.className = 'row'; r.id = key; r.innerHTML = `<span>${label}</span><div class="bar"><i></i></div><b></b>`; rows.append(r); }
+    return r;
+  };
+  const set = (key, label, pct) => { const r = row(key, label); r.querySelector('i').style.width = pct + '%'; r.querySelector('b').textContent = pct.toFixed(0) + '%'; };
+  hatch.on('cpu', (v) => { set('all', 'cpu', v.total); v.cores.forEach((c, i) => set('c' + i, 'c' + i, c)); });
+  hatch.on('mem', (v) => set('mem', 'mem', v.pct));
+</script>

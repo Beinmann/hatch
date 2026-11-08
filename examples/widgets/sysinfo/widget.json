@@ -1,0 +1,5 @@
+{ "title": "System", "w": 300, "h": 210, "placement": "float",
+  "sources": [ { "name": "load", "kind": "metric", "id": "load", "everyMs": 2000 },
+               { "name": "disk", "kind": "metric", "id": "disk", "path": "/", "everyMs": 10000 },
+               { "name": "net", "kind": "metric", "id": "net", "everyMs": 1000 },
+               { "name": "mem", "kind": "metric", "id": "mem", "everyMs": 2000 } ] }

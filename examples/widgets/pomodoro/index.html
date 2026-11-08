@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<!-- A 25/5 focus timer. Purely client side (no sources). The state is kept in this iframe, so reloading the widget resets it. -->
+<style>
+  body{margin:0;padding:12px;background:var(--bg,#111);color:var(--fg,#eee);font-family:var(--mono,monospace);text-align:center}
+  #t{font-size:44px;letter-spacing:.04em;color:var(--accent,#4fd1c0)} #m{opacity:.7;font-size:12px;margin:2px 0 10px} button{font:inherit;color:inherit;background:transparent;border:1px solid #888;border-radius:4px;padding:3px 10px;margin:0 3px;cursor:pointer}
+  body.brk #t{color:#f0a95a}
+</style>
+<div id="t">25:00</div><div id="m">focus</div>
+<button id="go">Start</button><button id="reset">Reset</button>
+<script src="/sdk.js"></script>
+<script>
+  const LEN = { focus: 25 * 60, break: 5 * 60 }; let mode = 'focus'; let left = LEN.focus; let run = null; let done = 0;
+  const show = () => { t.textContent = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0'); m.textContent = mode + (done ? ` · ${done} done` : ''); document.body.classList.toggle('brk', mode === 'break'); };
+  const tick = () => { if (--left <= 0) { if (mode === 'focus') done++; mode = mode === 'focus' ? 'break' : 'focus'; left = LEN[mode]; hatch.log(`pomodoro: ${mode} starts`); } show(); };
+  go.onclick = () => { if (run) { clearInterval(run); run = null; go.textContent = 'Start'; } else { run = setInterval(tick, 1000); go.textContent = 'Pause'; } };
+  reset.onclick = () => { clearInterval(run); run = null; go.textContent = 'Start'; mode = 'focus'; left = LEN.focus; show(); };
+  show();
+</script>

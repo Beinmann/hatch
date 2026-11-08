@@ -1,0 +1,3 @@
+{ "title": "CPU / memory history", "w": 420, "h": 200, "placement": "float",
+  "sources": [ { "name": "cpu", "kind": "metric", "id": "cpu", "everyMs": 1000 },
+               { "name": "mem", "kind": "metric", "id": "mem", "everyMs": 1000 } ] }

@@ -1,0 +1,2 @@
+{ "title": "Git", "w": 460, "h": 300, "placement": "float",
+  "sources": [ { "name": "status", "kind": "exec", "cmd": "git status -sb 2>&1 | head -40; echo; git log --oneline -8 2>&1", "everyMs": 3000 } ] }

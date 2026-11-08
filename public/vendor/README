@@ -1,0 +1,3 @@
+Vendored, loaded lazily by the progress panel (the boxes may have no internet, so no CDN at runtime).
+mermaid.min.js  mermaid 11.4.1 (MIT, see mermaid.LICENSE), copied from the npm package's dist/ directory.
+To update: install the new version somewhere outside this repo, copy dist/mermaid.min.js and LICENSE, change the version above.

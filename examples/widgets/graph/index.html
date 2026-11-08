@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>html,body{margin:0;height:100%;background:var(--bg,#111);overflow:hidden}canvas{width:100%;height:100%;display:block}</style>
+<canvas id="c"></canvas>
+<script src="/sdk.js"></script>
+<script>
+  // Two rolling lines (last 90 samples): cpu in the accent colour, memory in amber. Redraws on every sample and on resize.
+  const N = 90; const cpu = []; const mem = [];
+  const c = document.getElementById('c'); const g = c.getContext('2d');
+  const push = (a, v) => { a.push(v); if (a.length > N) a.shift(); draw(); };
+  function line(a, color, w, h, fill) {
+    if (a.length < 2) return;
+    g.beginPath();
+    a.forEach((v, i) => { const x = (i / (N - 1)) * w + (N - a.length) / (N - 1) * 0; const px = w - (a.length - 1 - i) * (w / (N - 1)); const y = h - (v / 100) * (h - 24) - 6; i ? g.lineTo(px, y) : g.moveTo(px, y); });
+    g.strokeStyle = color; g.lineWidth = 2; g.stroke();
+    if (fill) { g.lineTo(w, h); g.lineTo(w - (a.length - 1) * (w / (N - 1)), h); g.closePath(); g.fillStyle = fill; g.fill(); }
+  }
+  function draw() {
+    const d = devicePixelRatio || 1; const w = c.clientWidth; const h = c.clientHeight;
+    c.width = w * d; c.height = h * d; g.setTransform(d, 0, 0, d, 0, 0);
+    const accent = hatch.theme.accent || '#4fd1c0'; const fg = hatch.theme.fg || '#eee';
+    g.strokeStyle = fg + '22'; g.lineWidth = 1;
+    for (const p of [25, 50, 75]) { const y = h - (p / 100) * (h - 24) - 6; g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    line(mem, '#f0a95a', w, h); line(cpu, accent, w, h, accent + '33');
+    g.font = '12px ' + (hatch.theme.mono || 'monospace'); g.fillStyle = accent; g.fillText('cpu ' + (cpu.at(-1) ?? 0).toFixed(0) + '%', 8, 14);
+    g.fillStyle = '#f0a95a'; g.fillText('mem ' + (mem.at(-1) ?? 0).toFixed(0) + '%', 90, 14);
+  }
+  hatch.on('cpu', (v) => push(cpu, v.total)); hatch.on('mem', (v) => push(mem, v.pct));
+  addEventListener('resize', draw); draw();
+</script>

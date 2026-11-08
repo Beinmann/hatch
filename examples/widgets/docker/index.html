@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body{margin:0;padding:8px 10px;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.5 var(--mono,monospace)}
+  .r{display:grid;grid-template-columns:1.2fr 1.4fr 1fr;gap:8px;padding:1px 0} .r b{color:var(--accent,#4fd1c0);font-weight:500} .r i{opacity:.6;font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+<div id="out">loading...</div>
+<script src="/sdk.js"></script>
+<script>
+  hatch.on('ps', (v) => {
+    const lines = (v.out || '').split('\n').filter(Boolean);
+    if (v.error || !lines.length) { out.textContent = v.error || 'no running containers'; return; }
+    if (!lines[0].includes('|')) { out.textContent = lines.join('\n'); return; } // an error message from docker
+    out.replaceChildren(...lines.map((l) => { const [n, i, s] = l.split('|'); const d = document.createElement('div'); d.className = 'r'; for (const [t, tag] of [[n, 'b'], [i, 'i'], [s, 'i']]) { const e = document.createElement(tag); e.textContent = t; d.append(e); } return d; }));
+  });
+</script>

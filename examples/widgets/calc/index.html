@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<!-- A calculator: type an expression, Enter evaluates, `ans` is the previous result, click a result to copy it.
+     The parser is a copy of public/calc.js (the palette's "=" calculator) plus the `ans` constant: no eval, arithmetic only.
+     Keep both in step. History lives in this iframe, so reloading the widget clears it. -->
+<style>
+  body{margin:0;padding:10px;background:var(--bg,#111);color:var(--fg,#eee);font-family:var(--mono,monospace);font-size:13px;display:flex;flex-direction:column;height:100vh;box-sizing:border-box}
+  #hist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+  .row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+  .x{opacity:.65;overflow-wrap:anywhere}
+  .r{color:var(--accent,#4fd1c0);cursor:pointer;text-align:right;background:none;border:0;font:inherit;padding:0}
+  .r:hover,.r:focus{text-decoration:underline;outline:none}
+  #in{font:inherit;color:inherit;background:transparent;border:1px solid #888;border-radius:4px;padding:6px 8px}
+  #hint{min-height:1.4em;font-size:12px;opacity:.75;margin-top:4px} #hint.err{color:#f0a95a;opacity:1}
+</style>
+<div id="hist"></div>
+<input id="in" autofocus autocomplete="off" spellcheck="false" placeholder="2*(3+4)^2   ans*2   sqrt(16)">
+<div id="hint">Enter evaluates · ans = last result · Up/Down = earlier input · click a result to copy</div>
+<script src="/sdk.js"></script>
+<script>
+  const FUNCS = { sqrt: Math.sqrt, abs: Math.abs, sin: Math.sin, cos: Math.cos, tan: Math.tan, log: Math.log10, ln: Math.log, exp: Math.exp, round: Math.round, floor: Math.floor, ceil: Math.ceil, min: Math.min, max: Math.max };
+  function calc(input, ans) {
+    const CONSTS = { pi: Math.PI, e: Math.E }; if (ans !== null) CONSTS.ans = ans;
+    const src = String(input).replace(/,/g, '.').replace(/\s+/g, ''); let i = 0;
+    if (!src) throw new Error('empty');
+    if (src.length > 200) throw new Error('expression too long');
+    const peek = () => src[i];
+    function number() { const m = /^(\d+\.?\d*|\.\d+)(e[+-]?\d+)?/i.exec(src.slice(i)); if (!m) return null; i += m[0].length; return Number(m[0]); }
+    function primary() {
+      if (peek() === '(') { i++; const v = expr(); if (peek() !== ')') throw new Error('missing )'); i++; return v; }
+      if (peek() === '-') { i++; return -power(); }
+      if (peek() === '+') { i++; return power(); }
+      const n = number(); if (n !== null) return n;
+      const w = /^[a-z]+/i.exec(src.slice(i)); if (!w) throw new Error(`unexpected "${peek() ?? 'end'}"`);
+      const name = w[0].toLowerCase(); i += name.length;
+      if (name === 'ans' && ans === null) throw new Error('no previous result yet');
+      if (Object.hasOwn(CONSTS, name)) return CONSTS[name];
+      if (Object.hasOwn(FUNCS, name)) { if (peek() !== '(') throw new Error(`${name} needs ( )`); i++; const args = [expr()]; while (peek() === ';') { i++; args.push(expr()); } if (peek() !== ')') throw new Error('missing )'); i++; return FUNCS[name](...args); }
+      throw new Error(`unknown name ${name}`);
+    }
+    function power() { const base = primary(); if (peek() === '^') { i++; return base ** power(); } return base; }
+    function term() { let v = power(); while (peek() === '*' || peek() === '/' || peek() === '%') { const op = src[i++]; const r = power(); v = op === '*' ? v * r : op === '/' ? v / r : v % r; } return v; }
+    function expr() { let v = term(); while (peek() === '+' || peek() === '-') { const op = src[i++]; const r = term(); v = op === '+' ? v + r : v - r; } return v; }
+    const v = expr(); if (i < src.length) throw new Error(`unexpected "${src[i]}"`);
+    if (!Number.isFinite(v)) throw new Error('not a finite number');
+    return v;
+  }
+  const fmt = (v) => (Number.isInteger(v) && Math.abs(v) < 1e15 ? String(v) : String(Number(v.toPrecision(12))));
+
+  let ans = null; const past = []; let pos = 0;
+  const say = (t, err) => { hint.textContent = t; hint.classList.toggle('err', !!err); };
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); say(`Copied ${text}`); return; } catch { /* iframes often lack clipboard access */ }
+    try { const t = document.createElement('textarea'); t.value = text; document.body.append(t); t.select(); const ok = document.execCommand('copy'); t.remove(); if (ok) { say(`Copied ${text}`); return; } } catch { /* fall through */ }
+    say(`Could not copy; the result is ${text}`, true);
+    $in.focus();
+  }
+  const $in = document.getElementById('in');
+  $in.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' && past.length) { pos = Math.max(0, pos - 1); $in.value = past[pos]; e.preventDefault(); }
+    else if (e.key === 'ArrowDown' && past.length) { pos = Math.min(past.length, pos + 1); $in.value = past[pos] ?? ''; e.preventDefault(); }
+    else if (e.key === 'Enter') {
+      const text = $in.value.trim(); if (!text) return;
+      try {
+        const v = calc(text, ans); ans = v; past.push(text); pos = past.length; $in.value = '';
+        const row = document.createElement('div'); row.className = 'row';
+        const x = document.createElement('span'); x.className = 'x'; x.textContent = text;
+        const r = document.createElement('button'); r.className = 'r'; r.textContent = '= ' + fmt(v); r.title = 'Click to copy'; r.onclick = () => copy(fmt(v));
+        row.append(x, r); hist.append(row); hist.scrollTop = hist.scrollHeight; say('Enter evaluates · ans = last result');
+      } catch (err) { say(err.message, true); }
+    }
+  });
+</script>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hatch</title>
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0a1010">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Hatch">
+<link rel="stylesheet" href="/xterm.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header id="bar">
+  <strong class="brand">Hatch</strong>
+  <span id="conn" class="chip" title="terminal connection">connecting</span>
+  <span id="session" class="muted"></span>
+  <span id="wsbar" class="chips" title="Workspaces (virtual desktops)"></span>
+  <span class="grow"></span>
+  <button id="warnbtn" class="chip warn" hidden title="Files the page could not read"></button>
+  <button id="palbtn" type="button" title="Command palette (leader key, then p)">Commands</button>
+  <button id="progressbtn" type="button" title="Toggle progress (Ctrl+Shift+G)" aria-expanded="false" aria-controls="progress-strip">Progress</button>
+  <button id="dockbtn" type="button" title="Show or hide the dock">Dock</button>
+  <button id="setbtn" type="button" title="Settings">Settings</button>
+  <div id="settings" class="menu" hidden>
+    <label><input type="checkbox" id="optImage" checked> Show pasted images in a window</label>
+    <label><input type="checkbox" id="optKeys"> Extra keys bar (Esc, Ctrl, arrows; for touch screens)</label>
+    <label>Leader key <input type="text" id="optLeader" size="12" autocomplete="off" spellcheck="false" title="Chord that starts window control, for example Ctrl+Space or Alt+Space"></label>
+    <label><input type="checkbox" id="optSound"> Sound on notifications</label>
+    <button type="button" id="optNotify">Enable desktop notifications</button>
+    <div class="muted small">Focus terminal: leader key, then t · all shortcuts: palette → Keyboard shortcuts</div>
+  </div>
+  <div id="warnlist" class="menu" hidden></div>
+</header>
+<section id="progress-strip" hidden aria-label="Progress overview"></section>
+<main id="stage">
+  <section id="termwrap">
+    <div id="term"></div>
+    <div id="floats"></div>
+    <div id="findbar" hidden><input id="findq" type="text" placeholder="Find in scrollback" aria-label="Find in terminal" autocomplete="off" spellcheck="false"><span id="findn" class="muted small"></span><button id="findprev" type="button" title="Previous (Shift+Enter)">↑</button><button id="findnext" type="button" title="Next (Enter)">↓</button><button id="findx" type="button" title="Close (Esc)">×</button></div>
+    <div id="welcome" hidden></div>
+    <div id="dropmsg" hidden>Drop an image to upload it</div>
+    <div id="reconnect" hidden><span id="rcmsg">Session detached.</span> <button id="rcbtn" type="button">Reconnect</button></div>
+    <div id="keys" hidden></div>
+    <p id="hint" class="muted small">Copy: Shift+drag to select, then Ctrl+C (without a selection Ctrl+C interrupts). Paste an image to upload it.</p>
+  </section>
+  <div id="split" role="separator" aria-orientation="vertical" hidden></div>
+  <aside id="dock" hidden></aside>
+</main>
+<div id="askbox" hidden><div class="box" role="dialog" aria-modal="true" aria-labelledby="askq"><p id="askq"></p><input id="asktext" type="text" hidden autocomplete="off"><div id="askbtns"></div></div></div>
+<footer id="taskbar" aria-label="Windows"><span id="chips" class="chips"></span></footer>
+<div id="toasts" aria-live="polite"></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

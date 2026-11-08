@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<!-- Edit "path" in widget.json to follow another file. -->
+<style>
+  body{margin:0;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.4 var(--mono,monospace)}
+  pre{margin:0;padding:8px 10px;white-space:pre-wrap;word-break:break-all;height:100vh;box-sizing:border-box;overflow:auto}
+</style>
+<pre id="out">waiting for lines...</pre>
+<script src="/sdk.js"></script>
+<script>
+  const out = document.getElementById('out');
+  let lines = [];
+  hatch.on('log', (v) => {
+    if (v.error) { out.textContent = v.error; return; }
+    lines = v.append ? lines.concat(v.lines) : v.lines;
+    if (lines.length > 500) lines = lines.slice(-500);
+    const stick = out.scrollTop + out.clientHeight >= out.scrollHeight - 20;
+    out.textContent = lines.join('\n');
+    if (stick) out.scrollTop = out.scrollHeight;
+  });
+</script>

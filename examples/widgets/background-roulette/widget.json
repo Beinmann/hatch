@@ -1,0 +1,36 @@
+{
+ "title": "Background roulette",
+ "w": 360,
+ "h": 240,
+ "placement": "float",
+ "sources": [
+  {
+   "name": "gallery",
+   "kind": "exec",
+   "json": true,
+   "everyMs": 60000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; cd \"$D\" && printf '['; s=''; for f in $(ls -t *.jpg 2>/dev/null | head -30); do m=$(tr -d '\\n' < \"${f%.jpg}.json\" 2>/dev/null); [ -n \"$m\" ] || m=null; printf '%s{\"n\":\"%s\",\"m\":%s}' \"$s\" \"$f\" \"$m\"; s=,; done; printf ']'"
+  },
+  {
+   "name": "dl",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 30000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; w=2560; h=1440; hd=\"$D/.hdr.$$\"; t=\"$D/.dl.$$.tmp\"; if curl -sfL -m 25 -D \"$hd\" -o \"$t\" \"https://picsum.photos/$w/$h\"; then id=$(tr -d '\\r' < \"$hd\" | sed -n 's/^[Pp]icsum-id: *//p' | tail -1); [ -n \"$id\" ] || id=x; b=\"$id-$(date +%s)\"; mv \"$t\" \"$D/$b.jpg\"; info=$(curl -s -m 10 \"https://picsum.photos/id/$id/info\" | tr -d '\\n'); case \"$info\" in '{'*) ;; *) info=null;; esac; printf '{\"source\":\"picsum.photos\",\"id\":\"%s\",\"downloaded\":\"%s\",\"width\":%d,\"height\":%d,\"bytes\":%d,\"info\":%s}\\n' \"$id\" \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" $w $h \"$(wc -c < \"$D/$b.jpg\")\" \"$info\" > \"$D/$b.json\"; else rm -f \"$t\" \"$hd\"; echo 'download failed: check that this box can reach picsum.photos' >&2; exit 1; fi; rm -f \"$hd\"; f=$(cd \"$D\" && ls -t *.jpg | head -1); command -v hatch >/dev/null || { echo 'the hatch command is not on the server PATH; install it (install.sh) or set the background by hand' >&2; exit 1; }; hatch set background \"$D/$f\" --state {{state}} >/dev/null || exit 1; (cd \"$D\" && ls -t *.jpg 2>/dev/null | tail -n +31 | while read -r o; do rm -f \"$o\" \"${o%.jpg}.json\"; done); cd \"$D\" && printf '['; s=''; for f in $(ls -t *.jpg 2>/dev/null | head -30); do m=$(tr -d '\\n' < \"${f%.jpg}.json\" 2>/dev/null); [ -n \"$m\" ] || m=null; printf '%s{\"n\":\"%s\",\"m\":%s}' \"$s\" \"$f\" \"$m\"; s=,; done; printf ']'"
+  },
+  {
+   "name": "pick",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 15000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; case \"$HATCH_ARG\" in *.jpg) ;; *) echo 'not a .jpg image' >&2; exit 1;; esac; [ -f \"$D/$HATCH_ARG\" ] || { echo \"no such image: $HATCH_ARG\" >&2; exit 1; }; f=\"$HATCH_ARG\"; command -v hatch >/dev/null || { echo 'the hatch command is not on the server PATH; install it (install.sh) or set the background by hand' >&2; exit 1; }; hatch set background \"$D/$f\" --state {{state}} >/dev/null || exit 1; printf '{\"set\":\"%s\"}' \"$f\""
+  },
+  {
+   "name": "del",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 15000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; case \"$HATCH_ARG\" in *.jpg) ;; *) echo 'not a .jpg image' >&2; exit 1;; esac; [ -f \"$D/$HATCH_ARG\" ] || { echo \"no such image: $HATCH_ARG\" >&2; exit 1; }; rm -f \"$D/$HATCH_ARG\" \"$D/${HATCH_ARG%.jpg}.json\"; cd \"$D\" && printf '['; s=''; for f in $(ls -t *.jpg 2>/dev/null | head -30); do m=$(tr -d '\\n' < \"${f%.jpg}.json\" 2>/dev/null); [ -n \"$m\" ] || m=null; printf '%s{\"n\":\"%s\",\"m\":%s}' \"$s\" \"$f\" \"$m\"; s=,; done; printf ']'"
+  }
+ ]
+}

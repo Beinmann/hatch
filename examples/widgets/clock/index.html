@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body{margin:0;padding:12px 16px;overflow:hidden;background:var(--bg,#111);color:var(--fg,#eee);font-family:var(--mono,monospace);text-align:center}
+  #t{font-size:38px;letter-spacing:.04em;color:var(--accent,#4fd1c0)} #d{opacity:.7;font-size:13px;margin-top:2px} #u{opacity:.55;font-size:12px;margin-top:10px}
+</style>
+<div id="t">--:--:--</div><div id="d"></div><div id="u"></div>
+<script src="/sdk.js"></script>
+<script>
+  const tick = () => { const n = new Date(); t.textContent = n.toLocaleTimeString([], { hour12: false }); d.textContent = n.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' }); };
+  tick(); setInterval(tick, 1000);
+  hatch.on('up', (v) => { const [up, host] = (v.out || '').split('\n'); u.textContent = [host, up].filter(Boolean).join(' · '); });
+</script>
