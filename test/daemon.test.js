@@ -88,3 +88,23 @@ test('new projects get distinct stable tmux sessions; existing session names sur
   assert.equal(loadConfig(a,{session:'my-existing-session'}).session, 'my-existing-session');
   assert.equal(loadConfig(a).session, 'my-existing-session');
 });
+test('clear empties a scratch state dir and says what it removed; it needs --yes without a terminal', () => {
+  const d = tmp(); const state = path.join(d, '.hatch'); fs.mkdirSync(path.join(state, 'widgets'), { recursive: true });
+  fs.writeFileSync(path.join(state, 'config.json'), '{"port":1,"token":"abc"}'); fs.writeFileSync(path.join(state, 'widgets', 'a.html'), 'x');
+  const run = (...a) => spawnSync(process.execPath, [EXE, 'clear', '--state', state, ...a], { cwd: d, encoding: 'utf8', timeout: 5000, input: '', env: { ...process.env, HATCH_STATE: '' } });
+  const no = run(); assert.equal(no.status, 1); assert.match(no.stderr, /--yes/); assert.ok(fs.existsSync(path.join(state, 'config.json')), 'nothing removed without confirmation');
+  const r = run('--yes'); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /removed 2 entries/); assert.match(r.stdout, /widgets/);
+  assert.deepEqual(fs.readdirSync(state), []);
+});
+test('clear refuses while a server runs on the state dir (daemon pid or answering port)', async () => {
+  const d = tmp(); const state = path.join(d, '.hatch'); fs.mkdirSync(state);
+  const http = await import('node:http');
+  const srv = http.createServer((q, s) => s.end('{"ok":true}')); await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  fs.writeFileSync(path.join(state, 'config.json'), JSON.stringify({ port: srv.address().port, token: 'abc' }));
+  try {
+    const { spawn } = await import('node:child_process');
+    const r = await new Promise((res) => { const c = spawn(process.execPath, [EXE, 'clear', '--yes', '--state', state], { cwd: d, env: { ...process.env, HATCH_STATE: '' } }); let err = ''; c.stderr.on('data', (x) => { err += x; }); c.on('close', (code) => res({ code, err })); });
+    assert.equal(r.code, 1); assert.match(r.err, /server is answering/); assert.match(r.err, /Stop it first/);
+    assert.ok(fs.existsSync(path.join(state, 'config.json')), 'state untouched');
+  } finally { srv.close(); }
+});

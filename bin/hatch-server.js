@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// hatch-server: serve | start | stop | restart | status | url | doctor | service | agent (the page-driving commands are `hatch`)
+// hatch-server: serve | clear | start | stop | restart | status | url | doctor | service | agent (the page-driving commands are `hatch`)
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -16,6 +16,7 @@ usage:
   hatch-server serve [--host H] [--port N] [--state DIR] [--session NAME] [--cwd DIR] [--root DIR] [--view-only] [--tmux-status] [--yes]
   hatch-server start|stop|restart|status [serve options]   run the server in the background (pid in <state>/hatch.pid, log in <state>/log/daemon.log)
   hatch-server agent init [--target claude|codex|both]     add persistent project instructions (same as hatch agent init)
+  hatch-server clear [--state DIR] [--yes]   delete everything in the state dir (widgets, notes, trash, token) to recover from a bad state; asks first, refuses while a server uses it
   hatch-server url [--state DIR]       print the URL with the token again
   hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it
   hatch-server doctor [--state DIR]    check node, python3, tmux, state dir, server
@@ -84,6 +85,30 @@ if (['start', 'stop', 'restart', 'status'].includes(cmd)) {
       console.log(r.already ? `already running (pid ${r.pid}); use \`hatch-server restart\` to reload code` : r.log.trim());
     }
   } catch (e) { fail(e.message); }
+  process.exit(0);
+}
+if (cmd === 'clear') {
+  const dir = path.resolve(o.state || process.env.HATCH_STATE || '.hatch');
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) fail(`no state dir at ${dir}; nothing to clear. Pass --state DIR to choose another.`);
+  const d = await import('../src/daemon.js');
+  const stop = `Stop it first (\`hatch-server stop --state ${dir}\` or Ctrl+C in its terminal), then run clear again.`;
+  const pid = d.runningPid(dir);
+  if (pid) fail(`a Hatch server (pid ${pid}) is running on ${dir}. ${stop}`);
+  if (isValidStateDir(dir)) { // a foreground server has no pid file: ask the port from config.json
+    const { makeClient } = await import('../src/find.js');
+    const up = await makeClient(dir)('GET', '/api/health').then(() => true, (e) => e.code !== 2 && !/cannot reach/.test(e.message));
+    if (up) fail(`a Hatch server is answering on the port in ${path.join(dir, 'config.json')}. ${stop}`);
+  }
+  const names = fs.readdirSync(dir);
+  if (!names.length) { console.log(`${dir} is already empty`); process.exit(0); }
+  if (o.yes !== 'true') {
+    if (!process.stdin.isTTY || !process.stderr.isTTY) fail(`no terminal to ask on. Pass --yes to delete everything in ${dir}.`);
+    const rl = (await import('node:readline/promises')).createInterface({ input: process.stdin, output: process.stderr });
+    const answer = (await rl.question(`Delete ALL ${names.length} entries in ${dir} (widgets, notes, trash, token)? [y/N] `)).trim().toLowerCase(); rl.close();
+    if (answer !== 'y' && answer !== 'yes') fail(`nothing removed from ${dir}.`);
+  }
+  for (const n of names) fs.rmSync(path.join(dir, n), { recursive: true, force: true });
+  console.log(`removed ${names.length} entries from ${dir}: ${names.join(', ')}\nThe next \`hatch-server serve\` creates a fresh state (with a new token and URL).`);
   process.exit(0);
 }
 if (cmd === 'doctor') { process.exit(printChecks(await doctor({ state: o.state })) ? 0 : 1); }
