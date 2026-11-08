@@ -8,7 +8,7 @@ A browser terminal for isolated boxes, grown into a small desktop. One server pe
 terminal attached to **tmux**, surrounded by windows and gadgets: paste or drop images and files into the box, a live
 progress diagram that Claude updates, file browser and editor, output windows for commands, a git window, widgets
 ("show me live CPU state"), a command palette, notifications and more. Claude drives the page with a small CLI,
-`hatch` (or the MCP server `hatch-mcp`).
+`hatch` (or the MCP server `hatch-mcp`). It is mostly a tool for my own use, shared as is.
 
 Zero npm dependencies: Node 20+, python3 (standard library, for the pty), tmux, and vendored xterm.js and Mermaid.
 
