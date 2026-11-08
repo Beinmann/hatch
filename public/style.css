@@ -51,7 +51,7 @@ code{font-family:var(--mono);font-size:.92em;background:var(--accent-soft);paddi
 @media (prefers-reduced-motion:reduce){#termwrap.flash::after{animation:none}}
 #term{flex:1;min-height:0;padding:6px 0 0 8px}
 #hint{margin:0;padding:3px 10px;background:var(--surface);border-top:1px solid var(--line)}
-#floats{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+#floats{position:absolute;inset:0;isolation:isolate;pointer-events:none;overflow:hidden}
 #dropmsg{position:absolute;inset:8px;border:2px dashed var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;background:#0008;color:#fff;font-size:18px;pointer-events:none}
 #dropmsg[hidden],#reconnect[hidden]{display:none}
 #reconnect{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:var(--warn-soft);color:var(--fg);border:1px solid var(--warn);padding:6px 12px;border-radius:6px;display:flex;gap:10px;align-items:center;z-index:5}

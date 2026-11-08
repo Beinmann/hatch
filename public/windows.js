@@ -13,7 +13,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   let current = 'main'; // the workspace being shown
   const wsOf = (p) => p.ws || 'main';
   const shown = (w) => !w.panel.minimized && (w.panel.sticky || wsOf(w.panel) === current);
-  let z = 10;
+  let z = 10; // unbounded is fine: #floats isolates its stacking context, so this can never reach #palette
   let focusHistory = []; // window ids, most recently focused first (per page load)
   const minOrder = new Map(); let minSeq = 0; // id -> when it was minimized, for restoreNext
   const timers = new Map();
