@@ -37,7 +37,7 @@ const store = {
 };
 
 // ---- transparency (state dir transparency.json, percent 0..100): --opa is how opaque the backgrounds stay ----
-const applyTransparency = (pct) => { const r = document.documentElement; const n = Number.isFinite(pct) ? pct : 0; r.style.setProperty('--opa', `${100 - n}%`); r.classList.add('has-tr'); term?.retheme?.(); }; // always on: 0 = fully opaque even with a background image set
+const applyTransparency = (pct) => { const r = document.documentElement; const n = Number.isFinite(pct) ? pct : 30; r.style.setProperty('--opa', `${100 - n}%`); r.classList.add('has-tr'); term?.retheme?.(); }; // always on: 0 = fully opaque even with a background image set
 // ---- background image (state dir background.*; the server sends its URL in the snapshot and on change) ----
 const applyBackground = (b) => { const r = document.documentElement; if (b?.url) { r.style.setProperty('--bg-image', `url("${b.url}")`); r.dataset.bgmode = b.mode || 'fill'; r.classList.add('has-bg'); } else { r.style.removeProperty('--bg-image'); delete r.dataset.bgmode; r.classList.remove('has-bg'); } term?.retheme?.(); };
 

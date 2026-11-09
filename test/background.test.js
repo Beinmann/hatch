@@ -115,7 +115,7 @@ test('transparency: set, reset, invalid input, bad saved file, reaching the snap
   const h = await startHatch();
   const file = path.join(h.stateDir, 'transparency.json');
   try {
-    assert.equal((await snap(h)).transparency, 0);
+    assert.equal((await snap(h)).transparency, 30); // default with no file
     assert.equal((await ui(['set', 'transparency', '40'], h.stateDir)).status, 0);
     await waitFor(async () => (await snap(h)).transparency === 40, 5000);
     for (const bad of ['101', '-1', 'abc', '1.5']) {
@@ -125,7 +125,7 @@ test('transparency: set, reset, invalid input, bad saved file, reaching the snap
     assert.notEqual((await ui(['set', 'transparency'], h.stateDir)).status, 0);
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).percent, 40);
     fs.writeFileSync(file, '{"percent":250}');
-    await waitFor(async () => { const s = await snap(h); return s.transparency === 0 && s.warnings.some((w) => w.file === 'transparency'); }, 5000);
+    await waitFor(async () => { const s = await snap(h); return s.transparency === 30 && s.warnings.some((w) => w.file === 'transparency'); }, 5000);
     assert.equal((await ui(['set', 'transparency', '0'], h.stateDir)).status, 0);
     await waitFor(async () => { const s = await snap(h); return s.transparency === 0 && !s.warnings.some((w) => w.file === 'transparency'); }, 5000);
     fs.writeFileSync(file, '{broken');

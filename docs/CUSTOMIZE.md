@@ -15,10 +15,10 @@ and no background. The terminal and dock turn translucent while a background is 
 default), `fit` (contain), `stretch`, `center` or `tile`. It is kept in `.hatch/background.json` as `{"mode":"fill"}`; edit it
 by hand if you like. An unknown mode or broken file shows a warning and uses `fill`.
 
-`hatch set transparency N` (0 to 100, default 0 = fully opaque, even with a background image: the image is then hidden behind the terminal) makes the terminal and the panels translucent so the page
-background shows through; `set transparency 0` restores the opaque look. It is kept in `.hatch/transparency.json` as
+`hatch set transparency N` (0 to 100, default 30, so a background image shows through; 0 = fully opaque, which hides the image behind the terminal) makes the terminal and the panels translucent so the page
+background shows through; `set transparency 0` gives the opaque look. It is kept in `.hatch/transparency.json` as
 `{"percent":30}`; edit it by hand if you like. An invalid value is refused and the saved one stays; a broken file shows a
-warning and uses 0.
+warning and uses 30.
 
 ## `custom.css`
 

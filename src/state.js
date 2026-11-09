@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { findBackground, readMode } from './background.js';
-import { readTransparency } from './transparency.js';
+import { readTransparency, DEFAULT_TRANSPARENCY } from './transparency.js';
 import { sizeKey, sizeFor, readSizes, rememberSize } from './sizes.js';
 import { normalizeSteps, STEP_STATUS, findStep, unusedStepId } from './progress.js';
 import { normalizeTarget, checkConversion, checklistToSteps, stepsToMarkdown, widgetHtml, freeWidgetName } from './convert.js';
@@ -157,7 +157,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   let progress = { diagram: '', steps: [] };
   let progressSig = '';
   let background = null; // { url, rev } or null
-  let transparency = 0;  // percent, 0 = opaque
+  let transparency = DEFAULT_TRANSPARENCY;  // percent, 0 = opaque
   let watcher = null; let pollTimer = null; let debounce = null; let closed = false;
 
   const warn = (file, message) => {

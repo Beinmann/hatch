@@ -88,7 +88,7 @@ ask the user (blocks until they answer in the browser; prints the answer)
   ask "question" [CHOICE ...] [--text] [--timeout SEC]     default choices: Yes No; exit 3 on timeout
   set background IMAGE              use a PNG, JPEG, GIF or WebP image as the page background (saved in the state dir as background.EXT)
   set background none               remove the background image
-  set transparency 0..100           make the terminal and panels see-through: 0 = opaque (default), 100 = fully transparent (saved in transparency.json)
+  set transparency 0..100           make the terminal and panels see-through: 0 = opaque, 30 = default, 100 = fully transparent (saved in transparency.json)
   set background-mode MODE          how it fits: fill (cover, default) | fit (contain) | stretch | center | tile (saved in background.json)
 desktop
   desktop                           open a set of live gadgets (graph, system, clock, top, git, log) plus the progress panel
