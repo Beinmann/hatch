@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:transparent;display:flex;align-items:center;justify-content:center}
+  svg{width:min(100vw,100vh);height:min(100vw,100vh);padding:8px;box-sizing:border-box}
+  .face{fill:none;stroke:var(--fg,#eee);stroke-opacity:.25;stroke-width:1.5}
+  .tick{stroke:var(--fg,#eee);stroke-opacity:.7;stroke-linecap:round}
+  .h,.m{stroke:var(--fg,#eee);stroke-linecap:round}
+  .s{stroke:var(--accent,#4fd1c0);stroke-linecap:round}
+  .pin{fill:var(--accent,#4fd1c0)}
+</style>
+<svg viewBox="-100 -100 200 200">
+  <circle class="face" r="96"/>
+  <g id="ticks"></g>
+  <line class="h" id="h" y2="-48" stroke-width="5"/>
+  <line class="m" id="m" y2="-72" stroke-width="3"/>
+  <line class="s" id="s" y1="12" y2="-80" stroke-width="1.5"/>
+  <circle class="pin" r="4"/>
+</svg>
+<script src="/sdk.js"></script>
+<script>
+  const NS = 'http://www.w3.org/2000/svg';
+  for (let i = 0; i < 60; i++) {
+    const big = i % 5 === 0, l = document.createElementNS(NS, 'line');
+    l.setAttribute('class', 'tick'); l.setAttribute('y1', big ? -86 : -90); l.setAttribute('y2', -93);
+    l.setAttribute('stroke-width', big ? 2.5 : 1); l.setAttribute('transform', 'rotate(' + i * 6 + ')');
+    ticks.appendChild(l);
+  }
+  function draw() {
+    requestAnimationFrame(draw);
+    if (document.hidden) return;
+    const n = new Date(), s = n.getSeconds() + n.getMilliseconds() / 1000, m = n.getMinutes() + s / 60, h = (n.getHours() % 12) + m / 60;
+    document.getElementById('s').setAttribute('transform', 'rotate(' + s * 6 + ')');
+    document.getElementById('m').setAttribute('transform', 'rotate(' + m * 6 + ')');
+    document.getElementById('h').setAttribute('transform', 'rotate(' + h * 30 + ')');
+  }
+  draw();
+</script>

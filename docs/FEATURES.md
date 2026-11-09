@@ -35,6 +35,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Files browser + text editor | 020 | src/files.js, panels/files.js, editor.js | yes | any-path access unless --root |
 | Ask the user (dialog) | 029 | server /api/ask, app.js | yes | |
 | Terminal windows | 035 | /api/pterm, panels/terminal.js | yes | |
+| Decorative widgets (matrix-rain, analog-clock, ascii-donut, quote) | - | examples/widgets/* | no (not seen in a browser) | pure client side, just for looks |
 | Desktop gadgets + graph, clock widgets | 031 021 | examples/widgets/*, server openDesktop | partly | the "looks like a programmer's desktop" part |
 | Widget sources over one stream | 032 | server /api/sub | yes | a bug fix, keep |
 | hatch.call (one-shot source with argument), widget data/ folder, background-roulette widget | 141 | server /api/call, sources.js runOnce, examples/widgets/background-roulette | yes | |

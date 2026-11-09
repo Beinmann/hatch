@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:transparent;display:flex;align-items:center;justify-content:center;text-align:center}
+  #q{max-width:86%;color:var(--fg,#eee);font:italic 17px/1.5 Georgia,serif;white-space:pre-line;transition:opacity 1.2s ease}
+  #q small{display:block;margin-top:8px;font:12px var(--mono,monospace);color:var(--accent,#4fd1c0);font-style:normal;opacity:.9}
+  #q.off{opacity:0}
+</style>
+<div id="q" class="off"></div>
+<script src="/sdk.js"></script>
+<script>
+  // Edit this list to taste; one line shows at a time and fades to the next every 20 seconds.
+  const LINES = [
+    ['An old pond\nA frog jumps in,\nthe sound of water.', 'Basho'],
+    ['Simplicity is prerequisite for reliability.', 'Edsger Dijkstra'],
+    ['Make it work, make it right, make it fast.', 'Kent Beck'],
+    ['Programs must be written for people to read.', 'Abelson & Sussman'],
+    ['In the midst of winter, I found there was, within me, an invincible summer.', 'Albert Camus'],
+    ['The best way out is always through.', 'Robert Frost'],
+    ['Late autumn:\nonly the sound of the rain\nwandering on.', 'Buson'],
+    ['Slow is smooth, smooth is fast.', ''],
+  ];
+  let i = Math.floor(Math.random() * LINES.length);
+  function show() {
+    q.classList.add('off');
+    setTimeout(() => {
+      const [text, by] = LINES[i++ % LINES.length];
+      q.textContent = text; if (by) { const s = document.createElement('small'); s.textContent = by; q.appendChild(s); }
+      q.classList.remove('off');
+    }, 1200);
+  }
+  show(); setInterval(() => { if (!document.hidden) show(); }, 20000);
+</script>
