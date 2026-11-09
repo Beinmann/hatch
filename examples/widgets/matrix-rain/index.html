@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:transparent}
+  canvas{display:block;width:100%;height:100%}
+</style>
+<canvas id="c" title="click: speed"></canvas>
+<script src="/sdk.js"></script>
+<script>
+  // Falling glyph columns. Colours come from the theme (--accent, --bg); the canvas is cleared with a
+  // translucent fill so trails fade while a desktop background image still shows through.
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  const css = (n, d) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d;
+  const GLYPHS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾅﾆﾇﾈﾉ0123456789:=*+-<>'.split('');
+  const SIZE = 14; let cols = [], speed = 1, last = 0, acc = 0;
+  function resize() {
+    const r = devicePixelRatio || 1;
+    cv.width = Math.max(1, cv.clientWidth * r); cv.height = Math.max(1, cv.clientHeight * r);
+    ctx.setTransform(r, 0, 0, r, 0, 0);
+    cols = Array.from({ length: Math.ceil(cv.clientWidth / SIZE) }, () => -Math.random() * 30);
+  }
+  function step() {
+    const w = cv.clientWidth, h = cv.clientHeight;
+    ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.font = SIZE + 'px ' + css('--mono', 'monospace');
+    const accent = css('--accent', '#4fd1c0');
+    cols.forEach((y, i) => {
+      const g = GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+      ctx.fillStyle = '#fff'; ctx.globalAlpha = .9; ctx.fillText(g, i * SIZE, y * SIZE);
+      ctx.fillStyle = accent; ctx.globalAlpha = .7; ctx.fillText(GLYPHS[Math.floor(Math.random() * GLYPHS.length)], i * SIZE, (y - 1) * SIZE);
+      ctx.globalAlpha = 1;
+      cols[i] = y * SIZE > h && Math.random() > .96 ? -Math.random() * 10 : y + 1;
+    });
+  }
+  function frame(t) {
+    requestAnimationFrame(frame);
+    if (document.hidden) { last = t; return; }
+    acc += (t - last) * speed; last = t;
+    if (acc > 70) { acc = 0; step(); }
+  }
+  cv.onclick = () => { speed = speed >= 3 ? .5 : speed * 2; };
+  new ResizeObserver(resize).observe(cv); resize(); requestAnimationFrame(frame);
+</script>
