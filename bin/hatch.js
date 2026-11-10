@@ -41,6 +41,10 @@ progress
   progress set FILE|-               replace the Mermaid diagram (file or stdin)
   progress show                     print diagram and steps
   progress open                     open the progress window
+  progress plans                    list the plans (several can run side by side, one window each)
+  progress close --plan NAME        close a named plan (its window and file)
+  --plan NAME (or export HATCH_PLAN=NAME) on any progress command picks a plan, creating it on first use; with
+  several plans and no name the command fails and lists them. With 0 or 1 plans nothing changes.
   progress plan "STEP" "STEP" ...   replace the plan with ordered steps
   progress steps set FILE|-         replace steps.json
   progress step "TITLE|ID" STATUS [--detail TEXT] [--group NAME]
@@ -241,22 +245,40 @@ async function main(argv) {
 
   switch (cmd) {
     case 'progress': {
+      // Which plan: --plan NAME, else $HATCH_PLAN, else none (the server then uses the only plan, or refuses when there are several).
+      const planName = o.plan || process.env.HATCH_PLAN || '';
+      need(!planName || /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(planName), `plan name "${planName}" is not valid: use letters, digits, - and _ (at most 48)`);
+      const pq = planName ? `?plan=${encodeURIComponent(planName)}` : '';
+      if (sub === 'plans') {
+        const list = await api('GET', '/api/progress/plans');
+        if (o.json) return console.log(JSON.stringify(list, null, 2));
+        return console.log(list.length ? list.map((x) => `${x.name}  ${x.done}/${x.steps} done`).join('\n') : 'no progress plans yet');
+      }
+      if (sub === 'close') {
+        const target = planName || rest[0]; need(target, 'usage: progress close --plan NAME   (or: progress close NAME)');
+        await api('DELETE', `/api/progress/plans/${encodeURIComponent(target)}`);
+        return console.log(`plan ${target} closed`);
+      }
       if (sub === 'open') {
+        if (planName && planName !== 'default') {
+          const p = await api('POST', '/api/panels', { type: 'progress', title: planName, placement: 'float', minimized: false, props: { plan: planName } });
+          return console.log(`progress ${planName} open as ${p.id}`);
+        }
         const p = await api('POST', '/api/panels', { type: 'progress', title: 'Progress', placement: 'float', minimized: false });
         return console.log(`progress open as ${p.id}`);
       }
       if (sub === 'plan') {
         need(rest.length, 'usage: progress plan "STEP" "STEP" ...');
-        await api('PUT', '/api/progress/steps', rest.map((title, i) => ({ id: `${slug(title)}_${i + 1}`, title, status: 'todo' })));
+        await api('PUT', `/api/progress/steps${pq}`, rest.map((title, i) => ({ id: `${slug(title)}_${i + 1}`, title, status: 'todo' })));
         return console.log(`plan created: ${rest.length} steps`);
       }
       if (sub === 'set') {
         need(rest[0], 'usage: progress set FILE|-');
-        await api('PUT', '/api/progress/diagram', readInput(rest[0]));
+        await api('PUT', `/api/progress/diagram${pq}`, readInput(rest[0]));
         return console.log('progress diagram updated');
       }
       if (sub === 'show' || !sub) {
-        const p = await api('GET', '/api/progress');
+        const p = await api('GET', `/api/progress${pq}`);
         if (o.json) return console.log(JSON.stringify(p, null, 2));
         console.log(p.diagram.trim() || '(no diagram)');
         for (const s of p.steps) console.log(`  [${s.status}] ${s.title} (${s.id})`);
@@ -265,17 +287,17 @@ async function main(argv) {
       if (sub === 'steps' && rest[0] === 'set') {
         need(rest[1], 'usage: progress steps set FILE|-');
         let steps; try { steps = JSON.parse(readInput(rest[1])); } catch (e) { throw new CliError(`steps file is not valid JSON: ${e.message}`); }
-        await api('PUT', '/api/progress/steps', steps);
+        await api('PUT', `/api/progress/steps${pq}`, steps);
         return console.log('steps replaced');
       }
       if (sub === 'step') {
         const [name, status] = rest;
         need(name && status, `usage: progress step "TITLE|ID" STATUS (${STEP_STATUS.join('|')})`);
         need(STEP_STATUS.includes(status), `status must be one of ${STEP_STATUS.join(', ')}`);
-        const step = await api('POST', '/api/progress/steps', { name, status, ...(o.detail !== undefined && { detail: o.detail }), ...(o.group !== undefined && { group: o.group }) });
+        const step = await api('POST', `/api/progress/steps${pq}`, { name, status, ...(o.detail !== undefined && { detail: o.detail }), ...(o.group !== undefined && { group: o.group }) });
         return console.log(`${step.title}: ${step.status}`);
       }
-      throw new CliError('usage: progress set|show|steps set|step ...');
+      throw new CliError('usage: progress set|show|plan|plans|close|steps set|step ... [--plan NAME]');
     }
     case 'widget': {
       const name = rest[0];

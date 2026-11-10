@@ -62,6 +62,8 @@ export function progressSummary(steps = []) {
 
 export default {
   create(panel, ctx) {
+    const plan = panel.props?.plan; // a named plan has its own window; the unnamed one is the classic Progress window
+    const q = `?plan=${encodeURIComponent(plan || 'default')}`; // explicit, so the classic window keeps working when named plans exist
     const dia = el('div', { class: 'dia' });
     const list = el('div', { class: 'journey' });
     const heading = el('strong'); const count = el('span', { class: 'muted small' });
@@ -80,6 +82,7 @@ export default {
     let last = null; let hist = []; let live = null; let scrubbing = false; let selection = 0; let historyRequest = 0; let destroyed = false;
     const loadHistory = async () => {
       const request = ++historyRequest;
+      if (plan) return; // history is kept for the unnamed plan only
       let entries;
       try { entries = await ctx.api('GET', '/api/progress/history'); } catch { return; }
       if (destroyed || request !== historyRequest) return;
@@ -119,7 +122,7 @@ export default {
         group = s.group || null;
         const select = el('select', { 'aria-label': `Status for ${s.title}`, disabled: document.body.classList.contains('viewonly'), onchange: async () => {
           select.disabled = true;
-          try { await ctx.api('PATCH', `/api/progress/steps/${encodeURIComponent(s.id)}`, { status: select.value }); }
+          try { await ctx.api('PATCH', `/api/progress/steps/${encodeURIComponent(s.id)}${q}`, { status: select.value }); }
           catch (e) { ctx.toast(e.message, 'bad'); select.value = s.status; }
           finally { select.disabled = document.body.classList.contains('viewonly'); }
         } }, ...statuses.map((status) => el('option', { value: status, selected: s.status === status }, status)));
@@ -130,8 +133,8 @@ export default {
         return [...prefix, row];
       }));
     };
-    const off = ctx.onProgress(paint);
-    paint(ctx.progress()); loadHistory();
+    const off = plan ? ctx.onPlan((n, p) => { if (n === plan) paint(p); }) : ctx.onProgress(paint);
+    paint(plan ? ctx.plan(plan) : ctx.progress()); loadHistory();
     return { el: root, update() {}, destroy() { destroyed = true; selection++; invalidateDiagram(dia); off(); } };
   },
 };

@@ -75,6 +75,8 @@ function notify({ text, level }) {
 const widgets = new Map();
 let info = {};
 let progressState = { diagram: '', steps: [] };
+const plansState = new Map(); // named plans: name -> { diagram, steps }
+const planListeners = new Set();
 const progressListeners = new Set();
 const panelListeners = new Set();
 const warnings = new Map();
@@ -100,6 +102,8 @@ const ctx = {
   api, toast, cwd: () => info.cwd || '/', uploadsDir: () => info.uploadsDir, term: null, patch: (id, body) => api('PATCH', `/api/panels/${id}`, body),
   widgetInfo: (name) => widgets.get(name),
   progress: () => progressState,
+  plan: (name) => plansState.get(name) || { diagram: '', steps: [] },
+  onPlan: (fn) => { planListeners.add(fn); return () => planListeners.delete(fn); }, // fn(name, plan)
   onPanelEvent: (fn) => { panelListeners.add(fn); return () => panelListeners.delete(fn); },
   onProgress: (fn) => { progressListeners.add(fn); return () => progressListeners.delete(fn); },
 };
@@ -173,6 +177,7 @@ function connectEvents() {
     applyBackground(s.background); applyTransparency(s.transparency);
     widgets.clear(); for (const w of s.widgets) widgets.set(w.name, w);
     progressState = s.progress; for (const f of progressListeners) f(progressState);
+    plansState.clear(); for (const [n, v] of Object.entries(s.plans || {})) plansState.set(n, v); for (const [n, v] of plansState) for (const f of planListeners) f(n, v);
     warnings.clear(); for (const w of s.warnings) warnings.set(w.file, w.message);
     paintWarnings();
     const ids = new Set(s.panels.map((p) => p.id));
@@ -183,6 +188,7 @@ function connectEvents() {
   es.addEventListener('background', (e) => applyBackground(JSON.parse(e.data).background));
   es.addEventListener('panel', (e) => { const d = JSON.parse(e.data); for (const f of panelListeners) f(d); if (d.action === 'removed') wm.remove(d.panel.id); else { if (d.action === 'created' && d.panel.type === 'editor') remember('recent', d.panel.props.path, 15); wm.upsert(d.panel); if (d.action === 'created') wm.revealDock(d.panel.id); } });
   es.addEventListener('progress', (e) => { progressState = JSON.parse(e.data); window.hatchUI?.emit('progress', progressState); for (const f of progressListeners) f(progressState); });
+  es.addEventListener('plan', (e) => { const d = JSON.parse(e.data); if (d.removed) plansState.delete(d.name); else plansState.set(d.name, { diagram: d.diagram, steps: d.steps }); for (const f of planListeners) f(d.name, plansState.get(d.name) || { diagram: '', steps: [] }); });
   es.addEventListener('widget', (e) => {
     const d = JSON.parse(e.data);
     if (d.removed) widgets.delete(d.name); else widgets.set(d.name, d);

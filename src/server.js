@@ -418,22 +418,30 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         if (m === 'DELETE') { state.deletePanel(g[1]); return json(res, 200, { ok: true }); }
       }
 
-      if (p === '/api/progress' && m === 'GET') return json(res, 200, state.getProgress());
-      if (p === '/api/progress/diagram') {
-        if (m === 'GET') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(state.getProgress().diagram); }
-        if (m === 'PUT') { state.setDiagram((await readBody(req, 1024 * 1024)).toString('utf8')); return json(res, 200, { ok: true }); }
+      if ((p === '/api/progress' || p.startsWith('/api/progress/')) && !p.startsWith('/api/progress/history')) {
+        // ?plan=NAME picks a named plan (see plans.js); none addresses the only plan, and several plans without a name is a 409
+        if (p === '/api/progress/plans') {
+          if (m === 'GET') return json(res, 200, state.plan.names().map((n) => { const v = state.plan.get(n === 'default' ? '' : n); return { name: n, steps: v.steps.length, done: v.steps.filter((x) => x.status === 'done').length }; }));
+        }
+        if ((g = /^\/api\/progress\/plans\/([\w-]+)$/.exec(p)) && m === 'DELETE') { state.plan.close(state.plan.resolve(g[1])); return json(res, 200, { ok: true }); }
+        const plan = state.plan.resolve(url.searchParams.get('plan') || undefined);
+        if (p === '/api/progress' && m === 'GET') return json(res, 200, state.plan.get(plan));
+        if (p === '/api/progress/diagram') {
+          if (m === 'GET') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(state.plan.get(plan).diagram); }
+          if (m === 'PUT') { state.plan.setDiagram(plan, (await readBody(req, 1024 * 1024)).toString('utf8')); return json(res, 200, { ok: true }); }
+        }
+        if (p === '/api/progress/steps') {
+          if (m === 'GET') return json(res, 200, state.plan.get(plan).steps);
+          if (m === 'POST') { const body = await readJson(req); return json(res, 200, state.plan.updateStep(plan, body.name, body)); }
+          if (m === 'PUT') { state.plan.setSteps(plan, await readJson(req)); return json(res, 200, { ok: true }); }
+        }
+        if ((g = /^\/api\/progress\/steps\/([^/]+)$/.exec(p)) && m === 'PATCH') { state.plan.patchStep(plan, decodeURIComponent(g[1]), await readJson(req)); return json(res, 200, { ok: true }); }
       }
       if (p === '/api/progress/history' && m === 'GET') return json(res, 200, fs.existsSync(l.history) ? fs.readdirSync(l.history).filter((f) => f.endsWith('.mmd')).sort() : []);
       if ((g = /^\/api\/progress\/history\/([\w.-]+\.mmd)$/.exec(p)) && m === 'GET') {
         const f = inside(l.history, g[1]); if (!f || !fs.existsSync(f)) throw new HttpError(404, `no history entry ${g[1]}`);
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(fs.readFileSync(f, 'utf8'));
       }
-      if (p === '/api/progress/steps') {
-        if (m === 'GET') return json(res, 200, state.getProgress().steps);
-        if (m === 'POST') { const body = await readJson(req); return json(res, 200, state.updateStep(body.name, body)); }
-        if (m === 'PUT') { state.setSteps(await readJson(req)); return json(res, 200, { ok: true }); }
-      }
-      if ((g = /^\/api\/progress\/steps\/([^/]+)$/.exec(p)) && m === 'PATCH') { state.patchStep(decodeURIComponent(g[1]), await readJson(req)); return json(res, 200, { ok: true }); }
 
       if (p === '/api/limits' && m === 'GET') return json(res, 200, await limits.get(url.searchParams.get('refresh') === '1'));
       if (p === '/api/desktop' && m === 'POST') return json(res, 200, openDesktop());

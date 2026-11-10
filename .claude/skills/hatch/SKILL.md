@@ -24,6 +24,7 @@ Update details at meaningful transitions (a discovery, completed change, test re
 not on a timer. Split large tasks into smaller steps using `hatch progress steps set -` with a JSON array:
 `[{"id":"inspect","title":"Inspect the layout","status":"running","group":"Discovery","detail":"Tracing popup focus"}]`.
 Preserve existing work when adjusting the plan. Mark blocked steps with the reason and what is needed.
+If several agents share this Hatch, give yours its own plan: `export HATCH_PLAN=my-task` (or `--plan my-task` on each `hatch progress` command). With two or more plans a command without a name fails and lists them.
 Never guess progress percentages or mark work complete just because a command was started.
 Steps are the primary visual; a Mermaid diagram is optional. `hatch progress open` opens details.
 The user can also change a step's status in the browser; read the latest plan before replacing it.

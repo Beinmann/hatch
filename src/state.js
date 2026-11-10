@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { findBackground, readMode } from './background.js';
 import { readTransparency, DEFAULT_TRANSPARENCY } from './transparency.js';
 import { sizeKey, sizeFor, readSizes, rememberSize } from './sizes.js';
+import { createPlans } from './plans.js';
 import { normalizeSteps, STEP_STATUS, findStep, unusedStepId } from './progress.js';
 import { normalizeTarget, checkConversion, checklistToSteps, stepsToMarkdown, widgetHtml, freeWidgetName } from './convert.js';
 export { STEP_STATUS } from './progress.js';
@@ -29,6 +30,7 @@ export const layout = (dir) => ({
   progress: path.join(dir, 'progress'),
   diagram: path.join(dir, 'progress', 'diagram.mmd'),
   steps: path.join(dir, 'progress', 'steps.json'),
+  plans: path.join(dir, 'progress', 'plans'), // named plans: NAME.json each
   history: path.join(dir, 'progress', 'history'),
   widgets: path.join(dir, 'widgets'),
   commands: path.join(dir, 'commands.json'),
@@ -125,6 +127,7 @@ export function checkPanel(p, id) {
   if (p.type === 'image' && typeof props.src !== 'string') return { error: 'image panels need props.src' };
   if (p.type === 'iframe' && typeof props.url !== 'string') return { error: 'iframe panels need props.url' };
   if (p.type === 'widget' && !NAME_RE.test(String(props.name))) return { error: 'widget panels need props.name (letters, digits, - and _)' };
+  if (p.type === 'progress' && props.plan !== undefined && !NAME_RE.test(String(props.plan))) return { error: 'progress panels take an optional props.plan (letters, digits, - and _)' };
   if (p.type === 'note' && typeof props.markdown !== 'string') return { error: 'note panels need props.markdown' };
   if (p.type === 'git' && props.dir !== undefined && typeof props.dir !== 'string') return { error: 'git panels take an optional props.dir' };
   if (p.type === 'terminal' && !NAME_RE.test(String(props.name))) return { error: 'terminal panels need props.name (letters, digits, - and _)' };
@@ -167,6 +170,8 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     log(`warning ${file}: ${message}`);
     emit('warning', { file, message });
   };
+
+  const plansApi = createPlans({ dir: l.plans, emit, warn, write: atomicWrite, defaultPlan: () => progress });
 
   function scanPanels() {
     const seen = new Set();
@@ -278,7 +283,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
 
   function rescan() {
     if (closed) return;
-    try { scanPanels(); scanProgress(); scanWidgets(); scanBackground(); scanTransparency(); scanSizes(); } catch (e) { log(`rescan failed: ${e.message}`); }
+    try { scanPanels(); scanProgress(); plansApi.scan(); scanWidgets(); scanBackground(); scanTransparency(); scanSizes(); } catch (e) { log(`rescan failed: ${e.message}`); }
   }
 
   function schedule() { clearTimeout(debounce); debounce = setTimeout(rescan, DEBOUNCE_MS); }
@@ -316,7 +321,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   /** Creates a panel file (or returns the existing singleton). Throws Error with .status 400 on bad input. */
   function createPanel(input) {
     const type = input?.type;
-    const singleton = type === 'progress' ? 'progress' : type === 'terminal' && NAME_RE.test(String(input?.props?.name)) ? `t-${input.props.name}` : type === 'widget' && NAME_RE.test(String(input?.props?.name)) ? `w-${input.props.name}` : null;
+    const singleton = type === 'progress' ? (typeof input?.props?.plan === 'string' && NAME_RE.test(input.props.plan) ? `progress-${input.props.plan}` : 'progress') : type === 'terminal' && NAME_RE.test(String(input?.props?.name)) ? `t-${input.props.name}` : type === 'widget' && NAME_RE.test(String(input?.props?.name)) ? `w-${input.props.name}` : null;
     if (singleton && panels.has(singleton)) {
       // An explicit open should bring a minimized singleton back, without resetting its saved geometry.
       const changes = { minimized: false, autoFocus: input.autoFocus !== false, activation: crypto.randomUUID(), ws: input.ws || 'main' };
@@ -404,7 +409,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
       draft = { type: 'note', ...base, props: { markdown: fs.readFileSync(src, 'utf8') } };
     }
     // singleton targets (progress, widgets) may already be open: reuse them but give them this window's geometry
-    const single = draft.type === 'progress' ? 'progress' : draft.type === 'widget' ? `w-${draft.props.name}` : null;
+    const single = draft.type === 'progress' ? (typeof draft.props?.plan === 'string' && NAME_RE.test(draft.props.plan) ? `progress-${draft.props.plan}` : 'progress') : draft.type === 'widget' ? `w-${draft.props.name}` : null;
     let out;
     if (single && panels.has(single)) out = patchPanel(single, { ...base, minimized: false, activation: crypto.randomUUID() });
     else {
@@ -552,9 +557,26 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     return patchStep(id, { ...body, ...(!current && { title: body.title ?? name }) });
   }
 
+  // ---- named plans (see plans.js); '' is the unnamed plan above ----
+  const openPlanWindow = (name) => { if (!panels.has(`progress-${name}`)) createPanel({ type: 'progress', title: name, placement: 'float', autoFocus: false, props: { plan: name } }); };
+  const created = (name, r) => { if (r.created) openPlanWindow(name); return r; };
+  const plan = {
+    names: plansApi.names, resolve: plansApi.resolve,
+    get: (name) => (name === '' ? progress : plansApi.get(name)),
+    setSteps: (name, steps) => { if (name === '') return setSteps(steps); created(name, plansApi.setSteps(name, steps)); },
+    setDiagram: (name, text) => { if (name === '') return setDiagram(text); created(name, plansApi.setDiagram(name, text)); },
+    patchStep: (name, id, body) => (name === '' ? patchStep(id, body) : created(name, plansApi.patchStep(name, id, body, applyStepClass)).step),
+    updateStep: (name, stepName, body) => (name === '' ? updateStep(stepName, body) : created(name, plansApi.updateStep(name, stepName, body, applyStepClass)).step),
+    close(name) { // a named plan: its file and window go; the unnamed plan is emptied (its history stays)
+      if (name === '') { setSteps([]); if (fs.existsSync(l.diagram)) setDiagram(''); return; }
+      plansApi.remove(name); if (panels.has(`progress-${name}`)) deletePanel(`progress-${name}`);
+    },
+  };
+
   return {
+    plan,
     layout: l, start, close, rescan,
-    snapshot: () => ({ background, transparency, panels: [...panels.values()], progress, widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
+    snapshot: () => ({ background, transparency, panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
     listPanels: () => [...panels.values()], getPanel: (id) => panels.get(id),
     createPanel, patchPanel, convertPanel, deletePanel, listTrash, restoreTrash, emptyTrash,
     getProgress: () => progress, setDiagram, setSteps, patchStep, updateStep,

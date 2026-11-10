@@ -8,25 +8,29 @@ import readline from 'node:readline';
 import { findStateDir, makeClient, CliError } from '../src/find.js';
 
 const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+// Which progress plan a tool call addresses: its `plan` argument, else $HATCH_PLAN of this process, else none (the server then
+// uses the only plan, or refuses when several exist and says how to choose).
+const PLAN = { plan: { type: 'string', description: 'Progress plan name (letters, digits, - and _); created on first use. Optional with 0 or 1 plans; required when several plans exist unless HATCH_PLAN is set.' } };
+const pq = (a) => { const n = a.plan || process.env.HATCH_PLAN; return n ? `?plan=${encodeURIComponent(n)}` : ''; };
 const str = (description) => ({ type: 'string', description });
 
 const TOOLS = [
   { name: 'hatch_progress_set', description: 'Update an optional Mermaid diagram alongside the step journey. This does not open or focus a popup. Use hatch_progress_plan for granular work and hatch_progress_open to show details.',
-    inputSchema: { type: 'object', properties: { diagram: str('Mermaid source, e.g. "flowchart LR\\n  plan --> code --> test"') }, required: ['diagram'] },
-    run: async (api, a) => { await api('PUT', '/api/progress/diagram', String(a.diagram)); return 'progress diagram updated'; } },
+    inputSchema: { type: 'object', properties: { ...PLAN, diagram: str('Mermaid source, e.g. "flowchart LR\\n  plan --> code --> test"') }, required: ['diagram'] },
+    run: async (api, a) => { await api('PUT', `/api/progress/diagram${pq(a)}`, String(a.diagram)); return 'progress diagram updated'; } },
   { name: 'hatch_progress_step', description: 'Update a granular progress step, its current detail or group (creates it when new). Use before starting work, after verifying a step and when blocked. Does not open a popup or steal focus.',
-    inputSchema: { type: 'object', properties: { name: str('Step id or title'), detail: str('Current finding, action, verification or blocker'), group: str('Optional phase or group'), status: { type: 'string', enum: ['todo', 'running', 'done', 'blocked', 'skipped'] } }, required: ['name', 'status'] },
+    inputSchema: { type: 'object', properties: { ...PLAN, name: str('Step id or title'), detail: str('Current finding, action, verification or blocker'), group: str('Optional phase or group'), status: { type: 'string', enum: ['todo', 'running', 'done', 'blocked', 'skipped'] } }, required: ['name', 'status'] },
     run: async (api, a) => {
-      const step = await api('POST', '/api/progress/steps', { name: a.name, status: a.status, ...(a.detail !== undefined && { detail: a.detail }), ...(a.group !== undefined && { group: a.group }) });
+      const step = await api('POST', `/api/progress/steps${pq(a)}`, { name: a.name, status: a.status, ...(a.detail !== undefined && { detail: a.detail }), ...(a.group !== undefined && { group: a.group }) });
       return `${step.title}: ${step.status}`;
     } },
   { name: 'hatch_progress_get', description: 'Read the current plan and optional diagram as JSON. Read this before replacing a plan so manual user updates are preserved.',
-    inputSchema: { type: 'object', properties: {} }, run: async (api) => JSON.stringify(await api('GET', '/api/progress'), null, 2) },
+    inputSchema: { type: 'object', properties: { ...PLAN } }, run: async (api, a) => JSON.stringify(await api('GET', `/api/progress${pq(a)}`), null, 2) },
   { name: 'hatch_progress_plan', description: 'Replace the plan with small concrete steps in work order. Read the existing plan first; preserve completed work and manual edits when revising it.',
-    inputSchema: { type: 'object', properties: { steps: { type: 'array', items: { type: 'object', properties: { id: str('Stable step id'), title: str('Concrete action'), status: { type: 'string', enum: ['todo', 'running', 'done', 'blocked', 'skipped'] }, detail: str('Current detail or blocker'), group: str('Optional phase') }, required: ['id', 'title'] } } }, required: ['steps'] },
-    run: async (api, a) => { await api('PUT', '/api/progress/steps', a.steps); return 'progress plan updated'; } },
+    inputSchema: { type: 'object', properties: { ...PLAN, steps: { type: 'array', items: { type: 'object', properties: { id: str('Stable step id'), title: str('Concrete action'), status: { type: 'string', enum: ['todo', 'running', 'done', 'blocked', 'skipped'] }, detail: str('Current detail or blocker'), group: str('Optional phase') }, required: ['id', 'title'] } } }, required: ['steps'] },
+    run: async (api, a) => { await api('PUT', `/api/progress/steps${pq(a)}`, a.steps); return 'progress plan updated'; } },
   { name: 'hatch_progress_open', description: 'Open or restore progress details explicitly. Progress updates themselves leave the user keyboard focus alone.',
-    inputSchema: { type: 'object', properties: {} }, run: async (api) => { const p = await api('POST', '/api/panels', { type: 'progress', title: 'Progress', placement: 'float' }); return `progress open as ${p.id}`; } },
+    inputSchema: { type: 'object', properties: { ...PLAN } }, run: async (api, a) => { const n = a.plan || process.env.HATCH_PLAN; const p = await api('POST', '/api/panels', { type: 'progress', title: n || 'Progress', placement: 'float', ...(n && n !== 'default' && { props: { plan: n } }) }); return `progress open as ${p.id}`; } },
   { name: 'hatch_note', description: 'Show a short markdown note in a window in the user\'s browser.',
     inputSchema: { type: 'object', properties: { markdown: str('Note text (markdown)'), title: str('Window title') }, required: ['markdown'] },
     run: async (api, a) => { const p = await api('POST', '/api/panels', { type: 'note', title: a.title || 'Note', props: { markdown: String(a.markdown) }, w: 360, h: 240 }); return `note open as ${p.id}`; } },

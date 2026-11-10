@@ -58,6 +58,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Image annotation | 013 | panels/annotate.js | yes (mouse) | |
 | Runnable notes (Run button on shell blocks) | 063 | md.js, panels/note.js | yes | |
 | Editable notes | 022 | note.js | no | |
+| Named progress plans (--plan, HATCH_PLAN, one window each) | - | plans.js, state.js, server.js, panels/progress.js | server and CLI | window not browser-tested |
 | Progress timeline | 014 | progress.js | yes | |
 | Recent files, clipboard history, find-file | 042 | app.js | partly | |
 | Saved prompts, Zen mode, workspace chords | 049 | app.js, ui.js | yes | |

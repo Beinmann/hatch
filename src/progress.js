@@ -38,3 +38,24 @@ export function normalizeSteps(steps, { updated = null } = {}) {
     return result;
   });
 }
+
+/** One step edit as a pure function: returns { steps, step } (a new list) or throws a 400. A new id needs a status. */
+export function applyStepPatch(steps, id, body, now = new Date().toISOString()) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) invalid('step update must be an object');
+  if (body.status !== undefined && !STEP_STATUS.includes(body.status)) invalid(`status must be one of ${STEP_STATUS.join(', ')}`);
+  if (body.title !== undefined && (typeof body.title !== 'string' || !body.title.trim())) invalid('title must be non-empty text');
+  const list = [...steps]; const i = list.findIndex((s) => s.id === id);
+  const draft = { ...(i >= 0 ? list[i] : { id, title: id }), updated: now };
+  for (const key of ['title', 'status', 'detail', 'group']) if (body[key] !== undefined) draft[key] = body[key];
+  if (draft.status === undefined) invalid('a new step needs a status');
+  const [step] = normalizeSteps([draft]);
+  if (i >= 0) list[i] = step; else list.push(step);
+  return { steps: list, step };
+}
+
+/** Like applyStepPatch but addressed by id or title; an unknown name creates a step titled with it. */
+export function applyStepUpdate(steps, name, body, now) {
+  if (typeof name !== 'string' || !name.trim()) invalid('step name must be non-empty text');
+  const current = findStep(steps, name);
+  return applyStepPatch(steps, current?.id || unusedStepId(steps, name), { ...body, ...(!current && { title: body?.title ?? name }) }, now);
+}

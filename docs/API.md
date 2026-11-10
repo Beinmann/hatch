@@ -30,7 +30,11 @@ extra fields `placement x y w h minimized ws sticky`). `GET|PUT /api/widgets`, `
 `POST /api/widgets/NAME/reload`, `GET /api/source/WIDGET/SOURCE` (SSE). Progress: `GET /api/progress`, `GET|PUT
 /api/progress/diagram` (text), `GET|PUT /api/progress/steps`, `POST /api/progress/steps {name,status?,title?,detail?,group?}`,
 `PATCH /api/progress/steps/ID {status?,title?,detail?,group?}`,
-`GET /api/progress/history[/NAME.mmd]`. Static: `/widgets/NAME/*`, `/sdk.js` (no token), `/files/uploads/N.ext`, `/custom/custom.css|js`.
+`GET /api/progress/history[/NAME.mmd]` (unnamed plan only). Every `/api/progress*` route takes `?plan=NAME` for a named plan
+(created on first use, with its own progress window; stored as `progress/plans/NAME.json`); `plan=default` is the unnamed plan. Without `plan` the
+only existing plan is used, and with two or more plans the answer is 409 listing them. `GET /api/progress/plans` lists `{name, steps, done}`,
+`DELETE /api/progress/plans/NAME` closes one. The SSE `snapshot` carries `plans` ({name: {diagram, steps}}) and a `plan` event
+(`{name, diagram, steps}` or `{name, removed: true}`) follows changes. Static: `/widgets/NAME/*`, `/sdk.js` (no token), `/files/uploads/N.ext`, `/custom/custom.css|js`.
 
 A note PATCH can include `ifMarkdown: ORIGINAL_TEXT` alongside `props.markdown`. It checks the latest disk
 content before writing and returns 409 for newer or malformed note files, preserving them; missing notes return 404.
