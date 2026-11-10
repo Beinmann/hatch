@@ -292,11 +292,13 @@ test('export/import: a setup moves between state dirs without the token; existin
   } finally { await a.close(); await b.close(); }
 });
 
+// The child gets a clean environment: with HATCH_STATE from the developer's shell it would start a real server on that state dir
+// (and rewrite its config.json) instead of failing.
 test('hatch serve in an unwritable place explains itself instead of printing a stack trace', async () => {
   if (process.getuid?.() === 0) return; // root can write anywhere
   const { spawnSync } = await import('node:child_process'); const HATCH = fileURLToPath(new URL('../bin/hatch-server.js', import.meta.url));
   const d = tmp(); fs.chmodSync(d, 0o555);
-  try { const r = spawnSync('node', [HATCH, 'serve', '--port', '0', '--yes'], { cwd: d, encoding: 'utf8', timeout: 8000 }); assert.equal(r.status, 1); assert.match(r.stderr, /cannot create the state dir .*(EACCES|EPERM|EROFS).*--state/); assert.doesNotMatch(r.stderr, /at .*node:fs/); }
+  try { const r = spawnSync('node', [HATCH, 'serve', '--port', '0', '--yes'], { cwd: d, encoding: 'utf8', timeout: 8000, env: { PATH: process.env.PATH } }); assert.equal(r.status, 1); assert.match(r.stderr, /cannot create the state dir .*(EACCES|EPERM|EROFS).*--state/); assert.doesNotMatch(r.stderr, /at .*node:fs/); }
   finally { fs.chmodSync(d, 0o755); }
 });
 
