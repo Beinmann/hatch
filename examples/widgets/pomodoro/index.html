@@ -77,13 +77,18 @@
   let ctx = null;
   function unlock() { try { ctx ||= new AudioContext(); if (ctx.state === 'suspended') ctx.resume(); } catch { /* no audio: the notification still works */ } }
   addEventListener('pointerdown', unlock, true); addEventListener('keydown', unlock, true);
-  function chime() {
-    if (!ctx || ctx.state !== 'running') return;
-    [660, 880, 1320].forEach((f, i) => {
-      const t0 = ctx.currentTime + i * 0.18, o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
-      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + 0.65);
+  // one soft bell strike: a few slightly inharmonic sine partials, each fading out at its own pace (higher ones faster)
+  function bell(freq, t0, vol) {
+    [[1, 1, 1.9], [2.01, 0.35, 1.1], [2.76, 0.18, 0.7], [4.2, 0.07, 0.4]].forEach(([mul, amp, dec]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = freq * mul;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol * amp, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dec);
+      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + dec + 0.05);
     });
+  }
+  function chime() { // three soft bell notes rising, then a second round a few seconds later
+    if (!ctx || ctx.state !== 'running') return;
+    for (let r = 0; r < 2; r++) [523, 659, 784].forEach((f, i) => bell(f, ctx.currentTime + r * 3 + i * 0.35, 0.1 * (r ? 0.6 : 1)));
   }
   // End the current phase and move to the next. With auto-start the next one begins where the last one ended (so catching up after
   // a closed widget stays exact); without it, the next phase waits, paused, for Start.

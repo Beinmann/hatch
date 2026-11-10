@@ -123,13 +123,18 @@
   let ctx = null;
   function unlock() { try { ctx ||= new AudioContext(); if (ctx.state === 'suspended') ctx.resume(); } catch { /* no audio: the card and the notification still work */ } }
   addEventListener('pointerdown', unlock, true); addEventListener('keydown', unlock, true);
-  function chime() { // three short two-note rings; synthesized so there is no file to ship
-    if (!ctx || ctx.state !== 'running') return;
-    for (let r = 0; r < 3; r++) [880, 1320].forEach((f, i) => {
-      const t0 = ctx.currentTime + r * 0.9 + i * 0.16, o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
-      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + 0.55);
+  // one soft bell strike: a few slightly inharmonic sine partials, each fading out at its own pace (higher ones faster)
+  function bell(freq, t0, vol) {
+    [[1, 1, 1.9], [2.01, 0.35, 1.1], [2.76, 0.18, 0.7], [4.2, 0.07, 0.4]].forEach(([mul, amp, dec]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = freq * mul;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol * amp, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dec);
+      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + dec + 0.05);
     });
+  }
+  function chime() { // a gentle bell, struck 6 times about 2 s apart and a little softer each time; synthesized, no file to ship
+    if (!ctx || ctx.state !== 'running') return;
+    for (let r = 0; r < 6; r++) { const t0 = ctx.currentTime + r * 2.2; bell(660, t0, 0.11 * 0.85 ** r); bell(880, t0 + 0.28, 0.08 * 0.85 ** r); }
   }
   function finish(t, late) {
     t.st = 'd'; t.end = 0; save(t);
