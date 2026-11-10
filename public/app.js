@@ -248,7 +248,14 @@ let termPointer = false; // a click already shows where you are; only flash for 
 $('term').addEventListener('pointerdown', () => { termPointer = true; setTimeout(() => { termPointer = false; }, 300); wm.blur(); });
 // Switching back to the browser window re-fires focusin on the previously focused element (no relatedTarget); that is not keyboard focus arriving, so no flash.
 let winFocusAt = 0;
-addEventListener('focus', (e) => { if (e.target === window) winFocusAt = Date.now(); });
+addEventListener('focus', (e) => {
+  if (e.target !== window) return;
+  winFocusAt = Date.now();
+  // Coming back to the tab: put the cursor in the terminal, but only when nothing specific had focus
+  // (a popup, editor, input or widget frame keeps it, so we never steal typing from them).
+  const a = document.activeElement;
+  if (!a || a === document.body || a === document.documentElement) term.focus();
+});
 $('term').addEventListener('focusin', (e) => {
   wm.blur();
   if (Date.now() - winFocusAt < 150) return;
