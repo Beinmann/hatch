@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseChord, chordMatches, literalFor, leaderAction, isEnter } from '../public/leader.js';
+import { parseChord, chordMatches, leaderAction, isEnter } from '../public/leader.js';
 
 test('parseChord reads modifier chords and rejects unusable ones', () => {
   assert.deepEqual(parseChord('Ctrl+Space'), { ctrl: true, alt: false, shift: false, meta: false, code: 'Space' });
@@ -16,12 +16,6 @@ test('chordMatches is exact about modifiers', () => {
   assert.ok(chordMatches(c, { code: 'Space', ctrlKey: true }));
   assert.ok(!chordMatches(c, { code: 'Space', ctrlKey: true, shiftKey: true }), 'Ctrl+Shift+Space is not the leader');
   assert.ok(!chordMatches(c, { code: 'Space' }));
-});
-
-test('literalFor gives the byte a doubled leader sends', () => {
-  assert.equal(literalFor(parseChord('Ctrl+Space')), '\x00');
-  assert.equal(literalFor(parseChord('Ctrl+A')), '\x01');
-  assert.equal(literalFor(parseChord('Alt+Space')), null);
 });
 
 test('leaderAction maps every key of the table', () => {

@@ -23,14 +23,6 @@ export function parseChord(text) {
 export const isEnter = (e) => e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter';
 export const chordMatches = (c, e) => !!c && e.code === c.code && !!e.ctrlKey === c.ctrl && !!e.altKey === c.alt && !!e.shiftKey === c.shift && !!e.metaKey === c.meta;
 
-// What the leader sends to the shell when pressed twice: Ctrl+Space is NUL, Ctrl+letter its control code; other chords have none.
-export function literalFor(c) {
-  if (!c || !c.ctrl || c.alt || c.meta) return null;
-  if (c.code === 'Space') return '\x00';
-  const m = /^Key([A-Z])$/.exec(c.code);
-  return m ? String.fromCharCode(m[1].charCodeAt(0) - 64) : null;
-}
-
 const DIRS = { KeyH: 'h', KeyJ: 'j', KeyK: 'k', KeyL: 'l', ArrowLeft: 'h', ArrowDown: 'j', ArrowUp: 'k', ArrowRight: 'l' };
 const PLAIN = { Tab: 'next', KeyT: 'terminal', KeyQ: 'close', KeyM: 'minimize', KeyU: 'dock', KeyF: 'maximize', KeyA: 'tile', KeyP: 'palette', KeyO: 'opacity', Escape: 'cancel' };
 const MODIFIERS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);

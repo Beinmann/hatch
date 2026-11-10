@@ -16,7 +16,7 @@ import trashPanel from './panels/trash.js';
 import { initLimits } from './limits.js';
 import { createPalette } from './palette.js';
 import { calc, formatResult } from './calc.js';
-import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, literalFor, leaderAction, isEnter } from './leader.js';
+import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, leaderAction, isEnter } from './leader.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -364,7 +364,7 @@ function switchWs(n) { wm.setWorkspace(n); store.set('ws', n); paintWorkspaces()
 const origUpsert = wm.upsert; wm.upsert = (p) => { origUpsert(p); paintWorkspaces(); };
 
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, u pick from the dock, f maximize, a tile, p palette'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Send the leader key itself to the shell'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+Shift+P', 'Command palette'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, u pick from the dock, f maximize, a tile, p palette'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+Shift+P', 'Command palette'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -423,11 +423,7 @@ function leaderDockKey(e) {
 }
 function leaderKey(e) {
   if (leader.dock) return leaderDockKey(e);
-  if (chordMatches(leaderChord, e)) { // leader twice: the key itself goes to the shell
-    const lit = literalFor(leaderChord); leaderDisarm();
-    if (lit) term.sendKey(lit);
-    return;
-  }
+  if (chordMatches(leaderChord, e)) return leaderArm(); // leader twice: stay in leader mode (the timer and hint restart)
   const a = leaderAction(e);
   if (a?.action === 'ignore') return;
   if (!a || a.action === 'cancel') return leaderDisarm();
