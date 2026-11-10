@@ -1,18 +1,112 @@
 <!doctype html>
 <meta charset="utf-8">
-<!-- Magit-lite: branch, changed files and recent commits. The command runs where `hatch-server serve` was started; change `cmd` in widget.json to point elsewhere. -->
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- Status buffer in the spirit of magit/fugitive: head, changes by section, recent commits. Read-only.
+     The command in widget.json runs in the server's directory; `hatch widget open git` makes a copy for the current directory.
+     Parsing lives in parse.js (also used by the tests). -->
 <style>
-  body{margin:0;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.45 var(--mono,monospace)}
-  pre{margin:0;padding:8px 10px;white-space:pre-wrap;word-break:break-all}
-  .m{color:#f59e0b}.a{color:#4fd1c0}.d{color:#f87171}.h{color:var(--accent,#4fd1c0);font-weight:bold}
+  :root{--ok:#4fd1a0;--warn:#f59e0b;--bad:#f87171;--info:#7aa7ff}
+  html,body{margin:0;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.5 var(--mono,monospace);overflow-x:hidden}
+  #app{padding:8px 10px 12px;min-width:0}
+  .repo{display:flex;align-items:baseline;gap:8px;min-width:0}
+  .repo b{font-size:14px;color:var(--fg,#eee);white-space:nowrap}
+  .repo .path{color:var(--muted,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .kv{display:flex;gap:6px;min-width:0;white-space:nowrap}
+  .kv .k{color:var(--muted,#888);flex:none;width:5.5ch}
+  .kv .v{overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .branch{color:var(--accent,#4fd1c0);font-weight:bold}
+  .up{color:var(--muted,#888)}
+  .ab{color:var(--warn)}.ab.behind{color:var(--bad)}
+  h3{margin:10px 0 2px;font:inherit;font-weight:bold;cursor:pointer;user-select:none;display:flex;gap:6px;align-items:center;color:var(--fg,#eee)}
+  h3 .car{display:inline-block;width:1ch;color:var(--muted,#888);transition:transform .1s}
+  h3.fold .car{transform:rotate(-90deg)}
+  h3 .n{color:var(--muted,#888);font-weight:normal}
+  h3:hover .car{color:var(--accent,#4fd1c0)}
+  .row{display:flex;gap:8px;align-items:baseline;min-width:0;padding:0 0 0 2px;white-space:nowrap}
+  .row:hover{background:rgba(127,127,127,.12)}
+  .b{flex:none;width:2.2ch;text-align:center;border-radius:3px;font-weight:bold;font-size:11px;line-height:1.4;color:#111;background:var(--muted,#888)}
+  .b.M{background:var(--warn)}.b.A{background:var(--ok)}.b.D{background:var(--bad)}.b.R{background:var(--info)}
+  .b.q{background:transparent;color:var(--muted,#888);box-shadow:inset 0 0 0 1px var(--muted,#888)}
+  .b.U{background:var(--bad);color:#fff}
+  .f{overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .f .d{color:var(--muted,#888)}.f .n{color:var(--fg,#eee)}.f .o{color:var(--muted,#888)}
+  .more,.empty,.clean{color:var(--muted,#888);padding-left:2px}
+  .clean{margin-top:10px;color:var(--ok)}
+  .c .h{flex:none;color:var(--accent,#4fd1c0)}
+  .c .s{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+  .c .t{flex:none;color:var(--muted,#888)}
+  .c.up .h:after{content:"\2191";color:var(--warn);margin-left:1px}
+  .pill{flex:none;font-size:10px;line-height:1.3;padding:0 5px;border-radius:8px;box-shadow:inset 0 0 0 1px var(--muted,#888);color:var(--muted,#888)}
+  .pill.head{background:var(--accent,#4fd1c0);color:#111;box-shadow:none;font-weight:bold}
+  .pill.tag{color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
+  .pill.remote{color:var(--info);box-shadow:inset 0 0 0 1px var(--info)}
+  .msg{padding:14px 4px;color:var(--fg,#eee);white-space:normal;line-height:1.6}
+  .msg code{color:var(--accent,#4fd1c0)}
+  .msg.bad{color:var(--bad)}
 </style>
-<pre id="out">loading...</pre>
+<div id="app"><div class="msg">loading...</div></div>
 <script src="/sdk.js"></script>
+<script src="parse.js"></script>
 <script>
-  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  hatch.on('status', (v) => {
-    if (v.error) { out.textContent = v.error; return; }
-    out.innerHTML = esc(v.out).split('\n').map((l, i) => i === 0 && l.startsWith('##') ? `<span class="h">${l}</span>`
-      : /^ ?M|^.M/.test(l) ? `<span class="m">${l}</span>` : /^(\?\?|A)/.test(l) ? `<span class="a">${l}</span>` : /^ ?D/.test(l) ? `<span class="d">${l}</span>` : l).join('\n');
+  const G = window.GitParse;
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const folded = new Set();   // section ids the user folded; in memory only
+  let last = null, shown = null;
+
+  const fileRow = (e) => {
+    const { dir, name } = G.splitPath(e.path);
+    const cls = e.code === '??' ? 'q' : e.code[0] === 'U' || e.code === 'AA' || e.code === 'DD' ? 'U' : e.code;
+    const label = e.code === '??' ? '?' : e.code.length > 1 ? 'U' : e.code;
+    const from = e.from ? ` <span class="o">← ${esc(e.from)}</span>` : '';
+    return `<div class="row" title="${esc(e.path)}"><span class="b ${cls}">${esc(label)}</span><span class="f"><span class="d">${esc(dir)}</span><span class="n">${esc(name)}</span>${from}</span></div>`;
+  };
+  const section = (id, title, list, extra = '') => {
+    if (!list.length) return '';
+    const f = folded.has(id);
+    return `<h3 class="${f ? 'fold' : ''}" data-sec="${id}"><span class="car">▾</span>${title} <span class="n">(${list.length}${extra})</span></h3>${f ? '' : list.map(fileRow).join('')}`;
+  };
+  const commitRow = (c, i, ahead, now) => {
+    const pills = c.refs.map((r) => `<span class="pill ${r.kind}">${esc(r.name)}</span>`).join('');
+    const who = c.author ? c.author[0].toUpperCase() : '?';
+    return `<div class="row c${i < ahead ? ' up' : ''}" title="${esc(`${c.hash} ${c.subject} - ${c.author}`)}"><span class="h">${esc(c.hash)}</span><span class="s">${esc(c.subject)}</span>${pills}<span class="t">${G.relTime(c.ts, now)} ${esc(who)}</span></div>`;
+  };
+
+  function view(s, now) {
+    if (s.state === 'nodir') return '<div class="msg bad">The folder this widget points at no longer exists.<br>Close it and run <code>hatch widget open git</code> in a folder that exists.</div>';
+    if (s.state === 'norepo') return '<div class="msg">Not a git repository.<br>Run <code>git init</code> here, or open the widget from inside a repository with <code>hatch widget open git</code> (it follows the shell\'s current directory).</div>';
+    const top = s.top, home = s.home, b = s.branch;
+    const detached = b.head === '(detached)';
+    let head = `<span class="branch">${esc(detached ? `detached at ${b.oid.slice(0, 7)}` : b.head || '(no branch)')}</span>`;
+    if (b.upstream) head += ` <span class="up">→ ${esc(b.upstream)}</span>`;
+    if (b.ahead) head += ` <span class="ab">↑${b.ahead}</span>`;
+    if (b.behind) head += ` <span class="ab behind">↓${b.behind}</span>`;
+    let h = `<div class="repo" title="${esc(top)}"><b>${esc(G.baseName(top))}</b><span class="path">${esc(G.shortPath(top, home, 44))}</span></div>`;
+    h += `<div class="kv"><span class="k">Head:</span><span class="v">${head}</span></div>`;
+    const dirty = s.conflicts.length + s.unstaged.length + s.staged.length + s.untracked.length;
+    if (!dirty) h += '<div class="clean">Working tree clean</div>';
+    h += section('conflicts', 'Conflicts', s.conflicts);
+    h += section('unstaged', 'Unstaged', s.unstaged);
+    h += section('staged', 'Staged', s.staged);
+    h += section('untracked', 'Untracked', s.untracked);
+    if (s.more) h += `<div class="more">+${s.more} more not shown</div>`;
+    if (s.commits.length) {
+      const f = folded.has('commits');
+      h += `<h3 class="${f ? 'fold' : ''}" data-sec="commits"><span class="car">▾</span>Recent commits <span class="n">(${s.commits.length})</span></h3>`;
+      if (!f) h += s.commits.map((c, i) => commitRow(c, i, b.ahead, now)).join('');
+    } else h += '<h3 data-sec="none" style="cursor:default">Recent commits</h3><div class="empty">no commits yet</div>';
+    return h;
+  }
+
+  // Re-render only when the markup changed, so the 3 s refresh never flickers; scroll position is restored anyway.
+  function render() {
+    if (!last) return;
+    const html = last.error ? `<div class="msg bad">${esc(last.error)}</div>` : view(G.parse(last.out), Date.now());
+    if (html === shown) return;
+    const y = window.scrollY; shown = html; app.innerHTML = html; window.scrollTo(0, y);
+  }
+  hatch.on('status', (v) => { last = v; render(); });
+  app.addEventListener('click', (e) => {
+    const h = e.target.closest('h3[data-sec]'); if (!h || h.dataset.sec === 'none') return;
+    const id = h.dataset.sec; folded.has(id) ? folded.delete(id) : folded.add(id); render();
   });
 </script>

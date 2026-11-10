@@ -1,2 +1,3 @@
-{ "title": "Git", "w": 460, "h": 300, "placement": "float",
-  "sources": [ { "name": "status", "kind": "exec", "cmd": "git status -sb 2>&1 | head -40; echo; git log --oneline -8 2>&1", "everyMs": 3000 } ] }
+{ "title": "Git", "w": 460, "h": 360, "placement": "float",
+  "sources": [ { "name": "status", "kind": "exec", "everyMs": 3000,
+    "cmd": "cd {{cwd}} 2>/dev/null || { echo @@nodir; exit 0; }; g='git --no-optional-locks -c core.quotePath=false'; echo \"@@home $HOME\"; top=$($g rev-parse --show-toplevel 2>/dev/null) || { echo @@norepo; exit 0; }; echo \"@@top $top\"; echo @@status; $g status --porcelain=v2 --branch 2>&1 | awk 'NR<=230{print;next}{n++}END{if(n)print \"@@more \" n}'; echo @@log; $g log --format='%h%x1f%s%x1f%ct%x1f%an%x1f%D' -n 12 2>/dev/null; true" } ] }

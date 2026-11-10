@@ -53,7 +53,7 @@ progress
 widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget new NAME [--from example]  scaffold widgets/NAME: from an example (cpu, log-tail, ...) or, without --from, a minimal one
   widget add NAME [DIR|FILE]        register and open (a single HTML file becomes index.html)
-  widget list | open NAME | close NAME | rm NAME | reload NAME
+  widget list | open NAME | close NAME | rm NAME | reload NAME   (open git: the git window for the current directory's repository)
   widget examples                   list the example widgets (also in the palette)
   widget generate "DESCRIPTION" [--name N]   ask \`claude -p\` to write a widget from a description, then open it
                                     (alias: popup generate; set HATCH_CLAUDE to use another claude binary)
@@ -366,6 +366,8 @@ async function main(argv) {
       checkName(name);
       // "top" is a terminal window running htop, not the old widget, so keys work
       if (sub === 'open' && name === 'top') { const p = await api('POST', '/api/examples/top/open', {}); return console.log(`top open as ${p.id}`); }
+      // "git" follows the shell: one widget per project, made by the server for this directory (the server does not know our cwd)
+      if (sub === 'open' && name === 'git') { const p = await api('POST', '/api/examples/git/open', { dir: process.cwd() }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
       const target = path.join(l.widgets, name);
       if (sub === 'open' && !fs.existsSync(path.join(target, 'index.html'))) {
         // Not installed: a bundled example of that name is copied in and opened by the server.

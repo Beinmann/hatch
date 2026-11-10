@@ -5,6 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { createBus } from './events.js';
@@ -240,10 +241,37 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     atomicWrite(path.join(l.widgets, name, 'widget.json'), JSON.stringify({ ...meta, sources: [{ ...src, path: path.join(l.log, 'server.log') }] }, null, 2));
     state.rescan();
   }
+  /** One git widget per project: `git-<folder>` with its source command pinned to that directory (shell-quoted).
+   *  The directory comes from the client, so it must be an absolute path of an existing directory; a repo subfolder
+   *  resolves to the repository root. A second folder with the same name gets a short hash of its path. */
+  function openGitFor(options) {
+    const dir = options.dir;
+    if (typeof dir !== 'string' || !path.isAbsolute(dir) || dir.includes('\0')) throw new HttpError(400, 'dir must be an absolute path');
+    let real; try { real = fs.realpathSync(dir); if (!fs.statSync(real).isDirectory()) throw new Error('not a directory'); } catch { throw new HttpError(400, `not a directory: ${dir}`); }
+    try { real = fs.realpathSync(execFileSync('git', ['--no-optional-locks', '-C', real, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim() || real); } catch { /* not a repository: the widget says so */ }
+    const slug = (path.basename(real).replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'root').slice(0, 40);
+    const project = path.basename(real) || real;
+    let name = `git-${slug}`;
+    const dirOf = (n) => { try { return JSON.parse(fs.readFileSync(path.join(l.widgets, n, 'widget.json'), 'utf8')).dir; } catch { return undefined; } };
+    if (fs.existsSync(path.join(l.widgets, name)) && dirOf(name) !== real) name = `${name}-${crypto.createHash('sha1').update(real).digest('hex').slice(0, 6)}`;
+    const target = path.join(l.widgets, name);
+    if (!fs.existsSync(target)) {
+      fs.cpSync(path.join(EXAMPLES, 'git'), target, { recursive: true });
+      const metaFile = path.join(target, 'widget.json'); const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+      const quoted = `'${real.replace(/'/g, `'\\''`)}'`;
+      meta.title = `Git: ${project}`; meta.dir = real;
+      meta.sources = meta.sources.map((src) => ({ ...src, cmd: src.cmd.replaceAll('{{cwd}}', () => quoted) }));
+      atomicWrite(metaFile, `${JSON.stringify(meta, null, 2)}\n`);
+    }
+    const windowOptions = {};
+    for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
+    state.rescan(); return state.createPanel({ type: 'widget', props: { name }, ...windowOptions });
+  }
   /** Copies an example into widgets/ (keeping an existing copy) and opens it as a window. */
   function openExample(name, options = {}) {
     if (!exampleList().some((e) => e.name === name)) throw new HttpError(404, `no example widget ${name}`);
     if (name === 'top') return openTop(options);
+    if (name === 'git' && options?.dir !== undefined) return openGitFor(options);
     if (name === 'trash') return state.listPanels().find((q) => q.type === 'trash') || state.createPanel({ type: 'trash', title: 'Trash' }); // one trash window is enough
     const dir = path.join(l.widgets, name);
     if (!fs.existsSync(dir)) { fs.cpSync(path.join(EXAMPLES, name), dir, { recursive: true }); recordShipped(stateDir, name); }

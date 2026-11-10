@@ -68,6 +68,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Notification log, shortcuts overlay | 045 034 | app.js | yes | |
 | Git window (stage, commit, diffs) | 048 | src/git.js, panels/git.js | yes | no push/pull/discard |
 | exec placeholders in widget sources | 057 | sources.js, server.js | yes | |
+| Git status widget (sections, per-project instances via `hatch widget open git`) | - | examples/widgets/git, server openGitFor | parser and server, not seen in a browser | read-only |
 | ports metric, ports and pomodoro widgets | 051 | sources.js, examples/widgets | yes | |
 | Task runner, listening ports | 047 | src/discover.js | tests only | |
 | Session report | 046 | server /api/report, ui.js | CLI only | |
