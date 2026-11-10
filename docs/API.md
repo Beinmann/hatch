@@ -54,6 +54,8 @@ a dangling link returns 404 unless a timestamp was supplied, in which case the m
 
 ## Doing things
 
+`GET /api/limits[?refresh=1]` returns the Claude plan limits `{ claude: { fiveHour, sevenDay, fetchedAt } }` (each `{ label, percent, resetsAt }`) or `{ claude: { error } }`. The server gets them from one tiny headless `claude -p` run (Haiku, no tools), cached for 10 minutes; a forced refresh is throttled to one per 30 s. The header shows `5h 42%  wk 10%` and hides itself without the Claude CLI.
+
 `POST /api/notify {text, level}`, `POST /api/copy {text}`, `POST /api/ask {question, choices?, freeText?}` then
 `GET /api/ask/ID` until `answered`, `POST /api/ask/ID/answer {answer}`. Question IDs are opaque and unique across server starts. The first answer is retained: identical retries succeed,
 conflicting answers return 409, and answers arriving after cancellation return 404. Without free text, answers must

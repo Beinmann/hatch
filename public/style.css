@@ -44,6 +44,8 @@ code{font-family:var(--mono);font-size:.92em;background:var(--accent-soft);paddi
 .menu{position:absolute;right:12px;top:100%;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 24px #0004;max-width:min(560px,92vw)}
 .menu[hidden]{display:none}
 .menu .w{font:12px var(--mono);color:var(--warn);word-break:break-word}
+#limits{display:flex;gap:8px;padding:2px 8px;font:12px var(--mono);background:none;border-color:transparent}
+#limits .lim.warm{color:var(--warn)} #limits .lim.hot{color:var(--bad);font-weight:600}
 #stage{flex:1;display:flex;min-height:0}
 #termwrap{flex:1;position:relative;min-width:0;display:flex;flex-direction:column;background:var(--term)}
 #termwrap.flash::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:2px;animation:termflash .4s ease-out}

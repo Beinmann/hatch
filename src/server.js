@@ -21,6 +21,7 @@ import { createRuns } from './runs.js';
 import * as discover from './discover.js';
 import * as gitapi from './git.js';
 import { findBackground } from './background.js';
+import { createLimits } from './limits.js';
 import { parseProxyPath, proxyHttp, proxyUpgrade } from './proxy.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
@@ -58,7 +59,7 @@ function tokenOk(given, token) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-export function createHatch({ tmuxStatus = false, viewOnly = false, root = null, stateDir, port = 0, host = '0.0.0.0', session, cwd = process.cwd(), attach = null, tmuxBin = 'tmux', procRoot = '/proc', pollState = false, findBin = which } = {}) {
+export function createHatch({ tmuxStatus = false, viewOnly = false, root = null, stateDir, port = 0, host = '0.0.0.0', session, cwd = process.cwd(), attach = null, tmuxBin = 'tmux', procRoot = '/proc', pollState = false, findBin = which, limitsProbe } = {}) {
   stateDir = path.resolve(stateDir);
   fsapi.setRoot(root || process.env.HATCH_ROOT || null); // module-level: one Hatch per process
   const configWarnings = [];
@@ -157,6 +158,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     return c.def;
   }
 
+  const limits = createLimits({ probe: limitsProbe });
   let calls = 0; const MAX_CALLS = 4;
   const subs = new Map(); // key -> { cids:Set, off }
   const byClient = new Map(); // cid -> Set of keys
@@ -431,6 +433,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       }
       if ((g = /^\/api\/progress\/steps\/([^/]+)$/.exec(p)) && m === 'PATCH') { state.patchStep(decodeURIComponent(g[1]), await readJson(req)); return json(res, 200, { ok: true }); }
 
+      if (p === '/api/limits' && m === 'GET') return json(res, 200, await limits.get(url.searchParams.get('refresh') === '1'));
       if (p === '/api/desktop' && m === 'POST') return json(res, 200, openDesktop());
       if (p === '/api/examples' && m === 'GET') return json(res, 200, exampleList());
       if ((g = /^\/api\/examples\/([\w-]+)\/open$/.exec(p)) && m === 'POST') return json(res, 200, openExample(g[1], await readJson(req)));

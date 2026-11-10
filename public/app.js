@@ -13,6 +13,7 @@ import output from './panels/output.js';
 import terminalPanel from './panels/terminal.js';
 import gitPanel from './panels/git.js';
 import trashPanel from './panels/trash.js';
+import { initLimits } from './limits.js';
 import { createPalette } from './palette.js';
 import { calc, formatResult } from './calc.js';
 import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, literalFor, leaderAction, isEnter } from './leader.js';
@@ -622,6 +623,7 @@ const palette = createPalette({
       add(`${p.minimized ? 'Restore' : 'Minimize'} window: ${p.title}`, p.id, () => ctx.patch(p.id, { minimized: !p.minimized }));
     }
     add('Search in files...', 'grep', () => { const q = (window.prompt('Search for (regex), in the server directory') || '').trim(); if (!q) return; const sq = (x) => `'${x.replace(/'/g, `'\\''`)}'`; const cmd = `if command -v rg >/dev/null 2>&1; then rg -n --no-heading --color never -- ${sq(q)} .; else grep -rnI --exclude-dir=.git --exclude-dir=node_modules -- ${sq(q)} .; fi`; return api('POST', '/api/runs', { cmd, cwd: info.cwd }).then((r) => api('POST', '/api/panels', { type: 'output', title: `grep ${q}`.slice(0, 40), props: { cmd: `grep ${q}`, runId: r.id, cwd: info.cwd, rerun: cmd } })); });
+    add('Refresh Claude limits', '5-hour and weekly usage', () => limitsUi.refresh());
     add('Open git window', 'status, stage, commit', () => api('POST', '/api/panels', { type: 'git', title: 'Git', props: { dir: info.cwd } }));
     add('Open trash window', 'list and restore closed windows', () => api('POST', '/api/panels', { type: 'trash', title: 'Trash' }));
     add('Git diff', '', () => api('POST', '/api/runs', { cmd: 'git --no-pager diff --no-color', cwd: info.cwd }).then((r) => api('POST', '/api/panels', { type: 'output', title: 'git diff', props: { cmd: 'git diff', runId: r.id, cwd: info.cwd, kind: 'diff', rerun: 'git --no-pager diff --no-color' } })));
@@ -659,3 +661,7 @@ function loadCustom(c) {
 
 // expose for tests / debugging
 window.hatchApp = { wm, term, api, widgets };
+
+// Claude plan limits in the header (hidden without the Claude CLI)
+const limitsUi = initLimits({ el, api, toast, node: $('limits') });
+if (!isViewOnly()) limitsUi.start();
