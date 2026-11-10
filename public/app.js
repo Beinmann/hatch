@@ -276,7 +276,7 @@ async function uploadImage(blob, name) {
     if (!res.ok) throw new Error(d.error);
     typePath(d.path); // the absolute path on the box: that is what Claude reads
     toast(`Saved ${d.path.split('/').slice(-2).join('/')}`);
-    if (store.get('openImage', true)) api('POST', '/api/panels', { type: 'image', title: d.name, props: { src: d.path } }).catch(() => {});
+    if (store.get('openImage', false)) api('POST', '/api/panels', { type: 'image', title: d.name, props: { src: d.path } }).catch(() => {});
     term.focus();
     return d;
   } catch (e) { toast(`Upload failed: ${e.message}`, 'bad'); }
@@ -329,7 +329,7 @@ wrap.addEventListener('drop', (e) => {
 });
 
 // ---- settings controls ----
-$('optImage').checked = store.get('openImage', true);
+$('optImage').checked = store.get('openImage', false);
 $('optImage').addEventListener('change', (e) => store.set('openImage', e.target.checked));
 $('optLeader').value = store.get('leader', DEFAULT_LEADER);
 $('optLeader').addEventListener('change', (e) => {

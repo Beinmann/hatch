@@ -6,8 +6,8 @@ that is a git repo, open the printed URL, and open a terminal on the same box fo
 
 1. **The terminal.** Type a few commands, reload the page: the screen and history are back. Ctrl+Shift+F finds text in
    the scrollback. Print `src/app.js:12` or a URL and click it.
-2. **Paste a screenshot** anywhere on the page. The path is typed into the terminal and an image window opens. Click
-   Annotate, circle something, Save and paste path.
+2. **Paste a screenshot** anywhere on the page. The path is typed into the terminal. Tick "Show pasted images in a window" in the settings (off by default) to open it as an
+   image window too, then click Annotate, circle something, Save and paste path.
 3. **The palette** (the leader key Ctrl+Space, then p). Look at what it offers: it is the front door for most things below.
 4. **The desktop.** `hatch desktop`, then palette > Tile floating windows. Drag, resize, minimise a few windows,
    double-click a title bar. Try Zen mode (Ctrl+Shift+Z).

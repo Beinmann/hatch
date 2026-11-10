@@ -92,7 +92,7 @@ session; windows that already exist only get them in new windows.
   terminal. Ctrl+Shift+F searches the scrollback (Enter next, Shift+Enter previous, Esc closes). Mouse mode, `allow-passthrough` and the tmux prefix are your own tmux config; Hatch never touches `~/.tmux.conf`.
 - **Image paste and drop.** Paste a screenshot (or drop an image) anywhere on the page: it is saved to
   `uploads/N.ext` on the box, the absolute path is typed into the terminal (as a bracketed paste when the program asks
-  for it, as Claude Code does), and an image window opens. Claude Code can then read the file. No resizing happens.
+  for it, as Claude Code does). An image window only opens if you tick "Show pasted images in a window" in the settings (off by default). Claude Code can then read the file. No resizing happens.
 - **Any file.** Dropping or pasting a non-image file on the page saves it into `uploads/` under its own name (numbered if taken) and types its path; file rows in the files window can be dragged into the terminal to type their path.
 - **Image inspection.** Images fit the popup and show their dimensions and zoom. Click the image (once its window is focused; the first click only focuses) or the zoom button for fit/actual size, use the wheel or +/− to zoom, 0 to fit and 1 for actual size. Enlarged images remain scrollable. “Use path” pastes the quoted path back into the terminal. SVG display is supported alongside PNG, JPEG, GIF and WebP.
 - **Annotate.** An image window's Actions → Annotate command draws a pen, boxes and arrows (four colours, Undo) over the image; Save and paste path stores a marked-up PNG as a new upload and types its path. Failed saves keep the marks so you can retry; closing unsaved annotations asks before discarding them.
