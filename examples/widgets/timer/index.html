@@ -97,8 +97,11 @@
     const [id, dur, start, end, st, label = ''] = p; if (![dur, start, end].every((x) => /^\d+$/.test(x)) || !'rpd'.includes(st) || st.length !== 1) return null;
     return { id, dur: +dur, start: +start, end: +end, st, label };
   }
+  // hatch.call resolves with { out, code, json?, error? }, not with the parsed JSON itself, and a failing command
+  // resolves too: turn a failure into a rejection and hand back the parsed value.
+  const call = (source, arg) => hatch.call(source, arg).then((v) => { if (!v || v.error || v.code) throw new Error((v && v.error) || 'the command failed'); return v.json; });
   let queue = Promise.resolve(); // one write at a time, so two quick edits of one timer cannot leave two files behind
-  const persist = (source, arg) => { queue = queue.then(() => hatch.call(source, arg)).catch((e) => { hint(`Could not save: ${e.message}`, 'err'); hatch.log(`timer: ${e.message}`); }); };
+  const persist = (source, arg) => { queue = queue.then(() => call(source, arg)).catch((e) => { hint(`Could not save: ${e.message}`, 'err'); hatch.log(`timer: ${e.message}`); }); };
   const save = (t) => persist('put', fname(t));
 
   // ---- timers ----
@@ -201,13 +204,13 @@
 
   // ---- load what is saved; anything that ran out while the widget was closed is marked finished (and announced once) ----
   hatch.ready(() => {
-    hatch.call('list').then((names) => {
+    call('list').then((names) => {
       const seen = new Map();
       for (const n of names || []) { const t = unname(n); if (t) seen.set(t.id, t); } // a stray duplicate id: the last one listed wins
       timers = [...seen.values()]; loaded = true; const now = Date.now();
       for (const t of timers) if (t.st === 'r' && t.end <= now) finish(t, true);
       sync();
-    }, (e) => { hint(`Could not load saved timers: ${e.message}`, 'err'); loaded = true; });
+    }).catch((e) => { hint(`Could not load saved timers: ${e.message}`, 'err'); loaded = true; });
     inp.focus();
   });
   sync();

@@ -66,8 +66,11 @@
     if (!'fsl'.includes(mode) || mode.length !== 1 || !'rp'.includes(st) || st.length !== 1 || ![v, done, day, f, s, l].every((x) => /^\d+$/.test(x))) return null;
     return { mode, st, v: +v, done: +done, day: +day, len: { f: +f || 25, s: +s || 5, l: +l || 15 }, auto: auto === '0' ? 0 : 1 };
   }
+  // hatch.call resolves with { out, code, json?, error? }, not with the parsed JSON itself, and a failing command
+  // resolves too: turn a failure into a rejection and hand back the parsed value.
+  const call = (source, arg) => hatch.call(source, arg).then((v) => { if (!v || v.error || v.code) throw new Error((v && v.error) || 'the command failed'); return v.json; });
   let queue = Promise.resolve(); // one write at a time so two quick changes cannot leave two files behind
-  const persist = (source, arg) => { queue = queue.then(() => hatch.call(source, arg)).catch((e) => { $('sub').textContent = `Could not save: ${e.message}`; hatch.log(`pomodoro: ${e.message}`); }); };
+  const persist = (source, arg) => { queue = queue.then(() => call(source, arg)).catch((e) => { $('sub').textContent = `Could not save: ${e.message}`; hatch.log(`pomodoro: ${e.message}`); }); };
   const save = () => persist('put', fname());
 
   // ---- phases ----
@@ -135,11 +138,11 @@
 
   // ---- load; phases that ended while the widget was closed are caught up (and announced once) ----
   hatch.ready(() => {
-    hatch.call('list').then((names) => {
+    call('list').then((names) => {
       const found = (names || []).map(unname).filter(Boolean); if (found.length) S = found[found.length - 1];
       if (S.day !== today()) { S.day = today(); S.done = 0; }
       fill(); loaded = true; advance(Date.now(), false); draw();
-    }, (e) => { $('sub').textContent = `Could not load: ${e.message}`; loaded = true; });
+    }).catch((e) => { $('sub').textContent = `Could not load: ${e.message}`; loaded = true; });
   });
   fill(); draw();
 </script>
