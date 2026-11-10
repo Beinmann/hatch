@@ -1,0 +1,35 @@
+{
+ "title": "Timer",
+ "w": 360,
+ "h": 340,
+ "placement": "float",
+ "sources": [
+  {
+   "name": "list",
+   "kind": "exec",
+   "json": true,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; cd \"$D\" && printf '['; s=''; for f in $(ls 2>/dev/null | grep -E '^[a-z0-9]+(\\.[A-Za-z0-9_-]+){4,5}\\.t$' | head -60); do printf '%s\"%s\"' \"$s\" \"$f\"; s=,; done; printf ']'"
+  },
+  {
+   "name": "put",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 10000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; case \"$HATCH_ARG\" in *.t) ;; *) echo \"not a timer file\" >&2; exit 1;; esac; id=\"${HATCH_ARG%%.*}\"; case \"$id\" in \"\"|*[!a-z0-9]*) echo \"bad timer id\" >&2; exit 1;; esac; rm -f \"$D/$id\".*.t; : > \"$D/$HATCH_ARG\"; printf '{}'"
+  },
+  {
+   "name": "del",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 10000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; case \"$HATCH_ARG\" in \"\"|*[!a-z0-9]*) echo \"bad timer id\" >&2; exit 1;; esac; rm -f \"$D/$HATCH_ARG\".*.t; printf '{}'"
+  },
+  {
+   "name": "notify",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 10000,
+   "cmd": "command -v hatch >/dev/null || { echo \"the hatch command is not on the server PATH\" >&2; exit 1; }; hatch notify \"$(printf '%s' \"$HATCH_ARG\" | tr _ ' ')\" --level done --state {{state}} >/dev/null || exit 1; printf '{}'"
+  }
+ ]
+}

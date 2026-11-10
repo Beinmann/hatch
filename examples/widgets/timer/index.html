@@ -1,0 +1,214 @@
+<!doctype html>
+<meta charset="utf-8">
+<!-- Timers: type "5m", "1h30", "90s", "14:30" (clock time) or "10m pasta" and press Enter. Several can run at once.
+     Every timer is one empty file in this widget's data/ folder; the NAME is the data:
+       ID.DURATION_MS.START_MS.END_MS.STATE[.LABEL].t     STATE: r running, p paused (END_MS = time left), d finished
+     so timers survive closing the widget, reloading the tab or restarting Hatch (a widget iframe has no storage of its own,
+     and hatch.call only passes file-name-like words, hence this encoding). Labels keep letters, digits, - and _ (_ shows as a space). -->
+<style>
+  :root{--warn:#f0a95a}
+  *{box-sizing:border-box}
+  body{margin:0;padding:12px;background:var(--bg,#111);color:var(--fg,#eee);font-family:var(--mono,monospace);min-height:100vh}
+  #add{display:flex;gap:8px;align-items:center}
+  #in{flex:1;min-width:0;font:inherit;font-size:15px;color:inherit;background:color-mix(in srgb,var(--fg,#eee) 7%,transparent);border:1px solid color-mix(in srgb,var(--fg,#eee) 14%,transparent);border-radius:999px;padding:9px 16px;outline:none;transition:border-color .15s,box-shadow .15s}
+  #in:focus{border-color:var(--accent,#4fd1c0);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#4fd1c0) 22%,transparent)}
+  #in::placeholder{color:var(--muted,#888);opacity:.8}
+  #go{font:inherit;font-weight:600;border:0;border-radius:999px;padding:9px 16px;cursor:pointer;color:var(--bg,#111);background:var(--accent,#4fd1c0);transition:transform .1s,opacity .15s}
+  #go:active{transform:scale(.95)} #go:disabled{opacity:.3;cursor:default}
+  #hint{height:18px;margin:6px 4px 0;font-size:12px;color:var(--muted,#888);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #hint.ok{color:var(--accent,#4fd1c0)} #hint.err{color:var(--warn)}
+  #chips{display:flex;gap:6px;margin:6px 0 12px;flex-wrap:wrap}
+  #chips button{font:inherit;font-size:12px;color:var(--muted,#888);background:transparent;border:1px solid color-mix(in srgb,var(--fg,#eee) 16%,transparent);border-radius:999px;padding:3px 11px;cursor:pointer;transition:all .15s}
+  #chips button:hover{color:var(--accent,#4fd1c0);border-color:var(--accent,#4fd1c0)}
+  #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:10px}
+  #empty{color:var(--muted,#888);font-size:13px;text-align:center;padding:26px 0;opacity:.8}
+  .card{position:relative;container-type:inline-size;padding:10px 8px 6px;border-radius:16px;text-align:center;background:color-mix(in srgb,var(--fg,#eee) 5%,transparent);border:1px solid color-mix(in srgb,var(--fg,#eee) 9%,transparent);animation:in .22s ease-out}
+  @keyframes in{from{opacity:0;transform:scale(.92)}}
+  .ring{display:block;width:100%;aspect-ratio:1;transform:rotate(-90deg)}
+  .ring circle{fill:none;stroke-width:6;stroke-linecap:round}
+  .trk{stroke:color-mix(in srgb,var(--fg,#eee) 11%,transparent)}
+  .bar{stroke:var(--accent,#4fd1c0);transition:stroke .3s}
+  .mid{position:absolute;left:0;right:0;top:10px;aspect-ratio:1;margin:0 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+  .t{font-size:clamp(15px,17cqw,28px);font-weight:600;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+  .s{font-size:clamp(9px,8cqw,11px);color:var(--muted,#888);margin-top:2px}
+  .lab{font-size:12px;height:17px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ctl{display:flex;justify-content:center;gap:2px;height:26px;opacity:0;transition:opacity .15s}
+  .card:hover .ctl,.card:focus-within .ctl{opacity:1}
+  @media (hover:none){.ctl{opacity:1}}
+  .ctl button{font:inherit;font-size:11px;min-width:26px;height:24px;color:var(--muted,#888);background:transparent;border:0;border-radius:8px;cursor:pointer;display:grid;place-items:center;padding:0 6px}
+  .ctl button:hover{color:var(--fg,#eee);background:color-mix(in srgb,var(--fg,#eee) 11%,transparent)}
+  .ctl svg{width:13px;height:13px;fill:currentColor}
+  .p .bar{stroke:var(--muted,#888)} .p .t{opacity:.6}
+  .d{border-color:var(--warn);animation:in .22s ease-out,glow 1.2s ease-in-out infinite}
+  .d .bar{stroke:var(--warn)} .d .t{color:var(--warn)}
+  @keyframes glow{50%{box-shadow:0 0 16px color-mix(in srgb,var(--warn) 45%,transparent)}}
+  @media (prefers-reduced-motion:reduce){.card,.d{animation:none}}
+</style>
+<div id="add"><input id="in" placeholder="5m   1h30   90s   14:30   10m pasta" autocomplete="off" spellcheck="false" aria-label="Time and optional label"><button id="go" disabled>Start</button></div>
+<div id="hint"></div>
+<div id="chips"></div>
+<div id="grid"></div><div id="empty">No timers yet. Type a time above and press Enter.</div>
+<script src="/sdk.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const C = 2 * Math.PI * 44, MAX = 99 * 3600e3, WARN = '#f0a95a';
+  let timers = []; // { id, dur, start, end, st, label }; end is the time left (ms) while st is 'p'
+  const els = new Map(); let loaded = false;
+
+  // ---- parsing what the user typed -> { ms, label, desc } or { error } ----
+  const U = '(?:hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)';
+  const UNITS = new RegExp(`^\\s*((?:\\d+(?:\\.\\d+)?\\s*${U}(?![a-z])\\s*)+)(\\d+)?\\s*(.*)$`, 'i');
+  const COLON = /^\s*(?:at\s+)?(\d{1,3}):(\d{2})(?::(\d{2}))?\s*(am|pm)?(?![a-z])\s*(.*)$/i;
+  const BARE = /^\s*(\d+(?:\.\d+)?)(?![\d:.a-z])\s*(.*)$/i;
+  const MULT = { h: 3600e3, m: 60e3, s: 1e3 };
+  function parse(text, now = Date.now()) {
+    let m; let ms; let label; let clock = false;
+    if ((m = COLON.exec(text))) {
+      const [, a, b, c, ap, rest] = m; label = rest;
+      if (c !== undefined) ms = (+a * 3600 + +b * 60 + +c) * 1e3;           // 1:30:00 = a length of time
+      else if (ap || +a <= 23) {                                              // 14:30, 2:30pm = a time of day, next time it happens
+        let h = +a; if (ap) { if (h < 1 || h > 12) return { error: 'am/pm needs an hour from 1 to 12' }; h = (h % 12) + (/pm/i.test(ap) ? 12 : 0); }
+        if (+b > 59) return { error: 'minutes must be 0-59' };
+        const t = new Date(now); t.setHours(h, +b, 0, 0); if (t.getTime() <= now) t.setDate(t.getDate() + 1);
+        ms = Math.round((t.getTime() - now) / 1e3) * 1e3; clock = true;
+      } else ms = (+a * 60 + +b) * 1e3;                                       // 25:00 = 25 minutes
+    } else if ((m = UNITS.exec(text))) {
+      let last = 's'; ms = 0;
+      for (const [, n, u] of m[1].matchAll(/(\d+(?:\.\d+)?)\s*([a-z]+)/gi)) { last = u[0].toLowerCase(); ms += +n * MULT[last]; }
+      if (m[2]) ms += +m[2] * (last === 'h' ? 60e3 : 1e3);                    // 1h30 = 1 h 30 min, 5m30 = 5 min 30 s
+      label = m[3];
+    } else if ((m = BARE.exec(text))) { ms = +m[1] * 60e3; label = m[2]; }    // a bare number is minutes
+    else return { error: text.trim() ? 'Try 5m, 1h30, 90s or 14:30' : '' };
+    ms = Math.round(ms / 1e3) * 1e3;
+    if (!(ms >= 1e3)) return { error: 'At least 1 second' };
+    if (ms > MAX) return { error: 'At most 99 hours' };
+    label = label.replace(/[^A-Za-z0-9 _-]/g, '').trim().replace(/\s+/g, '_').slice(0, 24);
+    return { ms, label, clock, desc: human(ms) };
+  }
+  const human = (ms) => { const s = Math.round(ms / 1e3); const h = Math.floor(s / 3600), mi = Math.floor(s % 3600 / 60), se = s % 60; return [h && `${h} h`, mi && `${mi} min`, se && `${se} s`].filter(Boolean).join(' '); };
+  const clockAt = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const mmss = (ms) => { const s = Math.max(0, Math.ceil(ms / 1e3)); const h = Math.floor(s / 3600); const p = (n) => String(n).padStart(2, '0'); return (h ? `${h}:` : '') + `${p(Math.floor(s % 3600 / 60))}:${p(s % 60)}`; };
+  const left = (t, now) => t.st === 'r' ? t.end - now : t.st === 'p' ? t.end : 0;
+
+  // ---- storage: timers are file names in data/, written through the exec sources in widget.json ----
+  const fname = (t) => `${t.id}.${t.dur}.${t.start}.${Math.round(t.end)}.${t.st}${t.label ? '.' + t.label : ''}.t`;
+  function unname(n) {
+    const p = n.replace(/\.t$/, '').split('.'); if (p.length < 5 || p.length > 6 || !/^[a-z0-9]+$/.test(p[0])) return null;
+    const [id, dur, start, end, st, label = ''] = p; if (![dur, start, end].every((x) => /^\d+$/.test(x)) || !'rpd'.includes(st) || st.length !== 1) return null;
+    return { id, dur: +dur, start: +start, end: +end, st, label };
+  }
+  let queue = Promise.resolve(); // one write at a time, so two quick edits of one timer cannot leave two files behind
+  const persist = (source, arg) => { queue = queue.then(() => hatch.call(source, arg)).catch((e) => { hint(`Could not save: ${e.message}`, 'err'); hatch.log(`timer: ${e.message}`); }); };
+  const save = (t) => persist('put', fname(t));
+
+  // ---- timers ----
+  const newId = () => 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  function add(ms, label) {
+    const now = Date.now(); const t = { id: newId(), dur: ms, start: now, end: now + ms, st: 'r', label };
+    timers.push(t); save(t); sync(); unlock();
+  }
+  function act(t, what) {
+    const now = Date.now();
+    if (what === 'x') { timers = timers.filter((x) => x !== t); persist('del', t.id); }
+    else if (what === 'pause') { if (t.st === 'r') { t.end = Math.max(0, t.end - now); t.st = 'p'; } else if (t.st === 'p') { t.end = now + t.end; t.st = 'r'; } save(t); }
+    else if (what === 'plus') { if (t.st === 'd') { t.dur = 60e3; t.end = now + 60e3; t.st = 'r'; } else { t.dur += 60e3; t.end += 60e3; } t.dur = Math.min(t.dur, MAX); save(t); }
+    else if (what === 'again') { t.start = now; t.end = now + t.dur; t.st = 'r'; save(t); }
+    sync();
+  }
+
+  // ---- finishing: notify once, chime ----
+  let ctx = null;
+  function unlock() { try { ctx ||= new AudioContext(); if (ctx.state === 'suspended') ctx.resume(); } catch { /* no audio: the card and the notification still work */ } }
+  addEventListener('pointerdown', unlock, true); addEventListener('keydown', unlock, true);
+  function chime() { // three short two-note rings; synthesized so there is no file to ship
+    if (!ctx || ctx.state !== 'running') return;
+    for (let r = 0; r < 3; r++) [880, 1320].forEach((f, i) => {
+      const t0 = ctx.currentTime + r * 0.9 + i * 0.16, o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + 0.55);
+    });
+  }
+  function finish(t, late) {
+    t.st = 'd'; t.end = 0; save(t);
+    const name = t.label ? t.label : 'Timer';
+    persist('notify', `${name}_finished${late ? '_-_while_the_widget_was_closed' : ''}`.slice(0, 190));
+    if (!late) chime();
+  }
+
+  // ---- drawing ----
+  const ICON = { pause: '<path d="M5 4h4v16H5zM15 4h4v16h-4z"/>', play: '<path d="M7 4l13 8-13 8z"/>', again: '<path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/>', x: '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/>' };
+  const btn = (title, inner, fn) => { const b = document.createElement('button'); b.title = title; b.setAttribute('aria-label', title); b.innerHTML = inner; b.onclick = fn; return b; };
+  const svg = (k) => `<svg viewBox="0 0 24 24">${ICON[k]}</svg>`;
+  function build(t) {
+    const c = document.createElement('div'); c.className = 'card';
+    c.innerHTML = '<svg class="ring" viewBox="0 0 100 100"><circle class="trk" cx="50" cy="50" r="44"/><circle class="bar" cx="50" cy="50" r="44"/></svg><div class="mid"><div class="t"></div><div class="s"></div></div><div class="lab"></div><div class="ctl"></div>';
+    c.querySelector('.bar').style.strokeDasharray = C;
+    const ctl = c.querySelector('.ctl'); const r = { c, bar: c.querySelector('.bar'), t: c.querySelector('.t'), s: c.querySelector('.s'), lab: c.querySelector('.lab'), ctl, st: null };
+    c.querySelector('.lab').textContent = t.label.replace(/_/g, ' ');
+    c.querySelector('.lab').title = t.label.replace(/_/g, ' ');
+    r.main = btn('', '', () => act(t, t.st === 'd' ? 'again' : 'pause'));
+    r.plus = btn('Add one minute', '+1m', () => act(t, 'plus'));
+    ctl.append(r.main, r.plus, btn('Remove', svg('x'), () => act(t, 'x')));
+    return r;
+  }
+  function sync() { // add and remove cards, keep them ordered: finished first, then by when they end, paused last
+    const ids = new Set(timers.map((t) => t.id));
+    for (const [id, r] of els) if (!ids.has(id)) { r.c.remove(); els.delete(id); }
+    const rank = (t) => (t.st === 'd' ? 0 : t.st === 'r' ? 1 : 2);
+    const order = [...timers].sort((a, b) => rank(a) - rank(b) || (a.st === 'r' ? a.end - b.end : a.start - b.start));
+    order.forEach((t, i) => {
+      let r = els.get(t.id); if (!r) { r = build(t); els.set(t.id, r); }
+      r.t0 = t; if (grid.children[i] !== r.c) grid.insertBefore(r.c, grid.children[i] || null);
+    });
+    $('empty').hidden = timers.length > 0; draw();
+  }
+  function draw() {
+    const now = Date.now();
+    for (const t of timers) {
+      if (t.st === 'r' && t.end <= now) finish(t, false), sync();
+    }
+    for (const [id, r] of els) {
+      const t = timers.find((x) => x.id === id); if (!t) continue; const rem = left(t, now);
+      r.t.textContent = mmss(t.st === 'd' ? 0 : rem);
+      r.bar.style.strokeDashoffset = t.st === 'd' ? 0 : C * (1 - Math.min(1, Math.max(0, rem / t.dur)));
+      r.s.textContent = t.st === 'r' ? 'ends ' + clockAt(t.end) : t.st === 'p' ? 'paused' : 'done';
+      if (r.st !== t.st) {
+        r.st = t.st; r.c.classList.toggle('p', t.st === 'p'); r.c.classList.toggle('d', t.st === 'd');
+        const k = t.st === 'r' ? 'pause' : t.st === 'p' ? 'play' : 'again'; r.main.innerHTML = svg(k);
+        const title = { pause: 'Pause', play: 'Resume', again: 'Restart' }[k]; r.main.title = title; r.main.setAttribute('aria-label', title);
+        r.plus.hidden = t.st === 'd';
+      }
+    }
+  }
+  setInterval(draw, 250);
+
+  // ---- the input ----
+  const hint = (text, cls = '') => { $('hint').textContent = text; $('hint').className = cls; };
+  const inp = $('in');
+  function preview() {
+    const p = parse(inp.value); $('go').disabled = !!p.error || !inp.value.trim();
+    if (!inp.value.trim()) return hint('');
+    if (p.error) return hint(p.error, p.error ? 'err' : '');
+    hint(`${p.desc} · ends ${clockAt(Date.now() + p.ms)}${p.label ? ' · ' + p.label.replace(/_/g, ' ') : ''}`, 'ok');
+  }
+  function submit() { const p = parse(inp.value); if (p.error || !inp.value.trim()) return; add(p.ms, p.label); inp.value = ''; preview(); }
+  inp.oninput = preview;
+  inp.onkeydown = (e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') { inp.value = ''; preview(); } };
+  $('go').onclick = submit;
+  for (const [txt, ms] of [['1m', 60e3], ['5m', 300e3], ['10m', 600e3], ['25m', 1500e3]]) {
+    const b = document.createElement('button'); b.textContent = txt; b.onclick = () => add(ms, ''); $('chips').append(b);
+  }
+
+  // ---- load what is saved; anything that ran out while the widget was closed is marked finished (and announced once) ----
+  hatch.ready(() => {
+    hatch.call('list').then((names) => {
+      const seen = new Map();
+      for (const n of names || []) { const t = unname(n); if (t) seen.set(t.id, t); } // a stray duplicate id: the last one listed wins
+      timers = [...seen.values()]; loaded = true; const now = Date.now();
+      for (const t of timers) if (t.st === 'r' && t.end <= now) finish(t, true);
+      sync();
+    }, (e) => { hint(`Could not load saved timers: ${e.message}`, 'err'); loaded = true; });
+    inp.focus();
+  });
+  sync();
+</script>
