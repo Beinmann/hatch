@@ -21,6 +21,7 @@ import { createRuns } from './runs.js';
 import * as discover from './discover.js';
 import { widgetStatus, recordShipped, staleMessage } from './update-widgets.js';
 import * as gitapi from './git.js';
+import { setFx, readFx, FxError, EFFECTS } from './fx.js';
 import { findBackground } from './background.js';
 import { createLimits } from './limits.js';
 import { parseProxyPath, proxyHttp, proxyUpgrade } from './proxy.js';
@@ -443,6 +444,13 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(fs.readFileSync(f, 'utf8'));
       }
 
+      if (p === '/api/fx') {
+        if (m === 'GET') return json(res, 200, { effect: readFx(stateDir).effect, effects: EFFECTS });
+        if (m === 'POST') { // the file is the source of truth; the watcher then pushes the change to every open page
+          try { const effect = setFx(stateDir, (await readJson(req)).effect); state.rescan(); return json(res, 200, { effect, effects: EFFECTS }); }
+          catch (e) { if (e instanceof FxError) throw new HttpError(400, e.message); throw e; }
+        }
+      }
       if (p === '/api/limits' && m === 'GET') return json(res, 200, await limits.get(url.searchParams.get('refresh') === '1'));
       if (p === '/api/desktop' && m === 'POST') return json(res, 200, openDesktop());
       if (p === '/api/examples' && m === 'GET') return json(res, 200, exampleList());

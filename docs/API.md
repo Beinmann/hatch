@@ -109,3 +109,7 @@ POST `/api/examples/NAME/open` accepts `w`, `h`, `maximized`, `autoFocus` and `w
 
 The widget SDK forwards Ctrl+Shift+G, Ctrl+Shift+P, the leader chord (sent to the widget in `init`, default Ctrl+Space) and the key pressed after it to the host, so every leader action works with a widget focused. The host accepts shortcut messages
 only from the focused widget frame, and answers with `hatch-leader` so the SDK knows whether the leader is still armed. Existing widget source subscriptions are unchanged.
+
+## Background effect
+
+`GET /api/fx` answers `{effect, effects}` (`effect` is `null` when off); `POST /api/fx {effect: "matrix"|"rain"|"off"}` saves it to `fx.json` in the state dir (400 for an unknown name). The SSE `snapshot` carries `fx` and an `fx` event `{effect}` follows every change, including hand edits of the file.

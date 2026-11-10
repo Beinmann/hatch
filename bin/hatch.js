@@ -16,6 +16,7 @@ import { doctor, printChecks } from '../src/doctor.js';
 import { layout, NAME_RE, STEP_STATUS } from '../src/state.js';
 import * as background from '../src/background.js';
 import * as transparency from '../src/transparency.js';
+import { setFx, readFx, FxError, EFFECTS } from '../src/fx.js';
 import { parseEvery } from '../src/schedules.js';
 
 // Server commands used to live under `hatch`. Forward them to `hatch-server` with a one-line notice so running setups,
@@ -94,6 +95,9 @@ ask the user (blocks until they answer in the browser; prints the answer)
   set background none               remove the background image
   set transparency 0..100           make the terminal and panels see-through: 0 = opaque, 30 = default, 100 = fully transparent (saved in transparency.json)
   set background-mode MODE          how it fits: fill (cover, default) | fit (contain) | stretch | center | tile (saved in background.json)
+background effects (behind the terminal text, visible at any transparency)
+  fx                                show the active effect and the list
+  fx matrix | rain | off            switch the effect (saved in fx.json; open pages update by themselves)
 desktop
   desktop                           open a set of live gadgets (graph, system, clock, top, git, log) plus the progress panel
 git (Magit-lite window)
@@ -675,6 +679,11 @@ async function main(argv) {
       need(sub, 'usage: copy "text"   or   some-command | hatch copy -'); const text = sub === '-' ? fs.readFileSync(0, 'utf8') : [sub, ...rest].join(' ');
       need(text, 'nothing to copy'); const r = await api('POST', '/api/copy', { text, label: o.label || '' });
       return console.log(`sent ${r.bytes} bytes to the browser clipboard`);
+    }
+    case 'fx': {
+      if (!sub) { const f = readFx(dir); return say(o, { effect: f.effect, effects: EFFECTS }, `active: ${f.effect || 'none'}${f.problem ? ` (${f.problem})` : ''}\neffects: ${EFFECTS.join(', ')}, off`); }
+      try { const e = setFx(dir, sub); return console.log(e ? `fx ${e} on; \`hatch fx off\` turns it off. Open pages update by themselves.` : 'fx off'); }
+      catch (e) { if (e instanceof FxError) throw new CliError(e.message); throw e; }
     }
     case 'set': {
       const usage = 'usage: set background IMAGE|none, set background-mode fill|fit|stretch|center|tile, set transparency 0..100';

@@ -59,6 +59,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Runnable notes (Run button on shell blocks) | 063 | md.js, panels/note.js | yes | |
 | Editable notes | 022 | note.js | no | |
 | Named progress plans (--plan, HATCH_PLAN, one window each) | - | plans.js, state.js, server.js, panels/progress.js | server and CLI | window not browser-tested |
+| Background effects (hatch fx matrix/rain/off) | - | src/fx.js, public/fx.js, public/fx/ | file, API, CLI, stub-canvas run | visuals not seen in a browser |
 | Progress timeline | 014 | progress.js | yes | |
 | Recent files, clipboard history, find-file | 042 | app.js | partly | |
 | Saved prompts, Zen mode, workspace chords | 049 | app.js, ui.js | yes | |

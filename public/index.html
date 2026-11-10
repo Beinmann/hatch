@@ -18,6 +18,7 @@
   <strong class="brand">Hatch</strong>
   <span id="conn" class="chip" title="terminal connection">connecting</span>
   <span id="session" class="muted"></span>
+  <button id="fxhint" type="button" hidden title="Background effect is on; click to turn it off"></button>
   <span id="wsbar" class="chips" title="Workspaces (virtual desktops)"></span>
   <span class="grow"></span>
   <button id="limits" type="button" hidden></button>
@@ -39,6 +40,7 @@
 <section id="progress-strip" hidden aria-label="Progress overview"></section>
 <main id="stage">
   <section id="termwrap">
+    <canvas id="fx" aria-hidden="true"></canvas>
     <div id="term"></div>
     <div id="floats"></div>
     <div id="findbar" hidden><input id="findq" type="text" placeholder="Find in scrollback" aria-label="Find in terminal" autocomplete="off" spellcheck="false"><span id="findn" class="muted small"></span><button id="findprev" type="button" title="Previous (Shift+Enter)">↑</button><button id="findnext" type="button" title="Next (Enter)">↓</button><button id="findx" type="button" title="Close (Esc)">×</button></div>

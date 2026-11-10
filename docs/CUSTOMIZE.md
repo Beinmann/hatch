@@ -20,6 +20,13 @@ background shows through; `set transparency 0` gives the opaque look. It is kept
 `{"percent":30}`; edit it by hand if you like. An invalid value is refused and the saved one stays; a broken file shows a
 warning and uses 30.
 
+**Background effects.** `hatch fx matrix` (dim film-style digital rain) or `hatch fx rain` (rain running down a pane of glass) draws an animated
+canvas behind the terminal text; `hatch fx off` removes it and `hatch fx` shows what is active. The terminal's own background is always
+transparent, and the canvas has its own opaque base, so the effect shows at any transparency setting (including 0). It takes no mouse or
+keyboard input, pauses in a hidden tab, is capped at 30 frames per second and shows one still frame when the system asks for reduced motion.
+The choice lives in `.hatch/fx.json` (`{"effect":"matrix"}`; delete it or write `"off"` to clear it; a bad file warns and means off) and open
+pages follow it by themselves. While an effect is on the header shows a small `fx: hatch fx off` button that turns it off; the palette has one entry per effect. To add an effect, drop a module with `start(canvas, {animate})`, `stop()` and `resize()` into `public/fx/`, register it in `public/fx.js` and add its name to `src/fx.js`.
+
 ## `custom.css`
 
 Override the palette variables or anything else.

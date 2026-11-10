@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { findBackground, readMode } from './background.js';
+import { readFx } from './fx.js';
 import { readTransparency, DEFAULT_TRANSPARENCY } from './transparency.js';
 import { sizeKey, sizeFor, readSizes, rememberSize } from './sizes.js';
 import { createPlans } from './plans.js';
@@ -160,6 +161,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   let progress = { diagram: '', steps: [] };
   let progressSig = '';
   let background = null; // { url, rev } or null
+  let fx = null; // name of the background effect or null
   let transparency = DEFAULT_TRANSPARENCY;  // percent, 0 = opaque
   let watcher = null; let pollTimer = null; let debounce = null; let closed = false;
 
@@ -279,11 +281,18 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     transparency = t.percent; emit('transparency', { transparency });
   }
 
+  function scanFx() {
+    const f = readFx(dir);
+    warn('fx', f.problem || null);
+    if (f.effect === fx) return;
+    fx = f.effect; emit('fx', { effect: fx });
+  }
+
   function scanSizes() { warn('sizes', readSizes(dir).problem || null); }
 
   function rescan() {
     if (closed) return;
-    try { scanPanels(); scanProgress(); plansApi.scan(); scanWidgets(); scanBackground(); scanTransparency(); scanSizes(); } catch (e) { log(`rescan failed: ${e.message}`); }
+    try { scanPanels(); scanProgress(); plansApi.scan(); scanWidgets(); scanBackground(); scanTransparency(); scanFx(); scanSizes(); } catch (e) { log(`rescan failed: ${e.message}`); }
   }
 
   function schedule() { clearTimeout(debounce); debounce = setTimeout(rescan, DEBOUNCE_MS); }
@@ -576,7 +585,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   return {
     plan,
     layout: l, start, close, rescan,
-    snapshot: () => ({ background, transparency, panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
+    snapshot: () => ({ background, transparency, fx, panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
     listPanels: () => [...panels.values()], getPanel: (id) => panels.get(id),
     createPanel, patchPanel, convertPanel, deletePanel, listTrash, restoreTrash, emptyTrash,
     getProgress: () => progress, setDiagram, setSteps, patchStep, updateStep,
