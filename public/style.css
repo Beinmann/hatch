@@ -22,12 +22,12 @@ html.has-bg[data-bgmode=fit] body{background-size:contain}
 html.has-bg[data-bgmode=stretch] body{background-size:100% 100%}
 html.has-bg[data-bgmode=center] body{background-size:auto}
 html.has-bg[data-bgmode=tile] body{background-size:auto;background-repeat:repeat;background-position:0 0}
-html.has-bg #termwrap{background:color-mix(in srgb,var(--term) 70%,transparent)} html.has-bg #dock{background:transparent}
+html.has-bg #termwrap{background:color-mix(in srgb,var(--term) 70%,transparent)} html.has-bg #dock{background:color-mix(in srgb,var(--term) 70%,transparent)}
 /* xterm.css paints .xterm-viewport opaque black, which hid the image behind the terminal */
 html.has-bg #term .xterm,html.has-bg #term .xterm-viewport,html.has-bg #term .xterm-screen{background-color:transparent!important}
 html.has-bg #bar,html.has-bg #hint{background:color-mix(in srgb,var(--surface) 80%,transparent)}
 /* transparency (--opa = 100 - percent, set by app.js): terminal and panel backgrounds; always active, so 0 is fully opaque (the image is hidden behind them) and overrides the has-bg tints above */
-html.has-tr #termwrap{background:color-mix(in srgb,var(--term) var(--opa),transparent)} html.has-tr #dock{background:transparent}
+html.has-tr #termwrap{background:color-mix(in srgb,var(--term) var(--opa),transparent)} html.has-tr #dock{background:color-mix(in srgb,var(--term) var(--opa),transparent)} /* the dock backdrop uses the terminal's tint, so only the split line separates them; the fx canvas lives inside #termwrap only */
 html.has-tr #term .xterm,html.has-tr #term .xterm-viewport,html.has-tr #term .xterm-screen{background-color:transparent!important}
 html.has-tr #bar,html.has-tr #hint,html.has-tr #keys,html.has-tr #taskbar,html.has-tr #progress-strip,html.has-tr .win,html.has-tr .win iframe{background:color-mix(in srgb,var(--surface) var(--opa),transparent)}
 html.has-tr .win .tb{background:color-mix(in srgb,var(--bg) var(--opa),transparent)}
