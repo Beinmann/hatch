@@ -1,1 +1,28 @@
-{ "title": "Pomodoro", "w": 280, "h": 190, "placement": "float", "sources": [] }
+{
+ "title": "Pomodoro",
+ "w": 300,
+ "h": 380,
+ "placement": "float",
+ "sources": [
+  {
+   "name": "list",
+   "kind": "exec",
+   "json": true,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; cd \"$D\" && printf '['; s=''; for f in $(ls 2>/dev/null | grep -E '^s(\\.[A-Za-z0-9_-]+){9}\\.t$' | head -5); do printf '%s\"%s\"' \"$s\" \"$f\"; s=,; done; printf ']'"
+  },
+  {
+   "name": "put",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 10000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; case \"$HATCH_ARG\" in s.*.t) ;; *) echo \"not a pomodoro state file\" >&2; exit 1;; esac; rm -f \"$D\"/s.*.t; : > \"$D/$HATCH_ARG\"; printf '{}'"
+  },
+  {
+   "name": "notify",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 10000,
+   "cmd": "command -v hatch >/dev/null || { echo \"the hatch command is not on the server PATH\" >&2; exit 1; }; hatch notify \"$(printf '%s' \"$HATCH_ARG\" | tr _ ' ')\" --level done --state {{state}} >/dev/null || exit 1; printf '{}'"
+  }
+ ]
+}

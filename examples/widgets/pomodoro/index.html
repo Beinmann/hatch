@@ -1,19 +1,145 @@
 <!doctype html>
 <meta charset="utf-8">
-<!-- A 25/5 focus timer. Purely client side (no sources). The state is kept in this iframe, so reloading the widget resets it. -->
+<!-- Pomodoro: focus, short break, and a long break after every 4th focus session. Space starts or pauses.
+     The state is ONE empty file in this widget's data/ folder, its name is the data (a widget iframe has no storage of its own,
+     and hatch.call only passes file-name-like words):
+       s.MODE.V.STATE.DONE.DAY.FOCUS.SHORT.LONG.AUTO.t
+     MODE f/s/l, STATE r running (V = end time, ms since 1970) or p paused (V = ms left), DONE = focus sessions finished on DAY (yyyymmdd),
+     the three lengths in minutes, AUTO 1 = the next phase starts by itself. Reopening the widget catches up with phases that ended meanwhile. -->
 <style>
-  body{margin:0;padding:12px;background:var(--bg,#111);color:var(--fg,#eee);font-family:var(--mono,monospace);text-align:center}
-  #t{font-size:44px;letter-spacing:.04em;color:var(--accent,#4fd1c0)} #m{opacity:.7;font-size:12px;margin:2px 0 10px} button{font:inherit;color:inherit;background:transparent;border:1px solid #888;border-radius:4px;padding:3px 10px;margin:0 3px;cursor:pointer}
-  body.brk #t{color:#f0a95a}
+  :root{--warn:#f0a95a}
+  *{box-sizing:border-box}
+  body{margin:0;padding:12px;background:var(--bg,#111);color:var(--fg,#eee);font-family:var(--mono,monospace);text-align:center;min-height:100vh;user-select:none}
+  #wrap{max-width:260px;margin:0 auto;position:relative}
+  #ring{display:block;width:100%;aspect-ratio:1;transform:rotate(-90deg)}
+  #ring circle{fill:none;stroke-width:5;stroke-linecap:round}
+  #trk{stroke:color-mix(in srgb,var(--fg,#eee) 11%,transparent)}
+  #bar{stroke:var(--accent,#4fd1c0);transition:stroke .3s,stroke-dashoffset .25s linear}
+  #mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+  #t{font-size:clamp(28px,22vw,52px);font-weight:600;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+  #m{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted,#888);margin-top:2px}
+  #dots{display:flex;gap:7px;justify-content:center;margin-top:8px}
+  #dots i{width:8px;height:8px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--fg,#eee) 35%,transparent);transition:all .25s}
+  #dots i.on{background:var(--accent,#4fd1c0);border-color:var(--accent,#4fd1c0)}
+  body.brk #bar{stroke:var(--warn)} body.brk #t{color:var(--warn)} body.brk #dots i.on{background:var(--warn);border-color:var(--warn)}
+  body.paused #t{opacity:.55}
+  #btns{display:flex;justify-content:center;gap:8px;margin-top:12px}
+  button{font:inherit;color:inherit;background:transparent;border:1px solid color-mix(in srgb,var(--fg,#eee) 22%,transparent);border-radius:999px;height:32px;padding:0 14px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+  button:hover{border-color:var(--accent,#4fd1c0);color:var(--accent,#4fd1c0)}
+  #go{background:var(--accent,#4fd1c0);color:var(--bg,#111);border-color:transparent;font-weight:600;min-width:92px;justify-content:center}
+  #go:hover{color:var(--bg,#111);filter:brightness(1.1)} body.brk #go{background:var(--warn)}
+  button svg{width:13px;height:13px;fill:currentColor}
+  #set{display:none;margin-top:12px;font-size:12px;color:var(--muted,#888);text-align:left;gap:6px 10px;grid-template-columns:auto 64px;justify-content:center;align-items:center}
+  body.cfg #set{display:grid}
+  #set input[type=number]{font:inherit;color:inherit;width:64px;background:color-mix(in srgb,var(--fg,#eee) 7%,transparent);border:1px solid color-mix(in srgb,var(--fg,#eee) 14%,transparent);border-radius:8px;padding:3px 6px}
+  #set input:focus{outline:none;border-color:var(--accent,#4fd1c0)}
+  #sub{font-size:11px;color:var(--muted,#888);margin-top:8px;height:14px}
 </style>
-<div id="t">25:00</div><div id="m">focus</div>
-<button id="go">Start</button><button id="reset">Reset</button>
+<div id="wrap">
+  <svg id="ring" viewBox="0 0 100 100"><circle id="trk" cx="50" cy="50" r="45"/><circle id="bar" cx="50" cy="50" r="45"/></svg>
+  <div id="mid"><div id="t">25:00</div><div id="m">focus</div></div>
+</div>
+<div id="dots"><i></i><i></i><i></i><i></i></div>
+<div id="btns"><button id="go"></button><button id="skip" title="Skip to the next phase" aria-label="Skip to the next phase"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8zM17 4h3v16h-3z"/></svg></button><button id="reset" title="Back to a fresh focus session" aria-label="Reset"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg></button><button id="cfg" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M4 6h10v2H4zM18 6h2v2h-2zM4 11h4v2H4zM12 11h8v2h-8zM4 16h12v2H4zM20 16h0v2h0zM14 4h2v6h-2zM8 9h2v6H8zM16 14h2v6h-2z"/></svg></button></div>
+<div id="sub"></div>
+<div id="set">
+  <label for="lf">Focus (min)</label><input id="lf" type="number" min="1" max="180">
+  <label for="ls">Short break</label><input id="ls" type="number" min="1" max="60">
+  <label for="ll">Long break</label><input id="ll" type="number" min="1" max="120">
+  <label for="au">Auto-start next</label><input id="au" type="checkbox">
+</div>
 <script src="/sdk.js"></script>
 <script>
-  const LEN = { focus: 25 * 60, break: 5 * 60 }; let mode = 'focus'; let left = LEN.focus; let run = null; let done = 0;
-  const show = () => { t.textContent = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0'); m.textContent = mode + (done ? ` · ${done} done` : ''); document.body.classList.toggle('brk', mode === 'break'); };
-  const tick = () => { if (--left <= 0) { if (mode === 'focus') done++; mode = mode === 'focus' ? 'break' : 'focus'; left = LEN[mode]; hatch.log(`pomodoro: ${mode} starts`); } show(); };
-  go.onclick = () => { if (run) { clearInterval(run); run = null; go.textContent = 'Start'; } else { run = setInterval(tick, 1000); go.textContent = 'Pause'; } };
-  reset.onclick = () => { clearInterval(run); run = null; go.textContent = 'Start'; mode = 'focus'; left = LEN.focus; show(); };
-  show();
+  const $ = (id) => document.getElementById(id);
+  const C = 2 * Math.PI * 45, NAME = { f: 'focus', s: 'short break', l: 'long break' };
+  const today = () => { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); };
+  const fresh = () => ({ mode: 'f', st: 'p', v: 25 * 60e3, done: 0, day: today(), len: { f: 25, s: 5, l: 15 }, auto: 1 });
+  let S = fresh(); let loaded = false;
+  const ms = (m) => S.len[m] * 60e3;
+  const left = (now) => S.st === 'r' ? S.v - now : S.v;
+
+  // ---- storage (see the comment at the top) ----
+  const fname = () => `s.${S.mode}.${Math.round(S.v)}.${S.st}.${S.done}.${S.day}.${S.len.f}.${S.len.s}.${S.len.l}.${S.auto}.t`;
+  function unname(n) {
+    const p = n.replace(/\.t$/, '').split('.'); if (p.length !== 10 || p[0] !== 's') return null;
+    const [, mode, v, st, done, day, f, s, l, auto] = p;
+    if (!'fsl'.includes(mode) || mode.length !== 1 || !'rp'.includes(st) || st.length !== 1 || ![v, done, day, f, s, l].every((x) => /^\d+$/.test(x))) return null;
+    return { mode, st, v: +v, done: +done, day: +day, len: { f: +f || 25, s: +s || 5, l: +l || 15 }, auto: auto === '0' ? 0 : 1 };
+  }
+  let queue = Promise.resolve(); // one write at a time so two quick changes cannot leave two files behind
+  const persist = (source, arg) => { queue = queue.then(() => hatch.call(source, arg)).catch((e) => { $('sub').textContent = `Could not save: ${e.message}`; hatch.log(`pomodoro: ${e.message}`); }); };
+  const save = () => persist('put', fname());
+
+  // ---- phases ----
+  let ctx = null;
+  function unlock() { try { ctx ||= new AudioContext(); if (ctx.state === 'suspended') ctx.resume(); } catch { /* no audio: the notification still works */ } }
+  addEventListener('pointerdown', unlock, true); addEventListener('keydown', unlock, true);
+  function chime() {
+    if (!ctx || ctx.state !== 'running') return;
+    [660, 880, 1320].forEach((f, i) => {
+      const t0 = ctx.currentTime + i * 0.18, o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + 0.65);
+    });
+  }
+  // End the current phase and move to the next. With auto-start the next one begins where the last one ended (so catching up after
+  // a closed widget stays exact); without it, the next phase waits, paused, for Start.
+  function step(endedAt) {
+    if (S.day !== today()) { S.day = today(); S.done = 0; }
+    if (S.mode === 'f') S.done++;
+    S.mode = S.mode === 'f' ? (S.done % 4 === 0 ? 'l' : 's') : 'f';
+    if (S.auto) { S.st = 'r'; S.v = endedAt + ms(S.mode); } else { S.st = 'p'; S.v = ms(S.mode); }
+  }
+  function advance(now, live) {
+    const from = S.mode; let n = 0;
+    while (S.st === 'r' && S.v <= now && n++ < 200) step(S.v);
+    if (!n) return;
+    save();
+    persist('notify', `Pomodoro_${NAME[from].replace(' ', '_')}_over_-_${NAME[S.mode].replace(' ', '_')}${live ? '' : '_-_while_the_widget_was_closed'}`);
+    if (live) chime();
+  }
+  const phaseStart = (now) => { if (S.day !== today()) { S.day = today(); S.done = 0; } return now; };
+  function toggle() {
+    const now = Date.now();
+    if (S.st === 'r') { S.v = Math.max(0, S.v - now); S.st = 'p'; } else { phaseStart(now); S.v = now + S.v; S.st = 'r'; }
+    save(); draw(); unlock();
+  }
+  function skip() { const now = Date.now(); const was = S.st === 'r'; S.v = now; S.st = 'r'; step(now); if (!was) { S.st = 'p'; S.v = ms(S.mode); } save(); draw(); }
+  function reset() { S.mode = 'f'; S.st = 'p'; S.v = ms('f'); save(); draw(); }
+
+  // ---- drawing ----
+  const mmss = (t) => { const s = Math.max(0, Math.ceil(t / 1e3)); const h = Math.floor(s / 3600); const p = (n) => String(n).padStart(2, '0'); return (h ? h + ':' : '') + p(Math.floor(s % 3600 / 60)) + ':' + p(s % 60); };
+  $('bar').style.strokeDasharray = C;
+  function draw() {
+    const now = Date.now(); if (loaded) advance(now, true);
+    const l = Math.max(0, left(now)), tot = ms(S.mode);
+    $('t').textContent = mmss(l); $('m').textContent = NAME[S.mode];
+    $('bar').style.strokeDashoffset = C * (1 - Math.min(1, l / tot));
+    document.body.classList.toggle('brk', S.mode !== 'f'); document.body.classList.toggle('paused', S.st === 'p');
+    const filled = S.done % 4 || (S.mode === 'l' ? 4 : 0);
+    [...$('dots').children].forEach((d, i) => d.classList.toggle('on', i < filled));
+    $('go').textContent = S.st === 'r' ? 'Pause' : (l < tot ? 'Resume' : 'Start');
+    if (!$('sub').textContent.startsWith('Could')) $('sub').textContent = S.done ? `${S.done} focus session${S.done === 1 ? '' : 's'} today` : '';
+    document.title = `${mmss(l)} ${NAME[S.mode]}`;
+  }
+  setInterval(draw, 250);
+
+  // ---- settings ----
+  const num = (el, key) => { el.onchange = () => { const n = Math.min(+el.max, Math.max(1, Math.round(+el.value) || S.len[key])); el.value = n; S.len[key] = n; if (S.st === 'p' && S.mode === key) S.v = ms(key); save(); draw(); }; };
+  num($('lf'), 'f'); num($('ls'), 's'); num($('ll'), 'l');
+  $('au').onchange = () => { S.auto = $('au').checked ? 1 : 0; save(); };
+  $('cfg').onclick = () => document.body.classList.toggle('cfg');
+  const fill = () => { $('lf').value = S.len.f; $('ls').value = S.len.s; $('ll').value = S.len.l; $('au').checked = !!S.auto; };
+  $('go').onclick = toggle; $('skip').onclick = skip; $('reset').onclick = reset;
+  addEventListener('keydown', (e) => { if (e.code === 'Space' && !e.target.closest?.('input,button') && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); toggle(); } });
+
+  // ---- load; phases that ended while the widget was closed are caught up (and announced once) ----
+  hatch.ready(() => {
+    hatch.call('list').then((names) => {
+      const found = (names || []).map(unname).filter(Boolean); if (found.length) S = found[found.length - 1];
+      if (S.day !== today()) { S.day = today(); S.done = 0; }
+      fill(); loaded = true; advance(Date.now(), false); draw();
+    }, (e) => { $('sub').textContent = `Could not load: ${e.message}`; loaded = true; });
+  });
+  fill(); draw();
 </script>
