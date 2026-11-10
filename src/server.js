@@ -621,8 +621,8 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
 
   return {
     viewOnly, server, state, term, bus, sources, token: cfg.token, session: cfg.session, config: cfg,
-    async listen() {
-      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); });
+    async listen(at = port) { // `at` lets the caller retry on another port after EADDRINUSE; the same server object can listen again
+      await new Promise((resolve, reject) => { const fail = (e) => { server.off('listening', resolve); reject(e); }; server.once('error', fail); server.listen(at, host, () => { server.off('error', fail); resolve(); }); });
       const actual = server.address().port;
       saveConfig(stateDir, { ...cfg, port: actual, host });
       cfg.port = actual;

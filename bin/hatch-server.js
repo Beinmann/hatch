@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { firstCommandIndex, withoutOption } from '../src/cli-options.js';
 import { spawnSync } from 'node:child_process';
 import { createHatch } from '../src/server.js';
+import { DEFAULT_PORT, listenFromPort } from '../src/free-port.js';
 import { doctor, printChecks } from '../src/doctor.js';
 import { findStateDir, findServerStateDir, isValidStateDir, readConfig } from '../src/find.js';
 
@@ -24,7 +25,7 @@ usage:
   hatch-server service [--state DIR] [--port N] [--host H]   print a systemd user unit that starts hatch-server serve (nothing is installed)
   hatch-server --help | --version
 
-serve defaults: host 0.0.0.0 (reachable from your LAN), port 7070, state ./.hatch of the current directory (parent directories are not searched), session derived from the project.
+serve defaults: host 0.0.0.0 (reachable from your LAN), port 7070 (the next free port when that is taken and no --port is given; it is saved in config.json), state ./.hatch of the current directory (parent directories are not searched), session derived from the project.
 If the state dir has no valid config.json, serve|start|restart ask before creating it; --yes creates it without asking. Without a terminal to ask on they fail unless --yes is given, so
 background and service setups should pass --yes or an existing --state DIR.
 Put .hatch/ in your .gitignore. The token is a convenience, not security: use only on isolated networks.`;
@@ -166,17 +167,19 @@ WantedBy=default.target
 if (cmd !== 'serve') fail(`unknown command ${cmd}. Try \`hatch-server --help\`.`);
 
 const host = o.host || '0.0.0.0';
-const port = o.port === undefined ? 7070 : Number(o.port);
+const explicitPort = o.port !== undefined;
+const port = explicitPort ? Number(o.port) : DEFAULT_PORT;
 if (!Number.isInteger(port) || port < 0 || port > 65535) fail('--port must be a number between 0 and 65535');
 const stateDir = findServerStateDir({ state: o.state });
 await confirmStateDir(stateDir);
 let hatch;
 try { hatch = createHatch({ tmuxStatus: o['tmux-status'] === 'true', viewOnly: o['view-only'] === 'true' || process.argv.includes('--view-only'), root: o.root, stateDir, host, port, session: o.session, cwd: path.resolve(o.cwd || process.cwd()) }); }
 catch (e) { fail(['EACCES', 'EROFS', 'EPERM', 'ENOENT'].includes(e.code) ? `cannot create the state dir ${stateDir} (${e.code}). Run hatch-server in a writable directory or pass --state DIR.` : e.message); }
-try { await hatch.listen(); } catch (e) {
-  fail(e.code === 'EADDRINUSE' ? `port ${port} is in use. Pick another with --port N (is hatch-server already running?)` : e.message);
+let actual;
+try { const r = await listenFromPort(hatch, port, { explicit: explicitPort }); actual = r.port; if (r.moved) console.log(`Port ${port} is in use (another Hatch?), so this instance uses ${actual} and saved it in ${path.join(stateDir, 'config.json')}; hatch commands run from here find it there.`); }
+catch (e) {
+  fail(e.code === 'EADDRINUSE' ? (explicitPort ? `port ${port} is in use. Pick another with --port N (is hatch-server already running?)` : `ports ${port} to ${port + 49} are all in use. Pick one with --port N.`) : e.message);
 }
-const actual = hatch.server.address().port;
 const shown = host === '0.0.0.0' || host === '::' ? lanAddress() : host;
 console.log(`Hatch ${hatch.config.session ? '' : ''}is running (tmux session "${hatch.session}", state ${stateDir})`);
 console.log(`\n  http://${shown}:${actual}/?t=${hatch.token}\n`);

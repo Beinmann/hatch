@@ -26,7 +26,7 @@ Zero npm dependencies: Node 20+, python3 (standard library, for the pty), tmux, 
 ```
 ./install.sh                 # links hatch, hatch-server, hatch-mcp (and the deprecated hatch-ui) into ~/.local/bin
 cd your-project
-hatch-server serve                  # prints  http://<box-ip>:7070/?t=<token>
+hatch-server serve                  # prints  http://<box-ip>:7070/?t=<token>  (7070 taken: the next free port, saved in config.json)
 ```
 
 Open the URL in your browser. New projects receive a stable tmux session name derived from the project and state path (shown at startup); existing configured session names are retained. Closing the tab or restarting the server

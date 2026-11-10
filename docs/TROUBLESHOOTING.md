@@ -11,7 +11,7 @@ Start with `hatch-server doctor` (node, python3, tmux, optional tools, state dir
 | Banner "The terminal cannot start: ... tmux" | tmux is not installed or not on PATH for the server. Install it (`apt install tmux`) and press Reconnect. |
 | Terminal text is garbled after a reconnect | Press Reconnect; in tmux `Ctrl+B r` (if bound) or `tmux refresh-client` repaints. |
 | `cannot create the state dir ... (EACCES)` | Start `hatch-server serve` in a writable directory or pass `--state DIR`. |
-| `port 7070 is in use` | Another Hatch (or program) listens there: `--port N`, or find it with palette > Open port ... / `hatch ports`. |
+| `port N is in use` | You passed `--port N` and something listens there: pick another, or find it with palette > Open port ... / `hatch ports`. Without `--port`, a taken 7070 is skipped: the server takes the next free port and saves it in `config.json`, so `hatch` run from that instance finds it. |
 | `hatch: cannot reach Hatch` (exit 2) | The server is not running (start `hatch-server serve`), or `hatch` found another state dir: pass `--state DIR` or set `HATCH_STATE`. |
 | Pasting an image does nothing | Use Ctrl+V while the page has focus (not the browser's address bar). On `http://` over a LAN address some browsers restrict the clipboard; dropping the file onto the terminal always works. |
 | No desktop notifications | They need permission (Settings > Enable desktop notifications) and a secure context (`https://` or localhost). Toasts, the title blink and the notification log work without. |
