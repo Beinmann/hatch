@@ -39,11 +39,11 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   function layoutFloat(w) {
     const p = w.panel; const n = w.node;
     const maxW = floats.clientWidth || 800; const maxH = floats.clientHeight || 600;
-    const width = Math.min(p.w || 420, maxW); const height = Math.min(p.h || 300, maxH);
+    const width = Math.max(MIN_W, Math.min(p.w || 420, maxW)); const height = Math.max(MIN_H, Math.min(p.h || 300, maxH));
     n.style.width = `${width}px`; n.style.height = `${height}px`;
     n.style.left = `${Math.max(0, Math.min(p.x ?? 40, maxW - 60))}px`; n.style.top = `${Math.max(0, Math.min(p.y ?? 40, maxH - 40))}px`;
   }
-  function layoutDock(w) { w.node.style.cssText = `height:${w.panel.h || 260}px`; }
+  function layoutDock(w) { w.node.style.cssText = `height:${Math.max(MIN_H, w.panel.h || 260)}px`; }
 
   function mount(w) {
     const p = w.panel;

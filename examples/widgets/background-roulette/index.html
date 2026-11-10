@@ -42,7 +42,6 @@
   var go = document.getElementById('go'), grid = document.getElementById('grid'),
       msg = document.getElementById('msg'), panel = document.getElementById('panel'), metaEl = document.getElementById('meta');
   var imgs = [], current = null, busy = false, confirming = null;
-  var MIN_H = 240, MAX_H = 720, lastH = 0;
 
   function url(n) { return '/widgets/' + hatch.name + '/data/' + encodeURIComponent(n); }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} }
@@ -54,12 +53,6 @@
     if (!m) return i.n + ' (no source information)';
     return i.n + '\n' + (info && info.author ? 'by ' + info.author + '\n' : '') + 'picsum.photos/id/' + m.id +
       (info && info.url ? '\n' + info.url : '') + '\ndownloaded ' + (m.downloaded || '?') + (m.width ? ', ' + m.width + 'x' + m.height : '');
-  }
-
-  // grow or shrink the window with the grid (the page scrolls beyond MAX_H)
-  function fit() {
-    var h = Math.max(MIN_H, Math.min(MAX_H, Math.ceil(panel.scrollHeight) + 34));
-    if (h !== lastH) { lastH = h; hatch.resize(window.innerWidth, h); }
   }
 
   function showCurrent() {
@@ -90,7 +83,6 @@
     var cur = imgs.find(function (i) { return i.n === current; });
     metaEl.textContent = cur ? describe(cur).replace(/\n/g, ' \u00b7 ') : '';
     if (!busy) msg.textContent = imgs.length ? 'saved images: ' + imgs.length : 'no images yet: click the button (downloads from picsum.photos)';
-    fit();
   }
 
   // gallery, dl and del answer {json: [{n: file name, m: sidecar or null}, ...]}, newest first
@@ -133,7 +125,6 @@
   };
 
   hatch.on('gallery', function (v) { if (v && v.error) status('failed: ' + v.error); else if (!busy) setList(v); });
-  addEventListener('resize', fit);
 </script>
 </body>
 </html>
