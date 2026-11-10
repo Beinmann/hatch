@@ -70,4 +70,8 @@
       } catch (err) { say(err.message, true); }
     }
   });
+  // Put the cursor in the field when the widget opens and whenever the widget gets focus (window focus fires when the
+  // page focuses this frame; `autofocus` alone does not count inside an iframe that is not yet focused).
+  addEventListener('focus', () => $in.focus());
+  $in.focus();
 </script>
