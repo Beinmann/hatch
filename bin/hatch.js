@@ -382,7 +382,11 @@ async function main(argv) {
       // add and open: wait briefly for the watcher so the server knows the widget (it reads widget.json for defaults)
       await new Promise((r) => setTimeout(r, 250));
       const p = await api('POST', '/api/panels', { type: 'widget', props: { name } });
-      return console.log(`widget ${name} open as ${p.id}`);
+      console.log(`widget ${name} open as ${p.id}`);
+      if (sub === 'open') { // a shipped example that changed since this instance copied it: say how to refresh (best effort)
+        try { const ex = (await api('GET', '/api/examples')).find((e) => e.name === name && e.stale); if (ex) console.error(`hatch: ${ex.hint}`); } catch { /* the hint is optional */ }
+      }
+      return;
     }
     case 'image': {
       const file = sub; need(file, 'usage: image PATH [--title T]');

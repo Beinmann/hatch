@@ -19,6 +19,7 @@ import { createWatches, checkWatches } from './watches.js';
 import { createSchedules, checkSchedules } from './schedules.js';
 import { createRuns } from './runs.js';
 import * as discover from './discover.js';
+import { widgetStatus, recordShipped, staleMessage } from './update-widgets.js';
 import * as gitapi from './git.js';
 import { findBackground } from './background.js';
 import { createLimits } from './limits.js';
@@ -226,7 +227,8 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const DESKTOP = [['graph', 20, 20, 440, 210], ['sysinfo', 480, 20, 300, 210], ['clock', 800, 20, 300, 190], ['top', 20, 250, 520, 270], ['git', 560, 250, 500, 270], ['log-tail', 20, 540, 520, 200]];
   const exampleList = () => fs.readdirSync(EXAMPLES, { withFileTypes: true }).filter((e) => e.isDirectory() && NAME_RE.test(e.name)).map((e) => {
     let title = e.name; try { title = JSON.parse(fs.readFileSync(path.join(EXAMPLES, e.name, 'widget.json'), 'utf8')).title || e.name; } catch { /* keep the name */ }
-    return { name: e.name, title };
+    const stale = fs.existsSync(path.join(l.widgets, e.name)) && widgetStatus(stateDir, e.name) === 'stale';
+    return { name: e.name, title, ...(stale && { stale: true, hint: staleMessage(e.name) }) };
   }).concat([{ name: 'trash', title: 'Trash', open: state.listPanels().some((q) => q.type === 'trash') }]) // built in: a panel type, not a folder in examples/
     .sort((a, b) => a.name.localeCompare(b.name));
   // The example tails /var/log/syslog, which many boxes lack or do not let us read: fall back to Hatch's own log.
@@ -243,7 +245,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     if (name === 'top') return openTop(options);
     if (name === 'trash') return state.listPanels().find((q) => q.type === 'trash') || state.createPanel({ type: 'trash', title: 'Trash' }); // one trash window is enough
     const dir = path.join(l.widgets, name);
-    if (!fs.existsSync(dir)) fs.cpSync(path.join(EXAMPLES, name), dir, { recursive: true });
+    if (!fs.existsSync(dir)) { fs.cpSync(path.join(EXAMPLES, name), dir, { recursive: true }); recordShipped(stateDir, name); }
     if (name === 'log-tail') useReadableLog(name);
     const windowOptions = {};
     for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws']) if (options?.[key] !== undefined) windowOptions[key] = options[key];

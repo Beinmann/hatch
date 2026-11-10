@@ -606,7 +606,7 @@ const palette = createPalette({
     add('Restore last minimized popup', 'leader u', () => { if (!wm.restoreNext()) toast('No minimized popups', 'info', 1500); });
     add('Open URL in a window...', '', () => { const u = prompt2('URL to open (the browser must reach it)'); return u && api('POST', '/api/panels', { type: 'iframe', title: u, props: { url: u } }); });
     add('Open all example widgets', 'every default popup at its default size', async () => { for (const x of await get('/api/examples')) await api('POST', `/api/examples/${x.name}/open`, {}); });
-    try { for (const x of await get('/api/examples')) add(`Example widget: ${x.title}`, x.name, () => api('POST', `/api/examples/${x.name}/open`, {})); } catch { /* none */ }
+    try { for (const x of await get('/api/examples')) add(`Example widget: ${x.title}`, x.stale ? `${x.name} (newer version shipped: hatch-server update-widgets ${x.name})` : x.name, () => api('POST', `/api/examples/${x.name}/open`, {}).then((r) => { if (x.stale) toast(x.hint, 'warn'); return r; })); } catch { /* none */ }
     for (const w of widgets.values()) add(`Open widget: ${w.name}`, w.meta?.title || '', () => api('POST', '/api/panels', { type: 'widget', props: { name: w.name } }));
     for (const p of wm.all()) {
       add(`Switch to popup: ${p.title}`, `${p.type}${p.minimized ? ' · minimized' : ''} · ${p.ws || 'main'}`, () => {
