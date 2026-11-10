@@ -1,14 +1,14 @@
 <!doctype html>
 <meta charset="utf-8">
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
   canvas{display:block;width:100%;height:100%}
 </style>
 <canvas id="c" title="click: speed"></canvas>
 <script src="/sdk.js"></script>
 <script>
-  // Falling glyph columns. Colours come from the theme (--accent, --bg); the canvas is cleared with a
-  // translucent fill so trails fade while a desktop background image still shows through.
+  // Falling glyph columns on solid black (a transparent canvas showed the window's own light background). The accent colour
+  // comes from the theme; trails fade by painting translucent black over the previous frame.
   const cv = document.getElementById('c'), ctx = cv.getContext('2d');
   const css = (n, d) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d;
   const GLYPHS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾅﾆﾇﾈﾉ0123456789:=*+-<>'.split('');
@@ -17,12 +17,12 @@
     const r = devicePixelRatio || 1;
     cv.width = Math.max(1, cv.clientWidth * r); cv.height = Math.max(1, cv.clientHeight * r);
     ctx.setTransform(r, 0, 0, r, 0, 0);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.clientWidth, cv.clientHeight); // resizing clears the canvas
     cols = Array.from({ length: Math.ceil(cv.clientWidth / SIZE) }, () => -Math.random() * 30);
   }
   function step() {
     const w = cv.clientWidth, h = cv.clientHeight;
-    ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(0, 0, w, h);
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(0,0,0,.1)'; ctx.fillRect(0, 0, w, h);
     ctx.font = SIZE + 'px ' + css('--mono', 'monospace');
     const accent = css('--accent', '#4fd1c0');
     cols.forEach((y, i) => {
