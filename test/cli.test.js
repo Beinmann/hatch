@@ -95,6 +95,18 @@ test('example widgets are valid: every source in widget.json passes checkSource 
   }
 });
 
+test('widget new: without --from a minimal template, with --from a copy of that example, unknown example refused', async () => {
+  const h = await startHatch();
+  try {
+    let r = await ui(['widget', 'new', 'mini'], { state: h.stateDir }); assert.equal(r.status, 0, r.stderr);
+    assert.match(fs.readFileSync(path.join(h.stateDir, 'widgets/mini/index.html'), 'utf8'), /sdk\.js/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(h.stateDir, 'widgets/mini/widget.json'), 'utf8')).title, 'mini');
+    r = await ui(['widget', 'new', 'c2', '--from', 'clock'], { state: h.stateDir }); assert.equal(r.status, 0, r.stderr);
+    assert.ok(fs.existsSync(path.join(h.stateDir, 'widgets/c2/index.html')));
+    r = await ui(['widget', 'new', 'x', '--from', 'blank'], { state: h.stateDir }); assert.equal(r.status, 1); assert.match(r.stderr, /no example blank/);
+  } finally { await h.close(); }
+});
+
 test('ask: the CLI blocks until an answer arrives; defaults, free text, timeout and cancel', async () => {
   const h = await startHatch(); const s = h.stateDir;
   try {
@@ -263,7 +275,7 @@ test('export/import: a setup moves between state dirs without the token; existin
   const { spawnSync } = await import('node:child_process'); if (spawnSync('tar', ['--version']).status !== 0) return;
   const a = await startHatch(); const b = await startHatch(); const out = path.join(tmp(), 'setup.tgz');
   try {
-    await ui(['cmd', 'add', 'tests', 'npm test'], { state: a.stateDir }); await ui(['widget', 'new', 'w1', '--from', 'blank'], { state: a.stateDir }); fs.writeFileSync(path.join(a.stateDir, 'custom.css'), ':root{--accent:red}');
+    await ui(['cmd', 'add', 'tests', 'npm test'], { state: a.stateDir }); await ui(['widget', 'new', 'w1'], { state: a.stateDir }); fs.writeFileSync(path.join(a.stateDir, 'custom.css'), ':root{--accent:red}');
     assert.equal((await ui(['export', out], { state: a.stateDir })).status, 0);
     const listing = spawnSync('tar', ['-tzf', out], { encoding: 'utf8' }).stdout; assert.doesNotMatch(listing, /config\.json|uploads|log/); assert.match(listing, /commands\.json/); assert.match(listing, /widgets\/w1\/index\.html/);
     fs.writeFileSync(path.join(b.stateDir, 'custom.css'), 'KEEP ME');

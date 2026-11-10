@@ -46,7 +46,7 @@ progress
   progress step "TITLE|ID" STATUS [--detail TEXT] [--group NAME]
                                     STATUS: ${STEP_STATUS.join(' | ')}
 widgets   (see \`hatch widget new --help\` for the postMessage SDK)
-  widget new NAME [--from example]  scaffold widgets/NAME from an example (cpu, log-tail, blank)
+  widget new NAME [--from example]  scaffold widgets/NAME: from an example (cpu, log-tail, ...) or, without --from, a minimal one
   widget add NAME [DIR|FILE]        register and open (a single HTML file becomes index.html)
   widget list | open NAME | close NAME | rm NAME | reload NAME
   widget examples                   list the example widgets (also in the palette)
@@ -159,6 +159,17 @@ const widgetTable = (list) => {
   return rows.map((r) => [...r.slice(0, 3).map((v, c) => v.padEnd(width[c])), r[3]].join('  ').trimEnd()).join('\n');
 };
 const say = (o, data, text) => console.log(o.json ? JSON.stringify(data, null, 2) : text);
+
+const MINIMAL_WIDGET_HTML = `<!doctype html>
+<meta charset="utf-8">
+<style>body{margin:0;padding:12px;background:var(--bg,#111);color:var(--fg,#eee);font:14px var(--mono,monospace)}</style>
+<div id="out">hello from a widget</div>
+<script src="/sdk.js"></script>
+<script>
+  // hatch.on('SOURCE', (value) => { ... }) once widget.json declares a source
+  hatch.log('widget loaded');
+</script>
+`;
 
 function copyDir(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
@@ -338,11 +349,17 @@ async function main(argv) {
         return console.log(`${rawCmd === 'popup' ? 'popup' : 'widget'} ${name} open as ${p.id}`);
       }
       if (sub === 'new') {
-        const from = o.from || 'blank';
-        const src = path.join(EXAMPLES, from);
-        need(NAME_RE.test(from) && fs.existsSync(src) && fs.statSync(src).isDirectory(), `no example ${from}; available: ${fs.readdirSync(EXAMPLES).join(', ')}`);
+        const from = o.from;
         need(!fs.existsSync(target), `widgets/${name} already exists`);
-        copyDir(src, target);
+        if (from) {
+          const src = path.join(EXAMPLES, from);
+          need(NAME_RE.test(from) && fs.existsSync(src) && fs.statSync(src).isDirectory(), `no example ${from}; available: ${fs.readdirSync(EXAMPLES).join(', ')}`);
+          copyDir(src, target);
+        } else { // no --from: a minimal template instead of a copy of an example
+          fs.mkdirSync(target, { recursive: true });
+          fs.writeFileSync(path.join(target, 'index.html'), MINIMAL_WIDGET_HTML);
+          fs.writeFileSync(path.join(target, 'widget.json'), `${JSON.stringify({ title: name, w: 300, h: 160, placement: 'float', sources: [] }, null, 2)}\n`);
+        }
         if (rawCmd === 'popup') {
           const p = await api('POST', '/api/panels', { type: 'widget', props: { name } });
           return console.log(`created ${target}\npopup ${name} open as ${p.id}`);

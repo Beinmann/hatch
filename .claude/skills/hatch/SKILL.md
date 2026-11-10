@@ -7,7 +7,7 @@ This box runs Hatch. Drive the user's browser page with the `hatch` CLI. If it f
 
 - Progress: `hatch progress plan "Inspect" "Build" "Verify"` creates the step journey. `hatch progress step "write tests" running|done|blocked --detail "Current finding"` updates a step; follow the granular workflow below. A Mermaid diagram via `hatch progress set diagram.mmd` is optional.
 - Show: `hatch image PATH`, `hatch note "markdown"`, `hatch files DIR`, `hatch edit FILE`, `hatch open URL` (http://localhost:PORT is proxied to this box).
-- Widgets: `hatch widget new NAME --from cpu|graph|clock|git|top|sysinfo|log-tail|blank`, edit the files under the state dir (widgets/NAME/), `hatch widget open NAME`. `hatch widget new --help` documents the postMessage SDK and data sources (metric, exec, tail, file). Editing a widget's files reloads it.
+- Widgets: `hatch widget new NAME --from cpu|graph|clock|git|top|sysinfo|log-tail` (or no `--from` for a minimal template), edit the files under the state dir (widgets/NAME/), `hatch widget open NAME`. `hatch widget new --help` documents the postMessage SDK and data sources (metric, exec, tail, file). Editing a widget's files reloads it.
 - Output: `hatch run "npm test" --wait` (own window, returns the exit code), `hatch grep PATTERN [DIR]`, `hatch diff [git args]`; `path:line` results are clickable for the user.
 - Talk to the user: `answer=$(hatch ask "Proceed?" Yes No)` (dialog, waits), `hatch notify "text" --level done|warn`, `hatch copy "text"` (their clipboard), `hatch watch idle 30` (ping when the terminal goes quiet).
 - Pasted images arrive as files; the user types the path (under the state dir's uploads/).
