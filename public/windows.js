@@ -56,17 +56,6 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     w.node.hidden = !shown(w); applyOpacity(w);
   }
 
-  // Same table as src/convert.js; the server checks it again and answers with the possible types when it does not apply.
-  const CONVERT = { note: ['progress', 'widget'], progress: ['note'], widget: ['note'] };
-  async function convert(panel) {
-    if (isViewOnly()) return;
-    const targets = CONVERT[panel.type];
-    if (!targets) return ctx.toast(`a ${panel.type} window cannot be converted (only ${Object.keys(CONVERT).join(', ')})`, 'bad');
-    const to = targets.length === 1 ? targets[0] : (prompt(`Convert "${panel.title}" to: ${targets.join(' or ')}`, targets[0]) || '').trim();
-    if (!to) return;
-    try { await ctx.api('POST', `/api/panels/${encodeURIComponent(panel.id)}/convert`, { to }); } catch (e) { ctx.toast(e.message, 'bad'); }
-  }
-
   function build(panel) {
     const kind = kinds[panel.type];
     const w = { panel, node: el('div', { class: 'win', tabindex: '-1', role: 'region', 'aria-label': panel.title, 'data-id': panel.id }), view: null };
@@ -78,7 +67,6 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
         const to = w.panel.placement === 'dock' ? 'float' : 'dock';
         patch(w.panel.id, { placement: to }).catch(() => {});
       }),
-      mkBtn('⇄', 'Convert to another type (note, widget, progress)', () => convert(w.panel)),
       mkBtn('–', 'Minimize', () => setMinimized(w.panel.id, true).catch((e) => ctx.toast(e.message, 'bad'))),
       mkBtn('×', 'Close', () => requestClose(w.panel.id).catch((e) => ctx.toast(e.message, 'bad'))));
     w.body = el('div', { class: 'body' });
