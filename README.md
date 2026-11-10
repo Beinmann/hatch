@@ -176,7 +176,7 @@ For agents, run `hatch agent init` once in your project. This adds a managed Hat
 ```
 hatch progress set FILE|-          hatch progress step "TITLE|ID" todo|running|done|blocked|skipped
 hatch progress show | steps set FILE|-
-hatch widget new NAME [--from cpu|graph|clock|git|top|sysinfo|log-tail|blank|matrix-rain|analog-clock|ascii-donut|quote] | add NAME [DIR|FILE] | open | close | rm | reload | list
+hatch widget new NAME [--from cpu|graph|clock|git|top|sysinfo|log-tail|blank|matrix|analog-clock|ascii-donut|quote] | add NAME [DIR|FILE] | open | close | rm | reload | list
 hatch files [DIR] | edit FILE | image PATH | open URL | note "markdown" | panels | close ID | notify "text" [--level info|warn|done]
 hatch cmd add NAME TEXT | cmd list | cmd rm NAME   (saved commands for the palette)
 hatch prompt add NAME TEXT|- | prompt list | prompt rm NAME
