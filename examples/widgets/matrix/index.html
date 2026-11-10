@@ -7,7 +7,7 @@
 <canvas id="c" title="click: speed"></canvas>
 <script src="/sdk.js"></script>
 <script>
-  // Digital rain in the style of the film: up to four streams per column, each with a white head and a long green tail that fades
+  // Digital rain in the style of the film: up to three streams per column, each with a white head and a long green tail that fades
   // at its own rate, glyphs that keep changing, gaps in the streams, a dimmer far layer (slower and darker), and dense and sparse
   // regions that drift sideways so it looks chaotic but clustered. Always green on black, whatever the theme. The canvas is
   // repainted opaque every frame (a transparent one showed the window's own light background).
@@ -29,21 +29,24 @@
       info.push({ depth, decay: 0.3 + Math.random() * 1.1 });         // decay: how fast the tail fades (long or short tails)
       lum.push(new Float32Array(rows)); chr.push(Array.from({ length: rows }, glyph));
       streams.push([]);
-      for (let k = 0; k < 4; k++) if (Math.random() < 0.6) streams[c].push(newStream(c, Math.random() * rows));
+      for (let k = 0; k < 3; k++) if (Math.random() < 0.55) streams[c].push(newStream(c, Math.random() * rows));
     }
   }
   const newStream = (c, y) => ({ y, spd: 6 + Math.random() * 18 * info[c].depth + info[c].depth * 6 });
   // How busy a column is right now: a few slow sine waves across the width, so dense and empty stretches wander about.
-  const busy = (c) => { const k = (Math.sin(c * 0.29 + T * 0.17) + Math.sin(c * 0.071 - T * 0.11) + 0.4 * Math.sin(c * 1.7 + T * 0.9)) / 2.4; const u = (k + 1) / 2; return 0.45 + 2.6 * u * u; };
+  const busy = (c) => { const k = (Math.sin(c * 0.29 + T * 0.17) + Math.sin(c * 0.071 - T * 0.11) + 0.4 * Math.sin(c * 1.7 + T * 0.9)) / 2.4; const u = (k + 1) / 2; return 0.2 + 1.6 * u * u; };
 
   function step(dt) {
     T += dt;
     for (let c = 0; c < cols; c++) {
       const L = lum[c], S = streams[c], inf = info[c];
-      if (S.length < 4 && Math.random() < busy(c) * dt) S.push(newStream(c, -Math.random() * 3));
+      if (S.length < 3 && Math.random() < busy(c) * dt) S.push(newStream(c, -Math.random() * 3));
       for (let i = S.length - 1; i >= 0; i--) {
         const s = S[i], from = Math.floor(s.y); s.y += s.spd * dt;
-        for (let r = from + 1; r <= Math.floor(s.y); r++) if (r >= 0 && r < rows && Math.random() > 0.1) { L[r] = 1; chr[c][r] = glyph(); } // 10%: a gap
+        for (let r = from + 1; r <= Math.floor(s.y); r++) {
+          s.ch = glyph(); // the head's own glyph: it stays put while the head sits on a row, so it does not flicker
+          if (r >= 0 && r < rows && Math.random() > 0.1) { L[r] = 1; chr[c][r] = s.ch; } // 10%: a gap in the tail
+        }
         if (s.y > rows + 2) S.splice(i, 1);
       }
       for (let r = 0; r < rows; r++) {
@@ -63,10 +66,10 @@
         ctx.fillText(chr[c][r], c * CW, r * CH);
       }
     }
-    ctx.shadowColor = '#3dff5f'; ctx.shadowBlur = 12; ctx.fillStyle = '#e4ffe8'; // the heads: nearly white with a glow
+    ctx.shadowColor = '#3dff5f'; ctx.shadowBlur = 5; ctx.fillStyle = '#b4ffc0'; // the heads: a pale green with a soft glow, not white
     for (let c = 0; c < cols; c++) for (const s of streams[c]) {
-      const r = Math.floor(s.y); if (r < 0 || r >= rows || lum[c][r] < 0.9) continue;
-      ctx.globalAlpha = 0.45 + 0.55 * info[c].depth; ctx.fillText(chr[c][r], c * CW, r * CH);
+      const r = Math.floor(s.y); if (r < 0 || r >= rows || !s.ch) continue; // drawn even where the tail has a gap, so it never blinks out
+      ctx.globalAlpha = 0.35 + 0.5 * info[c].depth; ctx.fillText(s.ch, c * CW, r * CH);
     }
     ctx.globalAlpha = 1; ctx.shadowBlur = 0;
   }
