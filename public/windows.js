@@ -3,6 +3,7 @@ import { pickRestore } from './restore.js';
 import { touch, pickAfterClose } from './focus-history.js';
 import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
+import { fitFloat } from './fit.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
 // (stacked in the right column). Geometry changes are written back to the panel file (debounced), so the layout
 // survives reloads. New and restored popups take focus; the terminal has an explicit focus shortcut.
@@ -37,13 +38,14 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     if (typeof paintChips === 'function') paintChips();
   }
 
+  // Fit at render time from the stored geometry (which stays the user's intent), so a closed dock gives the old place back.
   function layoutFloat(w) {
     const p = w.panel; const n = w.node;
-    const maxW = floats.clientWidth || 800; const maxH = floats.clientHeight || 600;
-    const width = Math.max(MIN_W, Math.min(p.w || 420, maxW)); const height = Math.max(MIN_H, Math.min(p.h || 300, maxH));
-    n.style.width = `${width}px`; n.style.height = `${height}px`;
-    n.style.left = `${Math.max(0, Math.min(p.x ?? 40, maxW - 60))}px`; n.style.top = `${Math.max(0, Math.min(p.y ?? 40, maxH - 40))}px`;
+    const g = fitFloat({ x: p.x ?? 40, y: p.y ?? 40, w: p.w || 420, h: p.h || 300 }, { width: floats.clientWidth || 800, height: floats.clientHeight || 600 }, { minW: MIN_W, minH: MIN_H });
+    n.style.width = `${g.w}px`; n.style.height = `${g.h}px`; n.style.left = `${g.x}px`; n.style.top = `${g.y}px`;
   }
+  // The floating area changes size when the dock opens, closes or is dragged, and when the window is resized.
+  new ResizeObserver(() => { for (const w of wins.values()) if (w.panel.placement !== 'dock' && !w.panel.maximized && !w.node.classList.contains('dragging') && !w.node.classList.contains('resizing')) layoutFloat(w); }).observe(floats);
   function layoutDock(w) { w.node.style.cssText = `height:${Math.max(MIN_H, w.panel.h || 260)}px`; }
 
   function mount(w) {
@@ -104,7 +106,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       const sx = e.clientX; const sy = e.clientY; const ox = w.node.offsetLeft; const oy = w.node.offsetTop;
       w.node.classList.add('dragging');
       const move = (m) => {
-        const x = Math.max(0, Math.min(ox + m.clientX - sx, floats.clientWidth - 60)); const y = Math.max(0, Math.min(oy + m.clientY - sy, floats.clientHeight - 30));
+        const x = Math.max(0, Math.min(ox + m.clientX - sx, floats.clientWidth - w.node.offsetWidth)); const y = Math.max(0, Math.min(oy + m.clientY - sy, floats.clientHeight - w.node.offsetHeight));
         w.node.style.left = `${x}px`; w.node.style.top = `${y}px`;
       };
       const up = () => {
@@ -126,7 +128,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       const docked = w.panel.placement === 'dock';
       w.node.classList.add('resizing');
       const move = (m) => {
-        if (!docked) w.node.style.width = `${Math.max(MIN_W, ow + m.clientX - sx)}px`;
+        if (!docked) w.node.style.width = `${Math.max(MIN_W, Math.min(ow + m.clientX - sx, floats.clientWidth - w.node.offsetLeft))}px`;
         w.node.style.height = `${Math.max(MIN_H, oh + m.clientY - sy)}px`;
       };
       const up = () => {
