@@ -1,20 +1,29 @@
 <!doctype html>
 <meta charset="utf-8">
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:transparent;display:flex;align-items:center;justify-content:center}
-  svg{width:min(100vw,100vh);height:min(100vw,100vh);padding:8px;box-sizing:border-box}
-  .face{fill:none;stroke:var(--fg,#eee);stroke-opacity:.25;stroke-width:1.5}
-  .tick{stroke:var(--fg,#eee);stroke-opacity:.7;stroke-linecap:round}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center}
+  svg{width:min(100vw,100vh);height:min(100vw,100vh);padding:6px;box-sizing:border-box}
+  .rim{fill:none;stroke:var(--fg,#eee);stroke-opacity:.35;stroke-width:1.5}
+  .rim2{fill:none;stroke:var(--fg,#eee);stroke-opacity:.1;stroke-width:1}
+  .tick{stroke:var(--fg,#eee);stroke-opacity:.6;stroke-linecap:round}
+  .num{fill:var(--fg,#eee);font:600 15px var(--mono,monospace);text-anchor:middle;dominant-baseline:central}
+  .num.small{font-size:10px;font-weight:400;fill-opacity:.45}
   .h,.m{stroke:var(--fg,#eee);stroke-linecap:round}
   .s{stroke:var(--accent,#4fd1c0);stroke-linecap:round}
   .pin{fill:var(--accent,#4fd1c0)}
 </style>
 <svg viewBox="-100 -100 200 200">
-  <circle class="face" r="96"/>
+  <defs>
+    <!-- a faint glow in the middle so a black window still reads as a round dial -->
+    <radialGradient id="dial" r="1"><stop offset="0" stop-color="#fff" stop-opacity=".10"/><stop offset=".7" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <circle r="96" fill="url(#dial)"/>
+  <circle class="rim" r="96"/><circle class="rim2" r="81"/>
   <g id="ticks"></g>
-  <line class="h" id="h" y2="-48" stroke-width="5"/>
-  <line class="m" id="m" y2="-72" stroke-width="3"/>
-  <line class="s" id="s" y1="12" y2="-80" stroke-width="1.5"/>
+  <g id="nums"></g>
+  <line class="h" id="h" y2="-46" stroke-width="5"/>
+  <line class="m" id="m" y2="-68" stroke-width="3"/>
+  <line class="s" id="s" y1="14" y2="-78" stroke-width="1.5"/>
   <circle class="pin" r="4"/>
 </svg>
 <script src="/sdk.js"></script>
@@ -22,17 +31,24 @@
   const NS = 'http://www.w3.org/2000/svg';
   for (let i = 0; i < 60; i++) {
     const big = i % 5 === 0, l = document.createElementNS(NS, 'line');
-    l.setAttribute('class', 'tick'); l.setAttribute('y1', big ? -86 : -90); l.setAttribute('y2', -93);
+    l.setAttribute('class', 'tick'); l.setAttribute('y1', big ? -87 : -91); l.setAttribute('y2', -94);
     l.setAttribute('stroke-width', big ? 2.5 : 1); l.setAttribute('transform', 'rotate(' + i * 6 + ')');
     ticks.appendChild(l);
   }
+  for (let n = 1; n <= 12; n++) { // 12, 3, 6, 9 stand out; the others are small and dim
+    const a = n * Math.PI / 6, t = document.createElementNS(NS, 'text');
+    t.setAttribute('class', 'num' + (n % 3 ? ' small' : '')); t.setAttribute('x', (Math.sin(a) * 70).toFixed(2)); t.setAttribute('y', (-Math.cos(a) * 70).toFixed(2));
+    t.textContent = n; nums.appendChild(t);
+  }
+  // The second hand jumps once per second, like a quartz clock: redraw on each whole second instead of every frame.
+  let timer = null;
   function draw() {
-    requestAnimationFrame(draw);
-    if (document.hidden) return;
-    const n = new Date(), s = n.getSeconds() + n.getMilliseconds() / 1000, m = n.getMinutes() + s / 60, h = (n.getHours() % 12) + m / 60;
+    clearTimeout(timer); const n = new Date(), s = n.getSeconds(), m = n.getMinutes() + s / 60, h = (n.getHours() % 12) + m / 60;
     document.getElementById('s').setAttribute('transform', 'rotate(' + s * 6 + ')');
     document.getElementById('m').setAttribute('transform', 'rotate(' + m * 6 + ')');
     document.getElementById('h').setAttribute('transform', 'rotate(' + h * 30 + ')');
+    timer = setTimeout(draw, 1000 - n.getMilliseconds() + 5); // +5 ms so we land just after the second has changed
   }
   draw();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) draw(); }); // timers are throttled in a hidden tab; catch up at once
 </script>
