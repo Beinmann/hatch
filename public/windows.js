@@ -3,7 +3,7 @@ import { pickRestore } from './restore.js';
 import { touch, pickAfterClose } from './focus-history.js';
 import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
-import { fitFloat } from './fit.js';
+import { fitFloat, clampMove, clampResize } from './fit.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
 // (stacked in the right column). Geometry changes are written back to the panel file (debounced), so the layout
 // survives reloads. New and restored popups take focus; the terminal has an explicit focus shortcut.
@@ -45,7 +45,10 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     n.style.width = `${g.w}px`; n.style.height = `${g.h}px`; n.style.left = `${g.x}px`; n.style.top = `${g.y}px`;
   }
   // The floating area changes size when the dock opens, closes or is dragged, and when the window is resized.
-  new ResizeObserver(() => { for (const w of wins.values()) if (w.panel.placement !== 'dock' && !w.panel.maximized && !w.node.classList.contains('dragging') && !w.node.classList.contains('resizing')) layoutFloat(w); }).observe(floats);
+  new ResizeObserver(refit).observe(floats);
+  // Every path that shows or places a floating window ends here: area is the floats layer (the dock is a separate column).
+  const refit = () => { for (const w of wins.values()) if (w.panel.placement !== 'dock' && !w.panel.maximized && !w.node.classList.contains('dragging') && !w.node.classList.contains('resizing')) layoutFloat(w); };
+  const area = () => ({ width: floats.clientWidth || 800, height: floats.clientHeight || 600 });
   function layoutDock(w) { w.node.style.cssText = `height:${Math.max(MIN_H, w.panel.h || 260)}px`; }
 
   function mount(w) {
@@ -94,14 +97,16 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       const sx = e.clientX; const sy = e.clientY; const ox = w.node.offsetLeft; const oy = w.node.offsetTop;
       w.node.classList.add('dragging');
       const move = (m) => {
-        const x = Math.max(0, Math.min(ox + m.clientX - sx, floats.clientWidth - w.node.offsetWidth)); const y = Math.max(0, Math.min(oy + m.clientY - sy, floats.clientHeight - w.node.offsetHeight));
+        const { x, y } = clampMove({ x: ox + m.clientX - sx, y: oy + m.clientY - sy }, { w: w.node.offsetWidth, h: w.node.offsetHeight }, area());
         w.node.style.left = `${x}px`; w.node.style.top = `${y}px`;
       };
       const up = () => {
         w.tb.removeEventListener('pointermove', move); w.tb.removeEventListener('pointerup', up); w.tb.removeEventListener('pointercancel', up);
         w.node.classList.remove('dragging');
-        w.panel = { ...w.panel, x: w.node.offsetLeft, y: w.node.offsetTop };
-        save(w.panel.id, { x: w.panel.x, y: w.panel.y });
+        const { x, y } = clampMove({ x: w.node.offsetLeft, y: w.node.offsetTop }, { w: w.node.offsetWidth, h: w.node.offsetHeight }, area()); // also on release
+        w.node.style.left = `${x}px`; w.node.style.top = `${y}px`;
+        w.panel = { ...w.panel, x, y };
+        save(w.panel.id, { x, y });
       };
       w.tb.addEventListener('pointermove', move); w.tb.addEventListener('pointerup', up); w.tb.addEventListener('pointercancel', up);
     });
@@ -116,8 +121,10 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       const docked = w.panel.placement === 'dock';
       w.node.classList.add('resizing');
       const move = (m) => {
-        if (!docked) w.node.style.width = `${Math.max(MIN_W, Math.min(ow + m.clientX - sx, floats.clientWidth - w.node.offsetLeft))}px`;
-        w.node.style.height = `${Math.max(MIN_H, oh + m.clientY - sy)}px`;
+        const want = { w: ow + m.clientX - sx, h: oh + m.clientY - sy };
+        if (docked) { w.node.style.height = `${Math.max(MIN_H, want.h)}px`; return; }
+        const g = clampResize({ x: w.node.offsetLeft, y: w.node.offsetTop }, want, area(), { minW: MIN_W, minH: MIN_H });
+        w.node.style.width = `${g.w}px`; w.node.style.height = `${g.h}px`;
       };
       const up = () => {
         w.rz.removeEventListener('pointermove', move); w.rz.removeEventListener('pointerup', up); w.rz.removeEventListener('pointercancel', up);
@@ -168,7 +175,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       mount(w); if (panel.autoFocus !== false) focus(w);
     } else {
       if (panel.placement === 'float' && !w.node.classList.contains('dragging') && !w.node.classList.contains('resizing')) {
-        if (['x', 'y', 'w', 'h'].some((k) => old[k] !== panel[k])) layoutFloat(w);
+        if (['x', 'y', 'w', 'h', 'minimized', 'ws', 'sticky', 'maximized'].some((k) => old[k] !== panel[k])) layoutFloat(w); // also on restore: the area may have changed while it was hidden
       } else if (panel.placement === 'dock' && old.h !== panel.h && !w.node.classList.contains('resizing')) layoutDock(w);
       w.node.hidden = !shown(w);
       if (panel.minimized && heldFocus) ctx.term?.focus();
@@ -238,7 +245,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   });
   try { const sw = localStorage.getItem('hatch.dockw'); if (sw) dock.style.width = sw; } catch { /* ignore */ }
 
-  function setWorkspace(name) { current = name || 'main'; for (const w of wins.values()) w.node.hidden = !shown(w); paintChips(); paintDock(); }
+  function setWorkspace(name) { current = name || 'main'; for (const w of wins.values()) w.node.hidden = !shown(w); refit(); paintChips(); paintDock(); }
   // Leader h/j/k/l: move focus to the nearest visible window (or the terminal) in that direction.
   // Selection lives in direction.js (deterministic, and the opposite key retraces the path).
   let trail = [];
@@ -318,7 +325,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const w = [...wins.values()].find((o) => shown(o) && o.node.classList.contains('focus'));
     if (!w || isViewOnly() || w.panel.placement !== 'float' || w.panel.minimized || w.panel.maximized) return false;
     const [dx, dy] = { h: [-1, 0], l: [1, 0], k: [0, -1], j: [0, 1] }[dir];
-    const x = Math.max(0, Math.min(w.node.offsetLeft + dx * step, floats.clientWidth - 60)); const y = Math.max(0, Math.min(w.node.offsetTop + dy * step, floats.clientHeight - 30));
+    const { x, y } = clampMove({ x: w.node.offsetLeft + dx * step, y: w.node.offsetTop + dy * step }, { w: w.node.offsetWidth, h: w.node.offsetHeight }, area());
     w.node.style.left = `${x}px`; w.node.style.top = `${y}px`;
     w.panel = { ...w.panel, x, y }; save(w.panel.id, { x, y });
     return true;
@@ -328,9 +335,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const w = focused();
     if (!w || isViewOnly() || w.panel.placement !== 'float' || w.panel.minimized || w.panel.maximized) return false;
     const [dw, dh] = { h: [-1, 0], l: [1, 0], k: [0, -1], j: [0, 1] }[dir];
-    const maxW = floats.clientWidth || 800; const maxH = floats.clientHeight || 600;
-    const width = Math.max(MIN_W, Math.min(w.node.offsetWidth + dw * step, maxW - w.node.offsetLeft));
-    const height = Math.max(MIN_H, Math.min(w.node.offsetHeight + dh * step, maxH - w.node.offsetTop));
+    const { w: width, h: height } = clampResize({ x: w.node.offsetLeft, y: w.node.offsetTop }, { w: w.node.offsetWidth + dw * step, h: w.node.offsetHeight + dh * step }, area(), { minW: MIN_W, minH: MIN_H });
     w.node.style.width = `${width}px`; w.node.style.height = `${height}px`;
     w.panel = { ...w.panel, w: width, h: height }; save(w.panel.id, { w: width, h: height, remember: true });
     return true;
@@ -386,6 +391,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     focusDirection, focusedTransparency, setTransparency, moveFocused, resizeFocused, focusNumber, focusNext, toggleMaximize, showNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current,
     // a window was just opened live (not from a snapshot): unfold the dock when it is docked
     revealDock(id) { const w = wins.get(id); if (w && w.panel.placement === 'dock' && !w.panel.minimized && w.panel.autoFocus !== false) { openDock(); paintChips(); paintDock(); } },
+    refit,
     refresh() { paintChips(); paintDock(); },
     upsert, remove, get: (id) => wins.get(id),
     widgetChanged(info) { for (const w of wins.values()) w.view.widgetChanged?.(info); },
