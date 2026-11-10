@@ -44,10 +44,10 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const g = fitFloat({ x: p.x ?? 40, y: p.y ?? 40, w: p.w || 420, h: p.h || 300 }, { width: floats.clientWidth || 800, height: floats.clientHeight || 600 }, { minW: MIN_W, minH: MIN_H });
     n.style.width = `${g.w}px`; n.style.height = `${g.h}px`; n.style.left = `${g.x}px`; n.style.top = `${g.y}px`;
   }
-  // The floating area changes size when the dock opens, closes or is dragged, and when the window is resized.
-  new ResizeObserver(refit).observe(floats);
   // Every path that shows or places a floating window ends here: area is the floats layer (the dock is a separate column).
   const refit = () => { for (const w of wins.values()) if (w.panel.placement !== 'dock' && !w.panel.maximized && !w.node.classList.contains('dragging') && !w.node.classList.contains('resizing')) layoutFloat(w); };
+  // The floating area changes size when the dock opens, closes or is dragged, and when the window is resized.
+  new ResizeObserver(refit).observe(floats);
   const area = () => ({ width: floats.clientWidth || 800, height: floats.clientHeight || 600 });
   function layoutDock(w) { w.node.style.cssText = `height:${Math.max(MIN_H, w.panel.h || 260)}px`; }
 
