@@ -33,6 +33,14 @@ test('leaderAction maps every key of the table', () => {
   assert.equal(k('Digit0'), null);
 });
 
+test('leader Shift+d docks or releases the focused window, plain d stays show desktop', () => {
+  assert.deepEqual(leaderAction({ code: 'KeyD', key: 'D', shiftKey: true }), { action: 'place', repeat: false });
+  assert.equal(leaderAction({ code: 'KeyD', key: 'd' }).action, 'desktop');
+  assert.equal(leaderAction({ code: 'KeyD', key: 'D', shiftKey: true, ctrlKey: true }), null);
+  assert.equal(leaderAction({ code: 'KeyD', key: 'D', shiftKey: true, altKey: true }), null);
+  assert.equal(leaderAction({ code: 'KeyU', key: 'U', shiftKey: true }), null, 'other shifted letters stay unbound');
+});
+
 test('leader o asks for the transparency of the focused window', () => {
   assert.deepEqual(leaderAction({ code: 'KeyO', key: 'o' }), { action: 'opacity', repeat: false });
   assert.equal(leaderAction({ code: 'BracketLeft', key: '[' }), null);

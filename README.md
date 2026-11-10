@@ -124,7 +124,7 @@ session; windows that already exist only get them in new windows.
 - **Background image.** `hatch set background IMAGE` stores the image in the state dir and shows it behind the page (see `docs/CUSTOMIZE.md`).
 - **Customising.** `.hatch/custom.css` and `.hatch/custom.js` are loaded when present; `window.hatchUI` lets `custom.js` add palette commands and react to events (`docs/CUSTOMIZE.md`).
 - **Taskbar and snapping.** The chips in the header list every window of the current workspace; click one to bring it to the front (or restore it). The palette snaps a window to the left or right half or makes it fill the terminal area.
-- **Workspaces.** Windows belong to a workspace (virtual desktop); the chips in the header switch, `+` adds one, the palette moves windows between them. Windows made from the page open in the current workspace, windows made with `hatch` open in `main` unless you pass `--ws NAME`. Hidden windows keep running. `Pin to all workspaces` (palette) keeps a window visible everywhere; leader Tab cycles through windows.
+- **Workspaces.** Windows belong to a workspace (virtual desktop); the chips in the header switch, `+` adds one, the palette moves windows between them. Windows made from the page open in the current workspace, windows made with `hatch` open in `main` unless you pass `--ws NAME`. Hidden windows keep running. `Pin to all workspaces` (palette) keeps a window visible everywhere; leader Tab cycles through windows. Leader then Shift+d docks the focused floating window or releases a docked one.
 - **Setup transfer.** `hatch export` bundles your saved commands, prompts, watches, schedules, bookmarks, `custom.css/js` and widgets (never the token or uploads); `hatch import FILE.tgz` restores them on another box.
 - **Trash.** Closing a window moves its file to `.hatch/trash/<time>-<id>.json` (kept: last 30, at most 14 days). `hatch trash`, `trash restore [ID]`, `trash empty`, or the palette ("Reopen closed window"). Terminal windows keep name, command and position, not scrollback: restoring reattaches the tmux session of that name if it is still alive, else starts a fresh one.
 - **Watches.** `hatch watch add failed --pattern "FAIL|Error" --level warn` and `hatch watch idle 30` notify you when terminal output matches or goes quiet for 30 s (stored in `watches.json`, 30 s cooldown per watch). Overlapping watches match independently; UTF-8 text and terminal escapes may span output chunks. Invalid hand edits show a warning while the last valid watches stay active.
@@ -167,6 +167,7 @@ The header keeps secondary tools in the command palette. It opens immediately wi
 | Leader, then t | Return to terminal |
 | Leader, then h / j / k / l | Focus the nearest window or the terminal to the left / below / above / right |
 | Leader, then Shift+h / j / k / l | Move the focused floating window by 40px (stays on screen, position is saved) |
+| Leader, then Shift+d | Dock the focused floating window, or release a docked one (same as the title-bar button) |
 | Leader, then m / q / u | Minimize, close, restore from the dock |
 | Leader, then Tab | Next window |
 | Ctrl+Shift+G | Fold or unfold progress strip |

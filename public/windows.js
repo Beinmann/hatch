@@ -268,6 +268,14 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   function focusNumber(n) { const w = numbered()[n - 1]; if (!w) return false; focus(w); return true; }
   // Leader Tab: raise the next visible window, docked ones included.
   function focusNext() { const list = numbered(); if (!list.length) return false; const i = list.findIndex((w) => w.node.classList.contains('focus')); focus(list[(i + 1) % list.length]); return true; }
+  // Leader Shift+d: the title-bar dock/release button for the focused window. Returns 'dock', 'float', or null when no window is focused.
+  function togglePlacement() {
+    const w = focused();
+    if (!w || isViewOnly()) return null;
+    const to = w.panel.placement === 'dock' ? 'float' : 'dock';
+    patch(w.panel.id, { placement: to }).catch((e) => ctx.toast(e.message, 'bad'));
+    return to;
+  }
   // Leader f: maximize or restore the focused floating window (page only, like the title-bar double-click).
   function toggleMaximize() {
     const w = focused();
@@ -388,7 +396,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     },
     restore: (id) => setMinimized(id, false), minimize: (id) => setMinimized(id, true),
     close: requestClose, hasUnsavedChanges: () => [...wins.values()].some((w) => w.view.isDirty?.()),
-    focusDirection, focusedTransparency, setTransparency, moveFocused, resizeFocused, focusNumber, focusNext, toggleMaximize, showNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current,
+    focusDirection, focusedTransparency, setTransparency, moveFocused, resizeFocused, focusNumber, focusNext, toggleMaximize, togglePlacement, showNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current,
     // a window was just opened live (not from a snapshot): unfold the dock when it is docked
     revealDock(id) { const w = wins.get(id); if (w && w.panel.placement === 'dock' && !w.panel.minimized && w.panel.autoFocus !== false) { openDock(); paintChips(); paintDock(); } },
     refit,

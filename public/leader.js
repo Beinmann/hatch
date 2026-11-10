@@ -42,6 +42,7 @@ export function leaderAction(e) {
   const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
   if (digit && !e.shiftKey) return { action: 'number', n: Number(digit[1]), repeat: false };
   if (isEnter(e) && !e.shiftKey) return { action: 'terminal', repeat: false }; // same as t; the dock step handles its own Return before this
+  if (e.code === 'KeyD' && e.shiftKey) return { action: 'place', repeat: false }; // Shift+d: dock or release the focused window (plain d is show desktop)
   const action = PLAIN[e.code];
   if (!action || (e.shiftKey && action !== 'next')) return null;
   return { action, repeat: action === 'next' };
