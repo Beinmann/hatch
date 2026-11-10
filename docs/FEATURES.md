@@ -70,6 +70,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Task runner, listening ports | 047 | src/discover.js | tests only | |
 | Session report | 046 | server /api/report, ui.js | CLI only | |
 | Maximize | 034 | windows.js | yes | |
+| Show desktop (leader d): minimize all, again restores the same formation | - | show-desktop.js, windows.js, app.js | planning and change detection | not browser-tested |
 | Tile / minimize-all / close-all | 025 | app.js | tile only | |
 | Phone layout + extra keys bar | 015 | style.css, app.js | emulated | |
 | Font size memory | 028 | app.js | no | |

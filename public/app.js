@@ -364,7 +364,7 @@ function switchWs(n) { wm.setWorkspace(n); store.set('ws', n); paintWorkspaces()
 const origUpsert = wm.upsert; wm.upsert = (p) => { origUpsert(p); paintWorkspaces(); };
 
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, u pick from the dock, f maximize, a tile, p palette'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+Shift+P', 'Command palette'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, d show desktop (minimize all; again to restore), u pick from the dock, f maximize, a tile, p palette'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+Shift+P', 'Command palette'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -405,7 +405,7 @@ function leaderDisarm() {
 function leaderArm() {
   leader.armed = true; leader.dock = null; clearTimeout(leader.timer);
   const name = store.get('leader', DEFAULT_LEADER);
-  leaderHint.textContent = `${name} ...  h j k l focus · 1-9 window · Tab next · t/Return terminal · q close · m minimize · u dock · Shift+hjkl move · Ctrl+hjkl resize · o transparency · f maximize · a tile · p palette · Esc cancel`;
+  leaderHint.textContent = `${name} ...  h j k l focus · 1-9 window · Tab next · t/Return terminal · q close · m minimize · d show desktop · u dock · Shift+hjkl move · Ctrl+hjkl resize · o transparency · f maximize · a tile · p palette · Esc cancel`;
   leaderHint.hidden = false; wm.showNumbers(true);
 }
 function leaderDock() {
@@ -435,6 +435,7 @@ function leaderKey(e) {
     case 'terminal': wm.blur(); term.focus(); break;
     case 'close': if (!ro) wm.dismiss(); break; // no confirmation; the trash window can bring it back (unsaved editor or note changes still ask)
     case 'minimize': if (!ro) wm.dismiss(true); break;
+    case 'desktop': if (!ro && wm.showDesktop() === 'none') toast('No windows to minimize', 'info', 1500); break;
     case 'dock': if (ro) break; return leaderDock();
     case 'move': if (!ro) wm.moveFocused(a.dir); break;
     case 'resize': if (!ro) wm.resizeFocused(a.dir); break;
@@ -603,6 +604,7 @@ const palette = createPalette({
     add('Move all windows to the current workspace', '', () => allPanels((p) => ctx.patch(p.id, { ws: wm.current() })));
     add('Close focused popup', 'leader q', () => wm.dismiss());
     add('Minimize focused popup', 'leader m', () => wm.dismiss(true));
+    add('Show desktop: minimize all windows, again to restore', 'leader d', () => { if (wm.showDesktop() === 'none') toast('No windows to minimize', 'info', 1500); });
     add('Restore last minimized popup', 'leader u', () => { if (!wm.restoreNext()) toast('No minimized popups', 'info', 1500); });
     add('Open URL in a window...', '', () => { const u = prompt2('URL to open (the browser must reach it)'); return u && api('POST', '/api/panels', { type: 'iframe', title: u, props: { url: u } }); });
     add('Open all example widgets', 'every default popup at its default size', async () => { for (const x of await get('/api/examples')) await api('POST', `/api/examples/${x.name}/open`, {}); });

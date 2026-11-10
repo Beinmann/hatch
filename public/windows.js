@@ -1,6 +1,7 @@
 import { isViewOnly } from './util.js';
 import { pickRestore } from './restore.js';
 import { touch, pickAfterClose } from './focus-history.js';
+import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
 // (stacked in the right column). Geometry changes are written back to the panel file (debounced), so the layout
@@ -360,7 +361,23 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   const workspaces = () => ['main', ...[...new Set([current, ...[...wins.values()].map((w) => wsOf(w.panel))])].filter((n) => n !== 'main').sort()]; // stable: main first, the rest alphabetical
 
+  // Show desktop (leader d): minimize every floating window; again before anything changed: bring them back (see show-desktop.js).
+  let desktopMemo = null;
+  function showDesktop() {
+    if (isViewOnly()) return 'none';
+    const panels = [...wins.values()].map((w) => w.panel);
+    const plan = planShowDesktop(panels, current, desktopMemo, focusHistory);
+    desktopMemo = null;
+    if (plan.action === 'none') return 'none';
+    const done = (e) => ctx.toast(e.message, 'bad');
+    if (plan.action === 'restore') { for (const id of plan.ids) setMinimized(id, false).catch(done); return 'restored'; }
+    for (const id of plan.ids) setMinimized(id, true).catch(done); // each call updates the local state before it awaits
+    desktopMemo = rememberMinimized([...wins.values()].map((w) => w.panel), current, plan.ids);
+    return 'minimized';
+  }
+
   return {
+    showDesktop,
     focusPanel(id, keyboard = true) { const w = wins.get(id); if (w) focus(w, keyboard); },
     blur,
     dismiss(minimize = false) {

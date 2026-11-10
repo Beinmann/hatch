@@ -25,7 +25,7 @@ test('leaderAction maps every key of the table', () => {
   assert.deepEqual(k('KeyK', { shiftKey: true }), { action: 'move', dir: 'k', repeat: true });
   assert.deepEqual(k('ArrowLeft', { ctrlKey: true }), { action: 'resize', dir: 'h', repeat: true });
   assert.deepEqual(k('Digit3'), { action: 'number', n: 3, repeat: false });
-  for (const [code, action] of [['KeyT', 'terminal'], ['KeyQ', 'close'], ['KeyM', 'minimize'], ['KeyU', 'dock'], ['KeyF', 'maximize'], ['KeyA', 'tile'], ['KeyP', 'palette'], ['Tab', 'next']]) assert.equal(k(code).action, action);
+  for (const [code, action] of [['KeyT', 'terminal'], ['KeyQ', 'close'], ['KeyM', 'minimize'], ['KeyD', 'desktop'], ['KeyU', 'dock'], ['KeyF', 'maximize'], ['KeyA', 'tile'], ['KeyP', 'palette'], ['Tab', 'next']]) assert.equal(k(code).action, action);
   assert.equal(k('KeyT').repeat, false, 'action keys are one-shot');
   assert.equal(k('Control', { key: 'Control', ctrlKey: true }).action, 'ignore', 'pressing Ctrl before h must not cancel');
   assert.equal(k('KeyZ'), null, 'unbound keys cancel');
