@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// hatch-server: serve | clear | start | stop | restart | status | url | doctor | service | agent (the page-driving commands are `hatch`)
+// hatch-server: serve | clear | update-widgets | start | stop | restart | status | url | doctor | service | agent (the page-driving commands are `hatch`)
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -17,6 +17,7 @@ usage:
   hatch-server start|stop|restart|status [serve options]   run the server in the background (pid in <state>/hatch.pid, log in <state>/log/daemon.log)
   hatch-server agent init [--target claude|codex|both]     add persistent project instructions (same as hatch agent init)
   hatch-server clear [--state DIR] [--yes]   delete everything in the state dir except allowed-hosts (widgets, notes, trash, token) to recover from a bad state; asks first, refuses while a server uses it
+  hatch-server update-widgets [NAME... | --all] [--state DIR]   refresh example widgets this instance already uses from the shipped copies (keeps data/, saves changed files as .bak); works while the server runs
   hatch-server url [--state DIR]       print the URL with the token again
   hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it
   hatch-server doctor [--state DIR]    check node, python3, tmux, state dir, server
@@ -38,6 +39,7 @@ function parse(argv) {
     else if (a === '--view-only') o['view-only'] = 'true';
     else if (a === '--tmux-status') o['tmux-status'] = 'true';
     else if (a === '--yes') o.yes = 'true';
+    else if (a === '--all') o.all = 'true';
     else if (a === '--view' || a === '--revoke-view') o[a.slice(2)] = 'true';
     else if (a.startsWith('--')) { const [k, v] = a.slice(2).split(/=(.*)/s); o[k] = v ?? argv[++i]; if (o[k] === undefined) fail(`--${k} needs a value`); }
     else o._.push(a);
@@ -109,6 +111,18 @@ if (cmd === 'clear') {
   }
   for (const n of names) fs.rmSync(path.join(dir, n), { recursive: true, force: true });
   console.log(`removed ${names.length} entries from ${dir}: ${names.join(', ')}\nThe next \`hatch-server serve\` creates a fresh state (with a new token and URL).`);
+  process.exit(0);
+}
+if (cmd === 'update-widgets') {
+  const dir = path.resolve(o.state || process.env.HATCH_STATE || '.hatch');
+  if (!isValidStateDir(dir)) fail(`no Hatch state dir at ${dir}. Pass --state DIR to choose another.`);
+  const names = o._.slice(1);
+  if (!names.length && o.all !== 'true') fail('name the widgets to update (e.g. background-roulette) or pass --all');
+  const { updateWidgets } = await import('../src/update-widgets.js');
+  let r; try { r = updateWidgets(dir, names.length ? names : null); } catch (e) { fail(e.message); }
+  for (const u of r.updated) console.log(`updated ${u.name}: ${u.files.join(', ')}${u.backups.length ? ` (old versions saved as .bak: ${u.backups.join(', ')})` : ''}`);
+  if (r.unchanged.length) console.log(`already current: ${r.unchanged.join(', ')}`);
+  if (r.missing.length) console.log(`not used in this instance (skipped): ${r.missing.join(', ')}`);
   process.exit(0);
 }
 if (cmd === 'doctor') { process.exit(printChecks(await doctor({ state: o.state })) ? 0 : 1); }

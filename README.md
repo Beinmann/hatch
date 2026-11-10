@@ -237,6 +237,8 @@ changes in that top-level folder do not reload the widget, while changes anywher
 
 Editing any file in the widget directory (except `data/`) reloads it in the page. Examples live in `examples/widgets/` (`background-roulette`, `cpu`, `graph`, `clock`, `log-tail`, `git`, `top`, `sysinfo`, `ports`, `pomodoro`, `panes`, `docker`, `blank`). `background-roulette` downloads random photos from picsum.photos when you click its button (the box needs internet access; nothing is fetched otherwise), keeps them with their source information in its `data/` folder, and sets the one you click as the page background through `hatch set background`, so `hatch` must be on the server's PATH. Notes are editable: double-click a note window, Ctrl+Enter or Save saves, and Escape or Cancel discards the draft. Clicking outside also saves. Failed or conflicting saves keep the draft editable; closing asks before discarding unsaved text.
 
+Opening an example copies it into the state dir once; after upgrading Hatch an instance keeps its old copy. `hatch-server update-widgets NAME...` (or `--all`) refreshes the widgets that instance already uses from the shipped copies. It works while the server runs, never touches a widget's `data/` folder, and saves any locally changed file as `<file>.bak` first.
+
 ## Tests
 
 `node --test "test/*.test.js"` starts real servers on ephemeral ports with `cat` instead of tmux; one test uses real
