@@ -26,7 +26,7 @@ that is a git repo, open the printed URL, and open a terminal on the same box fo
     palette, and watch the taskbar at the bottom. Put your own commands into the palette with `.hatch/custom.js`
     (`docs/CUSTOMIZE.md`).
 13. **Keep an eye on things.** `hatch every 1m "npm test"` (notifies when it goes red or green), `hatch watch idle 30`,
-    `hatch desktop` for the gadgets, `hatch widget new p --from panes` to see every tmux window at once.
+    `hatch desktop` for the gadgets.
 14. **Notes as runbooks.** `hatch note` with a fenced ```bash block: click Run; tick the checklist items; double-click to edit.
     Also bookmarks (`hatch bookmark add NAME`) and `hatch report --open`.
 
