@@ -1,3 +1,2 @@
 { "title": "CPU", "w": 320, "h": 350, "placement": "float",
-  "sources": [ { "name": "cpu", "kind": "metric", "id": "cpu", "everyMs": 1000 },
-               { "name": "mem", "kind": "metric", "id": "mem", "everyMs": 2000 } ] }
+  "sources": [ { "name": "cpu", "kind": "metric", "id": "cpu", "everyMs": 1000 } ] }

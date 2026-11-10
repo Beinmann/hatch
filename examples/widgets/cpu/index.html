@@ -18,5 +18,4 @@
   };
   const set = (key, label, pct) => { const r = row(key, label); r.querySelector('i').style.width = pct + '%'; r.querySelector('b').textContent = pct.toFixed(0) + '%'; };
   hatch.on('cpu', (v) => { set('all', 'cpu', v.total); v.cores.forEach((c, i) => set('c' + i, 'c' + i, c)); });
-  hatch.on('mem', (v) => set('mem', 'mem', v.pct));
 </script>

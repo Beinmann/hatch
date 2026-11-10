@@ -68,3 +68,9 @@ test('pomodoro example: its saved state comes back after a reload', async () => 
     assert.equal(w.eval('S.mode'), 'f'); assert.equal(w.eval('S.st'), 'r'); assert.equal(w.eval('S.done'), 2);
   } finally { await h.close(); }
 });
+
+test('cpu example is a plain CPU widget: one cpu source, no memory row', () => {
+  const dir = path.join(EXAMPLES, 'cpu');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'widget.json'), 'utf8')).sources.map((x) => x.id), ['cpu']);
+  assert.doesNotMatch(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), /mem/);
+});
