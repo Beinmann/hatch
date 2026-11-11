@@ -401,10 +401,10 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // global transparency (--opa pinned to 100% on the window); only a window never set follows the global setting.
   // Values below 100 are applied as CSS opacity on top of that.
   const OPA_MIN = 20;
-  // A window never set one by one uses the instance default (transparency.json "windows", pushed by the server) when there is one.
-  let defaultTransparency = null;
-  const applyOpacity = (w) => { const o = w.panel.opacity ?? (defaultTransparency === null ? undefined : Math.max(OPA_MIN, 100 - defaultTransparency)); w.node.style.opacity = o && o < 100 ? String(o / 100) : ''; if (o) w.node.style.setProperty('--opa', '100%'); else w.node.style.removeProperty('--opa'); };
-  const setDefaultTransparency = (t) => { const next = Number.isFinite(t) ? t : null; if (next === defaultTransparency) return; defaultTransparency = next; for (const w of wins.values()) applyOpacity(w); };
+  // A window never set one by one uses the instance default (transparency.json "windows", pushed by the server): 0 = opaque unless it is "follow".
+  let defaultTransparency = 0; // number, or 'follow' = same as the page (no per-window override)
+  const applyOpacity = (w) => { const o = w.panel.opacity ?? (defaultTransparency === 'follow' ? undefined : Math.max(OPA_MIN, 100 - defaultTransparency)); w.node.style.opacity = o && o < 100 ? String(o / 100) : ''; if (o) w.node.style.setProperty('--opa', '100%'); else w.node.style.removeProperty('--opa'); };
+  const setDefaultTransparency = (t) => { const next = t === 'follow' ? 'follow' : Number.isFinite(t) ? t : 0; if (next === defaultTransparency) return; defaultTransparency = next; for (const w of wins.values()) applyOpacity(w); };
   const focusedTransparency = () => { const w = focused(); return w ? 100 - (w.panel.opacity ?? 100) : null; };
   function setTransparency(t) {
     const w = focused();

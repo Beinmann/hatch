@@ -96,7 +96,7 @@ ask the user (blocks until they answer in the browser; prints the answer)
   set background IMAGE [--ws NAME]  use a PNG, JPEG, GIF or WebP image as the page background (saved in the state dir as background.EXT)
   set background none               remove the background image
   set transparency 0..100           make the terminal and panels see-through: 0 = opaque, 30 = default, 100 = fully transparent (saved in transparency.json)
-  set window-transparency 0..100    transparency of windows you did not set one by one (leader o); "default" = follow the page again (saved in transparency.json). 0 = opaque, above 80 is capped at 80
+  set window-transparency 0..100|default|follow    transparency of windows you did not set one by one (leader o); "default" = 0 (opaque, the built-in default), "follow" = same as the terminal/page transparency (saved in transparency.json). Above 80 is capped at 80
   set background-mode MODE          how it fits: fill (cover, default) | fit (contain) | stretch | center | tile (saved in background.json)
 workspaces (named sets of windows with their own terminal and background, in this one instance)
   workspace list                    names, window counts, which have a background
@@ -735,7 +735,7 @@ async function main(argv) {
       if (o.ws && (sub === 'background' || sub === 'background-mode')) {
         try { bgDir = wsapi.workspaceDir(dir, wsapi.findWorkspace(dir, o.ws, [])); } catch (e) { if (e instanceof wsapi.WorkspaceError) throw new CliError(e.message); throw e; }
       }
-      const usage = 'usage: set background IMAGE|none, set background-mode fill|fit|stretch|center|tile, set transparency 0..100, set window-transparency 0..100|default';
+      const usage = 'usage: set background IMAGE|none, set background-mode fill|fit|stretch|center|tile, set transparency 0..100, set window-transparency 0..100|default|follow';
       if (sub === 'transparency') {
         need(rest[0], usage);
         try { transparency.setTransparency(dir, rest[0]); } catch (e) { if (e instanceof transparency.TransparencyError) throw new CliError(`${e.message} (transparency left unchanged)`); throw e; }
@@ -743,8 +743,8 @@ async function main(argv) {
       }
       if (sub === 'window-transparency') {
         need(rest[0], usage);
-        let n; try { n = transparency.setWindowTransparency(dir, rest[0]); } catch (e) { if (e instanceof transparency.TransparencyError) throw new CliError(`${e.message}, or default (window transparency left unchanged)`); throw e; }
-        return console.log(n === null ? `windows follow the page transparency again (saved in ${dir}; open pages update by themselves)` : `window transparency ${n} saved in ${dir}; windows without their own setting update by themselves`);
+        let n; try { n = transparency.setWindowTransparency(dir, rest[0]); } catch (e) { if (e instanceof transparency.TransparencyError) throw new CliError(`${e.message}, or default or follow (window transparency left unchanged)`); throw e; }
+        return console.log(String(rest[0]).trim() === 'default' ? `windows are opaque again, the built-in default 0 (saved in ${dir}; open pages update by themselves)` : n === 'follow' ? `windows follow the terminal/page transparency (saved in ${dir}; open pages update by themselves)` : `window transparency ${n} saved in ${dir}; windows without their own setting update by themselves`);
       }
       if (sub === 'background-mode') {
         need(rest[0], usage);

@@ -20,11 +20,13 @@ background shows through; `set transparency 0` gives the opaque look. It is kept
 `{"percent":30}`; edit it by hand if you like. An invalid value is refused and the saved one stays; a broken file shows a
 warning and uses 30.
 
-**Window transparency.** Windows (widgets included) that were never set one by one with leader `o` follow the page transparency above, so with the
-default 30 every new window opens see-through. `hatch set window-transparency N` (0 to 100; 0 = not transparent; above 80 is capped at 80 so a window
-cannot vanish) gives those windows their own default instead, and `hatch set window-transparency default` goes back to following the page. The
-same is in the command palette ("Windows: set default transparency..."). It is the optional `"windows"` field of `transparency.json`
-(`{"percent":30,"windows":0}`), applies to open windows at once, and a window set with leader `o` keeps its own value.
+**Window transparency.** Windows (widgets included) that were never set one by one with leader `o` are opaque (0) by default and do not follow the page transparency above.
+`hatch set window-transparency N` (0 to 100; above 80 is capped at 80 so a window cannot vanish) gives those windows another default,
+`hatch set window-transparency follow` makes them follow the terminal/page transparency (the behaviour of older versions), and
+`hatch set window-transparency default` goes back to 0 (it removes the stored value). The same is in the command palette ("Windows: set default
+transparency..."). It is the optional `"windows"` field of `transparency.json` (`{"percent":30,"windows":0}`, or `"windows":"follow"`), applies to
+open windows at once, and a window set with leader `o` keeps its own value. Upgrading: a `transparency.json` without `windows` now gives opaque
+windows; run `hatch set window-transparency follow` to keep the old look.
 
 `hatch windows transparency N` (0 to 100, capped at 80) sets the transparency of every window that is open right now in one go (also in the
 palette: "Windows: set transparency of all open windows..."). Each window keeps the value like with leader `o`, so it overrides the defaults above;

@@ -137,7 +137,10 @@ test('window transparency: default for windows without their own setting, keeps 
   const h = await startHatch();
   const file = path.join(h.stateDir, 'transparency.json');
   try {
-    assert.equal((await snap(h)).windowTransparency, null); // unset: windows follow the page
+    assert.equal((await snap(h)).windowTransparency, 0); // unset: windows are opaque, not following the page
+    assert.equal((await ui(['set', 'window-transparency', 'follow'], h.stateDir)).status, 0);
+    await waitFor(async () => (await snap(h)).windowTransparency === 'follow', 5000);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { percent: 30, windows: 'follow' });
     assert.equal((await ui(['set', 'window-transparency', '0'], h.stateDir)).status, 0);
     await waitFor(async () => (await snap(h)).windowTransparency === 0, 5000);
     assert.equal((await ui(['set', 'transparency', '50'], h.stateDir)).status, 0); // page value change keeps the window default
@@ -148,12 +151,15 @@ test('window transparency: default for windows without their own setting, keeps 
       assert.notEqual(r.status, 0, bad); assert.match(r.stderr, /unchanged|usage/);
     }
     assert.equal((await ui(['set', 'window-transparency', 'default'], h.stateDir)).status, 0);
-    await waitFor(async () => (await snap(h)).windowTransparency === null, 5000);
+    await waitFor(async () => (await snap(h)).windowTransparency === 0, 5000);
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { percent: 50 });
     assert.equal((await h.call('PUT', '/api/transparency/windows', { percent: 25 })).status, 200);
     await waitFor(async () => (await snap(h)).windowTransparency === 25, 5000);
+    assert.equal((await h.call('PUT', '/api/transparency/windows', { percent: 'follow' })).status, 200);
+    await waitFor(async () => (await snap(h)).windowTransparency === 'follow', 5000);
+    assert.equal((await h.call('PUT', '/api/transparency/windows', { percent: 'bogus' })).status, 400);
     fs.writeFileSync(file, '{"percent":10,"windows":250}');
-    await waitFor(async () => { const s = await snap(h); return s.transparency === 10 && s.windowTransparency === null && s.warnings.some((w) => w.file === 'transparency'); }, 5000);
+    await waitFor(async () => { const s = await snap(h); return s.transparency === 10 && s.windowTransparency === 0 && s.warnings.some((w) => w.file === 'transparency'); }, 5000);
   } finally { await h.close(); }
 });
 

@@ -111,7 +111,7 @@ input and resize before their first events snapshot.
 
 Panel JSON also accepts `maximized: true` and `autoFocus: false`. These survive reloads.
 PATCH either field to change it.
-`opacity` (percent, 20 to 100) makes one window translucent (leader `o` asks for a transparency of 0-100 and stores 100 minus it); 100 keeps the window fully opaque even when a global transparency is set (a window with no `opacity` follows `windows` in `transparency.json` when set, else the global one; `POST /api/panels/transparency` with `{"percent":N}` sets `opacity` on every open window; `PUT /api/transparency/windows` with `{"percent":N}` or `{"percent":null}` changes it). An explicit POST opening an existing singleton (progress, widget, or terminal)
+`opacity` (percent, 20 to 100) makes one window translucent (leader `o` asks for a transparency of 0-100 and stores 100 minus it); 100 keeps the window fully opaque even when a global transparency is set (a window with no `opacity` uses `windows` in `transparency.json`: 0 = opaque when absent, a number, or `"follow"` = the global one; `POST /api/panels/transparency` with `{"percent":N}` sets `opacity` on every open window; `PUT /api/transparency/windows` with `{"percent":N}`, `{"percent":"follow"}` or `{"percent":null}` (= default 0) changes it; the state snapshot and the `transparency` event carry it as `windowTransparency`). An explicit POST opening an existing singleton (progress, widget, or terminal)
 restores it, applies supplied size/placement/workspace options, and raises it by default. Saved geometry stays
 unless supplied. `activation` identifies a repeated open so a visible window can be raised again.
 POST `/api/examples/NAME/open` accepts `w`, `h`, `maximized`, `autoFocus` and `ws` in its JSON body.

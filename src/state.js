@@ -167,7 +167,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   let wsList = []; let wsSig = ''; // [{ name, id }] from workspaces.json plus names seen on windows
   let fx = { effect: null, intensity: 50 }; // the background effect (null = none) and its intensity
   let transparency = DEFAULT_TRANSPARENCY;  // percent, 0 = opaque
-  let windowTransparency = null; // percent for windows never set one by one; null = they follow `transparency`
+  let windowTransparency = 0; // percent for windows never set one by one; 0 = opaque, 'follow' = same as `transparency`
   let watcher = null; let pollTimer = null; let debounce = null; let closed = false;
 
   const warn = (file, message) => {
