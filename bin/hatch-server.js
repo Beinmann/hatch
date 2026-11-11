@@ -171,6 +171,10 @@ const explicitPort = o.port !== undefined;
 const port = explicitPort ? Number(o.port) : DEFAULT_PORT;
 if (!Number.isInteger(port) || port < 0 || port > 65535) fail('--port must be a number between 0 and 65535');
 const stateDir = findServerStateDir({ state: o.state });
+{ // before anything is created or written: a live server owns this state dir
+  const { liveOwner, ownerMessage } = await import('../src/instance-guard.js');
+  const owner = await liveOwner(stateDir); if (owner) fail(ownerMessage(stateDir, owner));
+}
 await confirmStateDir(stateDir);
 let hatch;
 try { hatch = createHatch({ tmuxStatus: o['tmux-status'] === 'true', viewOnly: o['view-only'] === 'true' || process.argv.includes('--view-only'), root: o.root, stateDir, host, port, session: o.session, cwd: path.resolve(o.cwd || process.cwd()) }); }
