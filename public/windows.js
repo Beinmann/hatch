@@ -3,6 +3,7 @@ import { pickRestore } from './restore.js';
 import { touch, pickAfterClose } from './focus-history.js';
 import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
+import { dockIds, moveBefore, gapAt, orderPatches } from './dock-order.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
 // (stacked in the right column). Geometry changes are written back to the panel file (debounced), so the layout
@@ -49,7 +50,9 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // The floating area changes size when the dock opens, closes or is dragged, and when the window is resized.
   new ResizeObserver(refit).observe(floats);
   const area = () => ({ width: floats.clientWidth || 800, height: floats.clientHeight || 600 });
-  function layoutDock(w) { w.node.style.cssText = `height:${Math.max(MIN_H, w.panel.h || 260)}px`; }
+  function layoutDock(w) { w.node.style.cssText = `height:${Math.max(MIN_H, w.panel.h || 260)}px`; paintDockOrder(); }
+  // Dock order is CSS `order` (even numbers; the drop indicator uses the odd ones), so reordering never moves a node and iframes do not reload.
+  function paintDockOrder() { dockIds([...wins.values()].map((w) => w.panel)).forEach((id, i) => { const w = wins.get(id); if (w) w.node.style.order = String(i * 2); }); }
 
   function mount(w) {
     const p = w.panel;
@@ -79,7 +82,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     w.body.append(w.view.el);
     // double-click the title bar: maximize over the terminal and back (in the page only, geometry is not saved)
     w.tb.addEventListener('dblclick', (e) => { if (!isViewOnly() && !e.target.closest('button') && w.panel.placement === 'float') patch(w.panel.id, { maximized: !w.panel.maximized }).catch((e) => ctx.toast(e.message, 'bad')); });
-    drag(w); resize(w);
+    drag(w); dockDrag(w); resize(w);
     // remember whether the window was already focused, so a panel can tell a focusing click from a later one (image zoom)
     w.node.addEventListener('pointerdown', () => { w.node.dataset.hadFocus = w.node.classList.contains('focus') ? '1' : ''; focus(w, false); }, true);
     w.node.addEventListener('focusin', () => focus(w, false));
@@ -109,6 +112,48 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
         save(w.panel.id, { x, y });
       };
       w.tb.addEventListener('pointermove', move); w.tb.addEventListener('pointerup', up); w.tb.addEventListener('pointercancel', up);
+    });
+  }
+
+  // Drag a docked window by its title bar to reorder the dock. A small threshold keeps plain clicks and button presses
+  // from starting a drag; Escape cancels. The order is applied at once and saved as dockOrder on the panels that changed.
+  function dockDrag(w) {
+    w.tb.addEventListener('pointerdown', (e) => {
+      if (isViewOnly() || w.panel.placement !== 'dock' || e.button !== 0 || e.target.closest('button')) return;
+      const sx = e.clientX; const sy = e.clientY; let on = false; let gap = 0; let ind = null; let others = [];
+      const start = () => {
+        on = true; w.node.classList.add('dock-dragging'); dock.classList.add('reordering');
+        ind = el('div', { class: 'dock-drop' }); dock.append(ind);
+      };
+      const move = (m) => {
+        if (!on) { if (Math.hypot(m.clientX - sx, m.clientY - sy) < 5) return; start(); }
+        const r = dock.getBoundingClientRect();
+        if (m.clientY < r.top + 30) dock.scrollTop -= 12; else if (m.clientY > r.bottom - 30) dock.scrollTop += 12; // edge auto-scroll
+        others = dockIds([...wins.values()].map((o) => o.panel)).filter((id) => id !== w.panel.id).map((id) => wins.get(id)).filter((o) => o && !o.node.hidden);
+        const rects = others.map((o) => o.node.getBoundingClientRect());
+        gap = gapAt(rects.map((q) => q.top + q.height / 2), m.clientY);
+        const y = rects.length === 0 ? 0 : gap < rects.length ? rects[gap].top - 4 : rects[rects.length - 1].bottom + 4;
+        ind.style.top = `${y - r.top + dock.scrollTop}px`;
+      };
+      const finish = (apply) => {
+        w.tb.removeEventListener('pointermove', move); w.tb.removeEventListener('pointerup', up); w.tb.removeEventListener('pointercancel', cancel);
+        document.removeEventListener('keydown', key, true);
+        if (!on) return;
+        w.node.classList.remove('dock-dragging'); dock.classList.remove('reordering'); ind.remove();
+        if (!apply) return;
+        const all = dockIds([...wins.values()].map((o) => o.panel));
+        const ids = moveBefore(all, w.panel.id, gap < others.length ? others[gap].panel.id : null);
+        const patches = orderPatches(ids, [...wins.values()].map((o) => o.panel));
+        for (const u of patches) { const o = wins.get(u.id); o.panel = { ...o.panel, dockOrder: u.dockOrder }; }
+        paintDockOrder();
+        for (const u of patches) patch(u.id, { dockOrder: u.dockOrder }).catch((err) => ctx.toast(err.message, 'bad'));
+      };
+      const up = () => finish(true);
+      const cancel = () => finish(false);
+      const key = (k) => { if (k.key === 'Escape') { k.preventDefault(); k.stopPropagation(); finish(false); } };
+      try { w.tb.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+      w.tb.addEventListener('pointermove', move); w.tb.addEventListener('pointerup', up); w.tb.addEventListener('pointercancel', cancel);
+      document.addEventListener('keydown', key, true);
     });
   }
 
@@ -176,7 +221,10 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     } else {
       if (panel.placement === 'float' && !w.node.classList.contains('dragging') && !w.node.classList.contains('resizing')) {
         if (['x', 'y', 'w', 'h', 'minimized', 'ws', 'sticky', 'maximized'].some((k) => old[k] !== panel[k])) layoutFloat(w); // also on restore: the area may have changed while it was hidden
-      } else if (panel.placement === 'dock' && old.h !== panel.h && !w.node.classList.contains('resizing')) layoutDock(w);
+      } else if (panel.placement === 'dock') {
+        if (old.h !== panel.h && !w.node.classList.contains('resizing')) layoutDock(w);
+        if (old.dockOrder !== panel.dockOrder) paintDockOrder();
+      }
       w.node.hidden = !shown(w);
       if (panel.minimized && heldFocus) ctx.term?.focus();
       if (JSON.stringify(old.props) !== JSON.stringify(panel.props)) w.view.update(panel);

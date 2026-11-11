@@ -69,7 +69,7 @@ html.has-fx #fx{display:block;position:absolute;inset:0;width:100%;height:100%;z
 #dropmsg[hidden],#reconnect[hidden]{display:none}
 #reconnect{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:var(--warn-soft);color:var(--fg);border:1px solid var(--warn);padding:6px 12px;border-radius:6px;display:flex;gap:10px;align-items:center;z-index:5}
 #split{width:5px;cursor:col-resize;background:var(--line)} #split:hover{background:var(--accent)} #split[hidden]{display:none}
-#dock{width:360px;min-width:200px;max-width:70vw;overflow-y:auto;background:var(--bg);padding:8px;display:flex;flex-direction:column;gap:8px} #dock[hidden]{display:none}
+#dock{position:relative;width:360px;min-width:200px;max-width:70vw;overflow-y:auto;background:var(--bg);padding:8px;display:flex;flex-direction:column;gap:8px} #dock[hidden]{display:none}
 /* dock scroll bar: wider and clearer than the slim default, painted only when the content overflows (the gutter is reserved by scrollbar-gutter:stable, so widgets never shift).
    Firefox gets colours and the thin width; Chromium gets a 10px ::-webkit-scrollbar (standard scrollbar-* properties would disable it, so they are reset to auto there). */
 #dock{scrollbar-color:color-mix(in srgb,var(--muted) 70%,transparent) color-mix(in srgb,var(--surface) 60%,transparent)}
@@ -85,7 +85,9 @@ html.has-fx #fx{display:block;position:absolute;inset:0;width:100%;height:100%;z
 .win.docked{position:relative;box-shadow:none;flex:none}
 .win.focus{border-color:var(--accent)}
 .win .tb{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;border-bottom:1px solid var(--line);background:var(--bg);cursor:grab;user-select:none;touch-action:none}
-.win.docked .tb{cursor:default}
+.win.docked .tb{cursor:grab}
+.win.dock-dragging{opacity:.55;border-style:dashed} .reordering,.reordering .tb{cursor:grabbing!important} .reordering iframe{pointer-events:none}
+.dock-drop{position:absolute;left:8px;right:8px;height:3px;margin-top:-1.5px;border-radius:2px;background:var(--accent);pointer-events:none;z-index:5}
 .win .tb .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;font-size:13px}
 .win .tb button{padding:0 7px;line-height:20px;font-size:13px}
 .win .body{flex:1;min-height:0;overflow:auto;position:relative}
