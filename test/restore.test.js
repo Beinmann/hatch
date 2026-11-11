@@ -25,3 +25,14 @@ test('focus history falls back to the most recent open window, then the terminal
   open.delete('files');
   assert.equal(pickAfterClose(h, 'editor', (id) => open.has(id)), null);
 });
+
+test('last values replay to a reloaded widget page, and clear on reload', async () => {
+  const { createLastValues } = await import('../public/last-values.js');
+  const c = createLastValues(); const got = [];
+  assert.equal(c.replay('cpu', (v) => got.push(v)), false);
+  c.set('cpu', 1, 10); c.set('cpu', 2, 20);
+  assert.equal(c.replay('cpu', (v, ts) => got.push([v, ts])), true);
+  assert.deepEqual(got, [[2, 20]]);
+  c.clear();
+  assert.equal(c.replay('cpu', () => got.push('x')), false);
+});
