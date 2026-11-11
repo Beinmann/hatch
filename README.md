@@ -78,6 +78,8 @@ warning chip in the page and the last good state stays.
 .hatch/log/server.log
 ```
 
+The running server re-checks `config.json` every few seconds and restores its own `port` and `host` if something else overwrote them (other keys are never touched; see `docs/TROUBLESHOOTING.md`).
+
 Everything the CLI does is also possible by writing these files directly or by calling the HTTP API with the token
 (header `x-token`). The server itself uses `--state DIR`, `HATCH_STATE`, or else `./.hatch` of the current directory only
 (parent directories are not searched, so a second instance never attaches to another project). If that dir has no valid

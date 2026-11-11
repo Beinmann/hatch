@@ -27,6 +27,7 @@ import { findBackground } from './background.js';
 import { createLimits } from './limits.js';
 import { parseProxyPath, proxyHttp, proxyUpgrade } from './proxy.js';
 import { acquireLock } from './instance-guard.js';
+import { createConfigGuard } from './config-guard.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -63,7 +64,7 @@ function tokenOk(given, token) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-export function createHatch({ tmuxStatus = false, viewOnly = false, root = null, stateDir, port = 0, host = '0.0.0.0', session, cwd = process.cwd(), attach = null, tmuxBin = 'tmux', procRoot = '/proc', pollState = false, findBin = which, limitsProbe } = {}) {
+export function createHatch({ tmuxStatus = false, viewOnly = false, root = null, stateDir, port = 0, host = '0.0.0.0', session, cwd = process.cwd(), attach = null, tmuxBin = 'tmux', procRoot = '/proc', pollState = false, findBin = which, limitsProbe, configGuard: guardOpts } = {}) {
   stateDir = path.resolve(stateDir);
   fsapi.setRoot(root || process.env.HATCH_ROOT || null); // module-level: one Hatch per process
   const configWarnings = [];
@@ -73,6 +74,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const logFile = path.join(l.log, 'server.log');
   const log = (m) => { try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${m}\n`); } catch { /* logging must never break the server */ } };
 
+  const configGuard = createConfigGuard({ stateDir, current: () => ({ port: cfg.port, host }), log, ...guardOpts }); // repairs port/host in config.json if another writer clobbers them
   let lock = null; // server.lock (src/instance-guard.js), taken on the first listen
   let state; // assigned below; the bus snapshot reads it lazily
   const bus = createBus((req) => ({ ...state.snapshot(), info: { ...info(), viewOnly: viewOnly || levelOf(req) === 'view' }, asks: [...asks.values()].filter((a) => a.answer === null).map(({ id, question, choices, freeText }) => ({ id, question, choices, freeText })) }), { log });
@@ -679,9 +681,11 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       state.start();
       log(`hatch ${VERSION} listening on ${host}:${actual} (tmux session ${cfg.session}, state ${stateDir})`); // also makes sure the log exists for the log-tail widget
       term.setEnv?.({ HATCH_URL: `http://127.0.0.1:${actual}`, HATCH_STATE: stateDir });
+      configGuard.start();
       return actual;
     },
-    async close() { lock?.release(); lock = null; gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
+    async close() { configGuard.stop(); lock?.release(); lock = null; gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
     baseUrl,
+    get configGuardRunning() { return configGuard.running; },
   };
 }

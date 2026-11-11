@@ -21,7 +21,7 @@ function ownerLive(rec) {
   if (rec.start && now) return rec.start === now;
   try { return /hatch-server/.test(fs.readFileSync(`/proc/${rec.pid}/cmdline`, 'utf8')); } catch { return true; }
 }
-const readLock = (state) => { try { const r = JSON.parse(fs.readFileSync(lockFile(state), 'utf8')); return r && typeof r === 'object' ? r : null; } catch { return null; } };
+export const readLock = (state) => { try { const r = JSON.parse(fs.readFileSync(lockFile(state), 'utf8')); return r && typeof r === 'object' ? r : null; } catch { return null; } };
 
 /** Servers older than server.lock leave only the daemon's hatch.pid: its pid counts when alive and named hatch-server. */
 export function livePidFileOwner(state) {
