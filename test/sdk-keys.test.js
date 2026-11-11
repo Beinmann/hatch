@@ -51,3 +51,11 @@ test('SDK asks the host for init on start and takes window focus when told to', 
   assert.ok(s.posted.some((m) => m.type === 'hatch-hello'), 'a widget that missed init can get it again');
   assert.doesNotThrow(() => s.message({ type: 'hatch-take-focus' }));
 });
+
+test('SDK forwards Ctrl+` always and Ctrl+B unless typing in a field', () => {
+  const s = sandbox(); s.message({ type: 'init' });
+  assert.ok(s.key({ code: 'Backquote', key: '`', ctrlKey: true }));
+  assert.ok(s.key({ code: 'KeyB', key: 'b', ctrlKey: true, target: { tagName: 'DIV' } }));
+  assert.ok(!s.key({ code: 'KeyB', key: 'b', ctrlKey: true, target: { tagName: 'TEXTAREA' } }));
+  assert.ok(!s.key({ code: 'KeyB', key: 'b', ctrlKey: true, shiftKey: true, target: { tagName: 'DIV' } }));
+});

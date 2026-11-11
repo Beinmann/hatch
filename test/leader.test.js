@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseChord, chordMatches, leaderAction, isEnter, isPaletteKey } from '../public/leader.js';
+import { parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget } from '../public/leader.js';
 
 test('parseChord reads modifier chords and rejects unusable ones', () => {
   assert.deepEqual(parseChord('Ctrl+Space'), { ctrl: true, alt: false, shift: false, meta: false, code: 'Space' });
@@ -82,4 +82,17 @@ test('leader ] [ w move between workspaces', () => {
   assert.deepEqual(leaderAction({ code: 'KeyW', key: 'w' }), { action: 'wsjump', repeat: false });
   assert.equal(leaderAction({ code: 'KeyW', key: 'W', shiftKey: true }), null);
   assert.equal(leaderAction({ code: 'BracketRight', key: ']', ctrlKey: true }), null);
+});
+
+test('Ctrl+` and Ctrl+B are matched only without other modifiers', () => {
+  assert.ok(isTermKey({ code: 'Backquote', ctrlKey: true }));
+  assert.ok(!isTermKey({ code: 'Backquote' }) && !isTermKey({ code: 'Backquote', ctrlKey: true, shiftKey: true }) && !isTermKey({ code: 'KeyB', ctrlKey: true }));
+  assert.ok(isPrefixKey({ code: 'KeyB', ctrlKey: true }));
+  assert.ok(!isPrefixKey({ code: 'KeyB' }) && !isPrefixKey({ code: 'KeyB', ctrlKey: true, altKey: true }));
+});
+
+test('isTextTarget spots fields and editors', () => {
+  assert.ok(isTextTarget({ tagName: 'TEXTAREA' }) && isTextTarget({ tagName: 'input' }) && isTextTarget({ tagName: 'DIV', isContentEditable: true }));
+  assert.ok(isTextTarget({ tagName: 'DIV', closest: (s) => s.includes('.cm-editor') ? {} : null }));
+  assert.ok(!isTextTarget({ tagName: 'DIV', closest: () => null }) && !isTextTarget(null));
 });
