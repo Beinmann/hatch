@@ -116,6 +116,8 @@ test('recent activity: reflog events from a real repo (branch, commit, worktree)
   const texts = s.activity.map((a) => a.text);
   assert.ok(s.activity.length >= 3 && s.activity.length <= 5, texts.join(' | '));
   assert.ok(texts.includes('created branch side'), texts.join(' | '));
+  assert.equal(s.activity.find((a) => a.text === 'created branch side').kind, 'branch');
+  assert.equal(s.activity.find((a) => a.text === 'commit on feature: work on feature').kind, 'commit');
   assert.ok(texts.includes('commit on feature: work on feature'), 'one entry per event, named after the branch');
   assert.ok(texts.includes('created branch feature') || texts.some((t) => t.startsWith('checkout main')), texts.join(' | '));
   assert.equal(new Set(s.activity.map((a) => `${a.ts}${a.text}`)).size, s.activity.length);
@@ -130,4 +132,15 @@ test('parseActivity: drops fetch and push noise, prefers branch over HEAD, caps 
     ...[6, 5, 4, 3, 2, 1].map((n) => `${n}${US}HEAD@{${n}}${US}checkout: moving from a${n} to b${n}${US}h${n}`)];
   const a = JSON.parse(JSON.stringify(raw.parseActivity(lines)));
   assert.equal(a.length, 5); assert.equal(a[0].text, 'commit on main: a'); assert.equal(a[1].text, 'checkout a6 → b6');
+});
+
+test('parseActivity: every reflog message maps to a kind (icon), unknown ones to other', () => {
+  const US = '\x1f';
+  const cases = [['HEAD', 'commit: a', 'commit'], ['main', 'commit (initial): a', 'first'], ['main', 'commit (amend): a', 'amend'], ['main', 'commit (merge): a', 'mergecommit'],
+    ['main', 'merge feature: Fast-forward', 'merge'], ['HEAD', 'checkout: moving from a to b', 'checkout'], ['x', 'branch: Created from HEAD', 'branch'],
+    ['x', 'branch: Reset to main', 'reset'], ['HEAD', 'reset: moving to HEAD~1', 'reset'], ['HEAD', 'rebase (finish): returning to refs/heads/x', 'rebase'],
+    ['HEAD', 'cherry-pick: a', 'cherry'], ['HEAD', 'pull: something odd', 'other']];
+  const lines = cases.map(([ref, msg], i) => `${100 - i}${US}${ref}@{0}${US}${msg}${US}h${i}`);
+  const kinds = JSON.parse(JSON.stringify(raw.parseActivity(lines, 99))).map((a) => a.kind);
+  assert.deepEqual(kinds, cases.map((c) => c[2]));
 });
