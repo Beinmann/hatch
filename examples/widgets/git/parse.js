@@ -20,6 +20,12 @@
     });
   }
 
+  /** Pills worth showing on a commit row: everything except the checked-out branch (the header already names it). */
+  function rowRefs(refs, head) { return refs.filter((r) => !(r.kind === 'head' && r.name === head)); }
+
+  /** Author initials are only informative when the listed commits have more than one author. */
+  function multiAuthor(commits) { return new Set(commits.map((c) => c.author)).size > 1; }
+
   function parseStatus(lines, st) {
     for (const line of lines) {
       if (!line) continue;
@@ -128,6 +134,6 @@
   const splitPath = (p) => { const i = p.lastIndexOf('/'); return i < 0 ? { dir: '', name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) }; };
   const baseName = (p) => String(p || '').replace(/\/+$/, '').split('/').pop() || '/';
 
-  const api = { parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
+  const api = { rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GitParse = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

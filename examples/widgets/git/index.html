@@ -32,11 +32,16 @@
   .f .d{color:var(--muted,#888)}.f .n{color:var(--fg,#eee)}.f .o{color:var(--muted,#888)}
   .more,.empty,.clean{color:var(--muted,#888);padding-left:2px}
   .clean{margin-top:10px;color:var(--ok)}
-  .c .h{flex:none;color:var(--accent,#4fd1c0)}
+  .cm{gap:4px}
+  .cm .g{flex:none;width:1ch;color:var(--warn);text-align:center}
+  .cm .t{display:inline-grid;justify-items:end;text-align:right}
+  .cm .t>*{grid-area:1/1}
+  .cm .h{color:var(--accent,#4fd1c0);opacity:0;transition:opacity .12s}
+  .cm .a{transition:opacity .12s}
+  .cm:hover .h{opacity:1}.cm:hover .a{opacity:0}
   .c .s{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
   .c .ic{flex:none;width:16px;display:inline-flex;justify-content:center;align-self:center;color:var(--muted,#888)}
   .c .t{flex:none;color:var(--muted,#888)}
-  .c.up .h:after{content:"\2191";color:var(--warn);margin-left:1px}
   .pill{flex:none;font-size:10px;line-height:1.3;padding:0 5px;border-radius:8px;box-shadow:inset 0 0 0 1px var(--muted,#888);color:var(--muted,#888)}
   .pill.head{background:var(--accent,#4fd1c0);color:#111;box-shadow:none;font-weight:bold}
   .pill.tag{color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
@@ -66,10 +71,11 @@
     const f = folded.has(id);
     return `<h3 class="${f ? 'fold' : ''}" data-sec="${id}"><span class="car">▾</span>${title} <span class="n">(${list.length}${extra})</span></h3>${f ? '' : list.map(fileRow).join('')}`;
   };
-  const commitRow = (c, i, ahead, now) => {
-    const pills = c.refs.map((r) => `<span class="pill ${r.kind}">${esc(r.name)}</span>`).join('');
-    const who = c.author ? c.author[0].toUpperCase() : '?';
-    return `<div class="row c${i < ahead ? ' up' : ''}" title="${esc(`${c.hash} ${c.subject} - ${c.author}`)}"><span class="h">${esc(c.hash)}</span><span class="s">${esc(c.subject)}</span>${pills}<span class="t">${G.relTime(c.ts, now)} ${esc(who)}</span></div>`;
+  // Gutter marks unpushed commits; the hash fades in over the age on hover (same grid cell, so nothing shifts).
+  const commitRow = (c, i, ahead, now, head, authors) => {
+    const pills = G.rowRefs(c.refs, head).map((r) => `<span class="pill ${r.kind}">${esc(r.name)}</span>`).join('');
+    const who = authors ? ` ${esc(c.author ? c.author[0].toUpperCase() : '?')}` : '';
+    return `<div class="row c cm" title="${esc(`${c.hash} ${c.subject} - ${c.author}`)}"><span class="g">${i < ahead ? '\u2191' : ''}</span><span class="s">${esc(c.subject)}</span>${pills}<span class="t"><span class="a">${G.relTime(c.ts, now)}${who}</span><span class="h">${esc(c.hash)}</span></span></div>`;
   };
 
   function view(s, now) {
@@ -93,7 +99,7 @@
     if (s.commits.length) {
       const f = folded.has('commits');
       h += `<h3 class="${f ? 'fold' : ''}" data-sec="commits"><span class="car">▾</span>Recent commits <span class="n">(${s.commits.length})</span></h3>`;
-      if (!f) h += s.commits.map((c, i) => commitRow(c, i, b.ahead, now)).join('');
+      if (!f) h += s.commits.map((c, i) => commitRow(c, i, b.ahead, now, b.head, G.multiAuthor(s.commits))).join('');
     } else h += '<h3 data-sec="none" style="cursor:default">Recent commits</h3><div class="empty">no commits yet</div>';
     if (s.activity.length) {   // hidden when the reflog is empty or unavailable
       const f = folded.has('activity');

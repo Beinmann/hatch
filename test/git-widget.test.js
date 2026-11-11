@@ -144,3 +144,12 @@ test('parseActivity: every reflog message maps to a kind (icon), unknown ones to
   const kinds = JSON.parse(JSON.stringify(raw.parseActivity(lines, 99))).map((a) => a.kind);
   assert.deepEqual(kinds, cases.map((c) => c[2]));
 });
+
+test('commit rows: author initials only with several authors; the checked-out branch pill is dropped', () => {
+  assert.equal(G.multiAuthor([{ author: 'Ann' }, { author: 'Ann' }]), false);
+  assert.equal(G.multiAuthor([{ author: 'Ann' }, { author: 'Bob' }]), true);
+  assert.equal(G.multiAuthor([]), false);
+  const refs = G.parseRefs('HEAD -> main, tag: v1, origin/main, dev');
+  assert.equal(G.rowRefs(refs, 'main').map((r) => r.name).join(), 'v1,origin/main,dev');
+  assert.equal(G.rowRefs(G.parseRefs('HEAD'), '(detached)').length, 1);
+});
