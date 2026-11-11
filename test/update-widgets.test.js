@@ -55,3 +55,24 @@ test('opening an example records its hash; /api/examples flags only a stale inst
     assert.equal(list.find((e) => e.name === 'cpu').stale, undefined, 'a widget this instance never copied is not flagged');
   } finally { await h.close(); }
 });
+
+test('per-project git copies: flagged when stale, refreshed by update-widgets git, project settings kept', async () => {
+  const { staleProjectCopies, projectGitCopies, gitProjectMeta } = await import('../src/update-widgets.js');
+  const ex = new URL('../examples/widgets/git', import.meta.url);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hatch-uw-')); const w = path.join(dir, 'widgets', 'git-proj');
+  fs.cpSync(ex, w, { recursive: true });
+  // a copy made before the redesign: no from field, old log length and old page
+  const shipped = JSON.parse(fs.readFileSync(new URL('../examples/widgets/git/widget.json', import.meta.url), 'utf8'));
+  const old = gitProjectMeta(shipped, "/work/my'proj", 'Git: proj'); delete old.from; old.w = 700; old.sources[0].cmd = old.sources[0].cmd.replace('-n 5', '-n 12');
+  fs.writeFileSync(path.join(w, 'widget.json'), JSON.stringify(old)); fs.writeFileSync(path.join(w, 'index.html'), 'old page');
+  fs.mkdirSync(path.join(dir, 'widgets', 'unrelated')); fs.writeFileSync(path.join(dir, 'widgets', 'unrelated', 'widget.json'), '{"dir":"/x"}');
+  assert.deepEqual(projectGitCopies(dir), ['git-proj']); assert.deepEqual(staleProjectCopies(dir), ['git-proj']);
+  const r = updateWidgets(dir, ['git']);
+  assert.deepEqual(r.updated.map((u) => u.name), ['git-proj']);
+  const meta = JSON.parse(fs.readFileSync(path.join(w, 'widget.json'), 'utf8'));
+  assert.equal(meta.dir, "/work/my'proj"); assert.equal(meta.title, 'Git: proj'); assert.equal(meta.w, 700); assert.equal(meta.from, 'git');
+  assert.match(meta.sources[0].cmd, /-n 5/); assert.ok(meta.sources[0].cmd.includes(`cd '/work/my'\\''proj'`), 'cwd stays pinned and quoted');
+  assert.equal(fs.readFileSync(path.join(w, 'index.html.bak'), 'utf8'), 'old page');
+  assert.deepEqual(staleProjectCopies(dir), []); assert.deepEqual(updateWidgets(dir, ['git-proj']).unchanged, ['git-proj']);
+  assert.equal(fs.existsSync(path.join(dir, 'widgets', 'git')), false, 'the plain git widget is not created');
+});

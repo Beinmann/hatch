@@ -20,7 +20,7 @@ import { createWatches, checkWatches } from './watches.js';
 import { createSchedules, checkSchedules } from './schedules.js';
 import { createRuns } from './runs.js';
 import * as discover from './discover.js';
-import { widgetStatus, recordShipped, staleMessage } from './update-widgets.js';
+import { widgetStatus, recordShipped, staleMessage, gitProjectMeta, staleProjectCopies } from './update-widgets.js';
 import * as gitapi from './git.js';
 import { setFx, readFx, FxError, EFFECTS } from './fx.js';
 import { findBackground } from './background.js';
@@ -233,7 +233,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const DESKTOP = [['graph', 20, 20, 440, 210], ['sysinfo', 480, 20, 300, 210], ['clock', 800, 20, 300, 190], ['top', 20, 250, 520, 270], ['git', 560, 250, 500, 270], ['log-tail', 20, 540, 520, 200]];
   const exampleList = () => fs.readdirSync(EXAMPLES, { withFileTypes: true }).filter((e) => e.isDirectory() && NAME_RE.test(e.name)).map((e) => {
     let title = e.name; try { title = JSON.parse(fs.readFileSync(path.join(EXAMPLES, e.name, 'widget.json'), 'utf8')).title || e.name; } catch { /* keep the name */ }
-    const stale = fs.existsSync(path.join(l.widgets, e.name)) && widgetStatus(stateDir, e.name) === 'stale';
+    const stale = (fs.existsSync(path.join(l.widgets, e.name)) && widgetStatus(stateDir, e.name) === 'stale') || (e.name === 'git' && staleProjectCopies(stateDir).length > 0);
     return { name: e.name, title, ...(stale && { stale: true, hint: staleMessage(e.name) }) };
   }).concat([{ name: 'trash', title: 'Trash', open: state.listPanels().some((q) => q.type === 'trash') }]) // built in: a panel type, not a folder in examples/
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -262,10 +262,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     if (!fs.existsSync(target)) {
       fs.cpSync(path.join(EXAMPLES, 'git'), target, { recursive: true });
       const metaFile = path.join(target, 'widget.json'); const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
-      const quoted = `'${real.replace(/'/g, `'\\''`)}'`;
-      meta.title = `Git: ${project}`; meta.dir = real;
-      meta.sources = meta.sources.map((src) => ({ ...src, cmd: src.cmd.replaceAll('{{cwd}}', () => quoted) }));
-      atomicWrite(metaFile, `${JSON.stringify(meta, null, 2)}\n`);
+      atomicWrite(metaFile, `${JSON.stringify(gitProjectMeta(meta, real, `Git: ${project}`), null, 2)}\n`);
     }
     const windowOptions = {};
     for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws']) if (options?.[key] !== undefined) windowOptions[key] = options[key];

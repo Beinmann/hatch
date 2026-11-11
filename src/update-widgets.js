@@ -61,13 +61,52 @@ export function widgetStatus(stateDir, name) {
 }
 export const staleMessage = (name) => `The shipped ${name} widget changed since this instance copied it. Refresh it with: hatch-server update-widgets ${name}`;
 
+// ---- per-project git widgets ----
+// `hatch widget open git` makes one copy per project (git-<folder>) whose widget.json has the project's directory and title
+// baked in, so a whole-folder hash never matches the shipped example. Those copies carry from:"git"; older ones are
+// recognised by their name and dir. Refreshing replaces the code files and rebuilds widget.json from the shipped one.
+const GIT = 'git';
+const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+/** widget.json for a git widget of the project at `dir`: the shipped one with {{cwd}} pinned (shell-quoted) to it. */
+export function gitProjectMeta(shippedMeta, dir, title) {
+  const quoted = `'${dir.replace(/'/g, `'\\''`)}'`;
+  return { ...shippedMeta, title, dir, from: GIT, sources: (shippedMeta.sources || []).map((src) => ({ ...src, cmd: src.cmd.replaceAll('{{cwd}}', () => quoted) })) };
+}
+export function projectGitCopies(stateDir) {
+  const root = path.join(stateDir, 'widgets'); if (!fs.existsSync(root)) return [];
+  return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).filter((n) => {
+    const m = readJson(path.join(root, n, 'widget.json'));
+    return m && typeof m.dir === 'string' && (m.from === GIT || (n.startsWith('git-') && !m.from));
+  });
+}
+const sameFiles = (a, b) => walk(b).filter((f) => f !== 'widget.json' && f.split(path.sep)[0] !== 'data').every((f) => fs.existsSync(path.join(a, f)) && fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))));
+/** Project git copies whose code differs from the shipped git widget. */
+export const staleProjectCopies = (stateDir) => projectGitCopies(stateDir).filter((n) => !sameFiles(path.join(stateDir, 'widgets', n), path.join(EXAMPLES, GIT)));
+function refreshProjectCopy(stateDir, name) {
+  const src = path.join(EXAMPLES, GIT); const dest = path.join(stateDir, 'widgets', name); const files = []; const backups = [];
+  for (const f of walk(src)) {
+    if (f === 'widget.json' || f.split(path.sep)[0] === 'data') continue;
+    const to = path.join(dest, f); const next = fs.readFileSync(path.join(src, f));
+    if (fs.existsSync(to)) { const cur = fs.readFileSync(to); if (cur.equals(next)) continue; fs.writeFileSync(`${to}.bak`, cur); backups.push(f); }
+    fs.mkdirSync(path.dirname(to), { recursive: true }); fs.writeFileSync(to, next); files.push(f);
+  }
+  const metaFile = path.join(dest, 'widget.json'); const old = readJson(metaFile) || {};
+  const next = gitProjectMeta(readJson(path.join(src, 'widget.json')), old.dir, old.title || `Git: ${path.basename(old.dir)}`);
+  for (const k of ['w', 'h', 'placement']) if (old[k] !== undefined) next[k] = old[k]; // window size the user chose stays
+  const text = `${JSON.stringify(next, null, 2)}\n`;
+  if (!fs.existsSync(metaFile) || fs.readFileSync(metaFile, 'utf8') !== text) { if (fs.existsSync(metaFile)) fs.copyFileSync(metaFile, `${metaFile}.bak`); atomicWrite(metaFile, text); files.push('widget.json'); }
+  return { name, files, backups };
+}
+
 /** names: widget names, or null for all. Returns { updated: [{name, files, backups}], unchanged: [name], missing: [name] }. */
 export function updateWidgets(stateDir, names = null) {
   const shipped = shippedWidgets();
-  const unknown = (names || []).filter((n) => !shipped.includes(n));
+  const copies = projectGitCopies(stateDir);
+  const unknown = (names || []).filter((n) => !shipped.includes(n) && !copies.includes(n));
   if (unknown.length) throw new Error(`no example widget ${unknown.join(', ')}; available: ${shipped.join(', ')}`);
   const res = { updated: [], unchanged: [], missing: [] };
   for (const name of names || shipped) {
+    if (copies.includes(name)) continue; // handled below
     const dest = path.join(stateDir, 'widgets', name);
     if (!fs.existsSync(dest)) { res.missing.push(name); continue; } // never opened in this instance: nothing to update
     const src = path.join(EXAMPLES, name); const files = []; const backups = [];
@@ -84,6 +123,11 @@ export function updateWidgets(stateDir, names = null) {
     }
     recordShipped(stateDir, name);
     (files.length ? res.updated.push({ name, files, backups }) : res.unchanged.push(name));
+  }
+  // Per-project git copies: named directly, or refreshed along with "git" and --all
+  for (const name of copies.filter((n) => !names || names.includes(n) || names.includes(GIT))) {
+    const u = refreshProjectCopy(stateDir, name);
+    (u.files.length ? res.updated.push(u) : res.unchanged.push(name));
   }
   return res;
 }
