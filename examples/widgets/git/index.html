@@ -6,7 +6,8 @@
      Parsing lives in parse.js (also used by the tests). -->
 <style>
   :root{--ok:#4fd1a0;--warn:#f59e0b;--bad:#f87171;--info:#7aa7ff}
-  html,body{margin:0;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.5 var(--mono,monospace);overflow-x:hidden}
+  html,body{margin:0;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.5 var(--mono,monospace)}
+  html{overflow-x:hidden}   /* not on body: that would make body the scroll container and break the sticky Back bar */
   #app{padding:8px 10px 12px;min-width:0}
   .repo{display:flex;align-items:baseline;gap:8px;min-width:0}
   .repo b{font-size:14px;color:var(--fg,#eee);white-space:nowrap}
@@ -46,6 +47,40 @@
   .pill.head{background:var(--accent,#4fd1c0);color:#111;box-shadow:none;font-weight:bold}
   .pill.tag{color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
   .pill.remote{color:var(--info);box-shadow:inset 0 0 0 1px var(--info)}
+  .row[data-hash],.row[data-path]{cursor:pointer}
+  .row[data-hash]:hover .s,.row[data-path]:hover .n{color:var(--accent,#4fd1c0)}
+  /* inspect view (replaces the status list; Back or Escape returns) */
+  .top{position:sticky;top:0;z-index:2;background:var(--bg,#111);display:flex;gap:8px;align-items:center;margin:-8px -10px 6px;padding:6px 10px;border-bottom:1px solid rgba(127,127,127,.25)}
+  .top button{font:inherit;color:var(--accent,#4fd1c0);background:none;border:1px solid rgba(127,127,127,.4);border-radius:4px;padding:0 8px;cursor:pointer}
+  .top button:hover{background:rgba(127,127,127,.15)}
+  .top .what{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--muted,#888)}
+  .subj{font-size:14px;font-weight:bold;white-space:normal;overflow-wrap:anywhere;margin:2px 0 4px}
+  .meta{color:var(--muted,#888);display:flex;flex-wrap:wrap;gap:2px 12px}
+  .meta .hh{color:var(--accent,#4fd1c0)}
+  .plink{color:var(--accent,#4fd1c0);cursor:pointer;text-decoration:underline dotted}
+  .body{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted,#888);margin:6px 0 0;padding-left:8px;border-left:2px solid rgba(127,127,127,.3)}
+  .sum{margin:10px 0 2px;color:var(--muted,#888)}.p{color:var(--ok)}.m{color:var(--bad)}
+  .st{display:flex;gap:8px;align-items:center;min-width:0;white-space:nowrap;cursor:pointer;padding:0 2px}
+  .st:hover{background:rgba(127,127,127,.12)}
+  .st .pa{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .st .pa .d{color:var(--muted,#888)}
+  .st .cnt{flex:none;color:var(--muted,#888);min-width:5ch;text-align:right}
+  .st .bars{flex:none;width:20ch;display:flex}
+  .bar-p,.bar-m{display:inline-block;height:.8em;margin-top:.1em}
+  .bar-p{background:var(--ok)}.bar-m{background:var(--bad)}
+  .fh{display:flex;gap:6px;align-items:center;margin:10px 0 0;padding:1px 4px;background:rgba(127,127,127,.16);border-radius:3px 3px 0 0;cursor:pointer;user-select:none;white-space:nowrap}
+  .fh .car{display:inline-block;width:1ch;color:var(--muted,#888);transition:transform .1s}
+  .fh.fold .car{transform:rotate(-90deg)}
+  .fh .pa{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+  .fh .cnt{flex:none;color:var(--muted,#888)}
+  .code{overflow-x:auto;border:1px solid rgba(127,127,127,.16);border-top:0}
+  .code>div{white-space:pre;min-width:max-content;padding:0 6px}
+  .code .add{background:color-mix(in srgb,var(--ok) 20%,transparent)}
+  .code .del{background:color-mix(in srgb,var(--bad) 20%,transparent)}
+  .code .hunk{color:var(--muted,#888);opacity:.8;background:rgba(127,127,127,.08)}
+  .code .no{color:var(--muted,#888);font-style:italic}
+  .note{color:var(--muted,#888);padding:2px 6px}
+  .note button,.load{font:inherit;color:var(--accent,#4fd1c0);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline dotted}
   .msg{padding:14px 4px;color:var(--fg,#eee);white-space:normal;line-height:1.6}
   .msg code{color:var(--accent,#4fd1c0)}
   .msg.bad{color:var(--bad)}
@@ -59,23 +94,24 @@
   const folded = new Set();   // section ids the user folded; in memory only
   let last = null, shown = null;
 
-  const fileRow = (e) => {
+  const MODE = { conflicts: 'unstaged', unstaged: 'unstaged', staged: 'staged', untracked: 'untracked' };
+  const fileRow = (e, sec) => {
     const { dir, name } = G.splitPath(e.path);
     const cls = e.code === '??' ? 'q' : e.code[0] === 'U' || e.code === 'AA' || e.code === 'DD' ? 'U' : e.code;
     const label = e.code === '??' ? '?' : e.code.length > 1 ? 'U' : e.code;
     const from = e.from ? ` <span class="o">← ${esc(e.from)}</span>` : '';
-    return `<div class="row" title="${esc(e.path)}"><span class="b ${cls}">${esc(label)}</span><span class="f"><span class="d">${esc(dir)}</span><span class="n">${esc(name)}</span>${from}</span></div>`;
+    return `<div class="row" data-path="${esc(e.path)}" data-from="${esc(e.from || '')}" data-mode="${MODE[sec]}" data-code="${esc(e.code)}" title="${esc(e.path)} (click to inspect)"><span class="b ${cls}">${esc(label)}</span><span class="f"><span class="d">${esc(dir)}</span><span class="n">${esc(name)}</span>${from}</span></div>`;
   };
   const section = (id, title, list, extra = '') => {
     if (!list.length) return '';
     const f = folded.has(id);
-    return `<h3 class="${f ? 'fold' : ''}" data-sec="${id}"><span class="car">▾</span>${title} <span class="n">(${list.length}${extra})</span></h3>${f ? '' : list.map(fileRow).join('')}`;
+    return `<h3 class="${f ? 'fold' : ''}" data-sec="${id}"><span class="car">▾</span>${title} <span class="n">(${list.length}${extra})</span></h3>${f ? '' : list.map((e) => fileRow(e, id)).join('')}`;
   };
   // Gutter marks unpushed commits; the hash fades in over the age on hover (same grid cell, so nothing shifts).
   const commitRow = (c, i, ahead, now, head, authors) => {
     const pills = G.rowRefs(c.refs, head).map((r) => `<span class="pill ${r.kind}">${esc(r.name)}</span>`).join('');
     const who = authors ? ` ${esc(c.author ? c.author[0].toUpperCase() : '?')}` : '';
-    return `<div class="row c cm" title="${esc(`${c.hash} ${c.subject} - ${c.author}`)}"><span class="g">${i < ahead ? '\u2191' : ''}</span><span class="s">${esc(c.subject)}</span>${pills}<span class="t"><span class="a">${G.relTime(c.ts, now)}${who}</span><span class="h">${esc(c.hash)}</span></span></div>`;
+    return `<div class="row c cm" data-hash="${esc(c.hash)}" title="${esc(`${c.hash} ${c.subject} - ${c.author}`)}"><span class="g">${i < ahead ? '\u2191' : ''}</span><span class="s">${esc(c.subject)}</span>${pills}<span class="t"><span class="a">${G.relTime(c.ts, now)}${who}</span><span class="h">${esc(c.hash)}</span></span></div>`;
   };
 
   function view(s, now) {
@@ -104,7 +140,7 @@
     if (s.activity.length) {   // hidden when the reflog is empty or unavailable
       const f = folded.has('activity');
       h += `<h3 class="${f ? 'fold' : ''}" data-sec="activity"><span class="car">▾</span>Recent activity <span class="n">(${s.activity.length})</span></h3>`;
-      if (!f) h += s.activity.map((a) => `<div class="row c" title="${esc(`${a.hash} ${a.text}`)}">${icon(a.kind)}<span class="s">${esc(a.text)}</span><span class="t">${G.relTime(a.ts, now)}</span></div>`).join('');
+      if (!f) h += s.activity.map((a) => `<div class="row c"${a.hash ? ` data-hash="${esc(a.hash)}"` : ''} title="${esc(`${a.hash} ${a.text}`)}">${icon(a.kind)}<span class="s">${esc(a.text)}</span><span class="t">${G.relTime(a.ts, now)}</span></div>`).join('');
     }
     return h;
   }
@@ -125,16 +161,140 @@
   };
   const icon = (k) => `<span class="ic"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[k] || ICONS.other}</svg></span>`;
 
+  // ---- inspect views: click a commit or a changed file; Back / Escape returns to the status list ----
+  // `detail` = { kind: 'commit' | 'file', ..., data, error, loading }; `stack` holds the views to go back to (commit -> parent -> back).
+  // The patches are shown inside this widget because a widget cannot open another window; the sources `show` and `diff`
+  // (widget.json) do the git work.
+  const LINES = 400;   // lines of one file's patch drawn before "show more"
+  let detail = null; const stack = []; let listY = 0; let reqId = 0;
+  const unfolded = new Set(); const refolded = new Set(); const full = new Set();   // file headers the user toggled; files shown in full
+
+  const when = (ts) => { try { return new Date(ts * 1000).toLocaleString(); } catch { return ''; } };
+  const counts = (a, d) => `<span class="p">+${a}</span> <span class="m">−${d}</span>`;
+  const codeLine = (l) => l.t === '+' ? `<div class="add">+${esc(l.s)}</div>` : l.t === '-' ? `<div class="del">−${esc(l.s)}</div>` : l.t === '\\' ? `<div class="no">${esc(l.s)}</div>` : `<div> ${esc(l.s)}</div>`;
+  const label = (f) => f.status === 'R' && f.from ? `${esc(f.from)} → ${esc(f.path)}` : esc(f.path);
+
+  // One file's patch: collapsible header, hunks with coloured lines, capped at LINES lines until "show more".
+  // f.hunks === null means the patch was not loaded (cut off in a big commit); `missing` is the text to show then.
+  function patch(f, key, missing) {
+    const folded = refolded.has(key) || (!unfolded.has(key) && !f.binary && f.add + f.del > 250);
+    const h = `<div class="fh${folded ? ' fold' : ''}" id="f-${esc(key)}" data-fold="${esc(key)}"><span class="car">▾</span><span class="b ${f.status}">${f.status}</span><span class="pa">${label(f)}</span><span class="cnt">${counts(f.add, f.del)}</span></div>`;
+    if (folded) return h;
+    if (!f.hunks) return `${h}<div class="code"><div class="no">${missing}</div></div>`;
+    if (f.binary) return `${h}<div class="code"><div class="no">binary file</div></div>`;
+    let n = 0; let body = ''; let cut = 0; const all = full.has(key);
+    for (const hk of f.hunks) {
+      if (n >= LINES && !all) { cut += hk.lines.length + 1; continue; }
+      body += `<div class="hunk">${esc(hk.head)}</div>`; n++;
+      for (const l of hk.lines) { if (n >= LINES && !all) { cut++; continue; } body += codeLine(l); n++; }
+    }
+    if (!f.hunks.length) body = f.status === 'R' ? '<div class="no">renamed without changes</div>' : '<div class="no">no textual changes (mode change or empty file)</div>';
+    return `${h}<div class="code">${body}</div>${cut ? `<div class="note"><button data-full="${esc(key)}">show ${cut} more lines</button></div>` : ''}`;
+  }
+
+  function commitView(d) {
+    let h = `<div class="subj">${esc(d.subject || '(no subject)')}</div>`;
+    const refs = G.rowRefs(d.refs, null).map((r) => `<span class="pill ${r.kind}">${esc(r.name)}</span>`).join(' ');
+    h += `<div class="meta"><span class="hh">${esc(d.hash.slice(0, 12))}</span><span>${esc(d.author)}</span><span>${esc(when(d.ts))}</span>${refs}</div>`;
+    if (d.parents.length) h += `<div class="meta"><span>${d.parents.length > 1 ? 'parents' : 'parent'}</span>${d.parents.map((p) => `<span class="plink" data-hash="${esc(p)}">${esc(p.slice(0, 7))}</span>`).join(' ')}${d.parents.length > 1 ? '<span>(diff against the first)</span>' : ''}</div>`;
+    if (d.body) h += `<div class="body">${esc(d.body)}</div>`;
+    const files = d.files; const add = files.reduce((a, f) => a + f.add, 0); const del = files.reduce((a, f) => a + f.del, 0);
+    h += `<div class="sum">${files.length} file${files.length === 1 ? '' : 's'} changed, ${counts(add, del)}</div>`;
+    const bars = G.statBars(files);
+    files.forEach((f, i) => {
+      const { dir, name } = G.splitPath(f.path); const b = bars[i];
+      h += `<div class="st" data-jump="${i}" title="${esc(f.path)}"><span class="b ${f.status}">${f.status}</span><span class="pa"><span class="d">${esc(dir)}</span>${esc(name)}${f.from ? ` <span class="d">← ${esc(f.from)}</span>` : ''}</span><span class="cnt">${f.binary ? 'bin' : f.add + f.del}</span><span class="bars"><span class="bar-p" style="width:${b.plus}ch"></span><span class="bar-m" style="width:${b.minus}ch"></span></span></div>`;
+    });
+    if (d.truncated) h += '<div class="note">The full patch is large and was cut after 40 KB; files after the cut have a load link. <code>git show</code> in a terminal shows everything.</div>';
+    files.forEach((f, i) => {
+      const view = f.diff ? { ...f, status: f.diff.status, hunks: f.diff.hunks } : { ...f, hunks: null };
+      h += patch(view, `c${i}`, f.loading ? 'loading...' : `diff not loaded (patch was large) <button class="load" data-load="${i}">load this file</button>`);
+    });
+    return h;
+  }
+
+  function fileView(d) {
+    const h = `<div class="subj">${esc(d.path)}</div><div class="meta"><span>${esc(d.title)}</span>${d.from ? `<span>renamed from ${esc(d.from)}</span>` : ''}</div>`;
+    const r = d.data;
+    if (r.list) return `${h}<div class="sum">untracked folder, ${r.list.length}${r.list.length >= 200 ? '+' : ''} file${r.list.length === 1 ? '' : 's'}</div>${r.list.map((p) => `<div class="row"><span class="f"><span class="n">${esc(p)}</span></span></div>`).join('')}`;
+    if (!r.files.length) return `${h}<div class="note">Nothing to show: the file no longer differs (it may have been staged, committed or reverted).</div>`;
+    return h + (r.truncated ? '<div class="note">Large patch, cut after 40 KB.</div>' : '') + r.files.map((f, i) => patch(f, `f${i}`, '')).join('');
+  }
+
+  function detailView() {
+    const d = detail;
+    const h = `<div class="top"><button data-back title="Esc">← Back</button><span class="what">${esc(d.kind === 'commit' ? `commit ${d.hash.slice(0, 7)}` : d.title)}</span></div>`;
+    if (d.error) return `${h}<div class="msg bad">${esc(d.error)}</div>`;
+    if (!d.data) return `${h}<div class="msg">loading...</div>`;
+    return h + (d.kind === 'commit' ? commitView(d.data) : fileView(d));
+  }
+
+  // Asks a source; ignores the answer when the user already moved on to another view.
+  function fetchDetail(d, source, arg, done) {
+    const id = ++reqId;
+    hatch.call(source, arg).then((v) => {
+      if (id !== reqId || detail !== d) return;
+      if (v.error && !v.out) d.error = v.error; else done(v.out || '');
+      render();
+    }, (e) => { if (id === reqId && detail === d) { d.error = e.message; render(); } });
+  }
+  const gone = 'The folder this widget points at no longer exists.';
+  function openCommit(hash) {
+    if (detail) stack.push(detail); else listY = window.scrollY;
+    const d = detail = { kind: 'commit', hash };
+    fetchDetail(d, 'show', hash, (out) => {
+      const r = G.parseShow(out);
+      if (r.state === 'ok') d.data = r; else d.error = r.state === 'nodir' ? gone : `Commit ${hash} was not found (it may have been garbage collected).`;
+    });
+    render(); window.scrollTo(0, 0);
+  }
+  const MODE_TITLE = { unstaged: 'unstaged changes', staged: 'staged changes', untracked: 'untracked' };
+  function openFile(mode, path, from, code) {
+    const arg = G.diffArg(mode, '', path, from);
+    if (detail) stack.push(detail); else listY = window.scrollY;
+    const d = detail = { kind: 'file', path, from, title: MODE_TITLE[mode] + (code.length > 1 && code !== '??' ? ' (conflict)' : '') };
+    if (!arg) d.error = 'This file name contains a control character (tab, newline) that the inspector cannot pass safely; use git in a terminal.';
+    else {
+      d.reload = () => fetchDetail(d, 'diff', arg, (out) => { const r = G.parseFileDiff(out); if (r.state === 'ok') d.data = r; else d.error = r.state === 'nodir' ? gone : 'Cannot show a diff for this path.'; });
+      d.reload();
+    }
+    render(); window.scrollTo(0, 0);
+  }
+  function back() { detail = stack.pop() || null; reqId++; shown = null; render(); if (!detail) window.scrollTo(0, listY); }
+  function loadFile(i) {   // one file of a big commit whose patch was cut
+    const d = detail; const f = d.data.files[i]; f.loading = true;
+    fetchDetail(d, 'diff', G.diffArg('commit', d.data.hash, f.path, f.from), (out) => { f.loading = false; f.diff = G.parseFileDiff(out).files[0] || { status: f.status, hunks: [] }; });
+    render();
+  }
+
   // Re-render only when the markup changed, so the 3 s refresh never flickers; scroll position is restored anyway.
   function render() {
     if (!last) return;
-    const html = last.error ? `<div class="msg bad">${esc(last.error)}</div>` : view(G.parse(last.out), Date.now());
+    const html = detail ? detailView() : last.error ? `<div class="msg bad">${esc(last.error)}</div>` : view(G.parse(last.out), Date.now());
     if (html === shown) return;
     const y = window.scrollY; shown = html; app.innerHTML = html; window.scrollTo(0, y);
   }
-  hatch.on('status', (v) => { last = v; render(); });
-  app.addEventListener('click', (e) => {
-    const h = e.target.closest('h3[data-sec]'); if (!h || h.dataset.sec === 'none') return;
-    const id = h.dataset.sec; folded.has(id) ? folded.delete(id) : folded.add(id); render();
+  let lastOut = null;
+  hatch.on('status', (v) => {
+    last = v; render();
+    // a file's diff follows the working tree: refetch when the status output changed (a commit never changes)
+    if (detail && detail.reload && lastOut !== null && v.out !== lastOut) detail.reload();
+    lastOut = v.out;
   });
+  app.addEventListener('click', (e) => {
+    const t = e.target; let x;
+    if (detail) {
+      if (t.closest('[data-back]')) return back();
+      if ((x = t.closest('[data-hash]'))) return openCommit(x.dataset.hash);
+      if ((x = t.closest('[data-load]'))) return loadFile(Number(x.dataset.load));
+      if ((x = t.closest('[data-full]'))) { full.add(x.dataset.full); return render(); }
+      if ((x = t.closest('[data-fold]'))) { const k = x.dataset.fold; if (x.classList.contains('fold')) { refolded.delete(k); unfolded.add(k); } else { unfolded.delete(k); refolded.add(k); } return render(); }
+      if ((x = t.closest('[data-jump]'))) { const k = `c${x.dataset.jump}`; refolded.delete(k); unfolded.add(k); render(); document.getElementById(`f-${k}`)?.scrollIntoView({ block: 'start' }); }
+      return;
+    }
+    if ((x = t.closest('h3[data-sec]'))) { if (x.dataset.sec === 'none') return; const id = x.dataset.sec; folded.has(id) ? folded.delete(id) : folded.add(id); return render(); }
+    if ((x = t.closest('.row[data-hash]'))) return openCommit(x.dataset.hash);
+    if ((x = t.closest('.row[data-path]'))) openFile(x.dataset.mode, x.dataset.path, x.dataset.from, x.dataset.code);
+  });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && detail && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); back(); } });
 </script>
