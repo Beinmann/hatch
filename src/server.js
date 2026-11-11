@@ -23,6 +23,7 @@ import * as discover from './discover.js';
 import { widgetStatus, recordShipped, staleMessage, gitProjectMeta, staleProjectCopies } from './update-widgets.js';
 import * as gitapi from './git.js';
 import { setFx, readFx, FxError, EFFECTS } from './fx.js';
+import { setWindowTransparency, TransparencyError } from './transparency.js';
 import { findBackground, setBackground, clearBackground, setMode, BackgroundError } from './background.js';
 import * as wsapi from './workspaces.js';
 import { createLimits } from './limits.js';
@@ -493,6 +494,12 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
             if (m === 'POST') { setMode(wd, (await readJson(req))?.mode); state.rescan(); return json(res, 200, { ok: true }); }
           } catch (e) { if (e instanceof BackgroundError) throw new HttpError(400, e.message); throw e; }
         }
+      }
+      if (p === '/api/panels/transparency' && m === 'POST') return json(res, 200, { changed: state.setAllTransparency((await readJson(req))?.percent) });
+      if (p === '/api/transparency/windows' && m === 'PUT') {
+        const pc = (await readJson(req))?.percent;
+        try { setWindowTransparency(stateDir, pc === null ? 'default' : pc); } catch (e) { if (e instanceof TransparencyError) throw new HttpError(400, e.message); throw e; }
+        state.rescan(); return json(res, 200, { ok: true });
       }
       if (p === '/api/panels' && m === 'GET') return json(res, 200, state.listPanels());
       if (p === '/api/panels' && m === 'POST') return json(res, 201, state.createPanel(vimRequest(await readJson(req), pickEditor(readEditorPref(), findBin))));

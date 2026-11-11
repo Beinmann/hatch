@@ -188,7 +188,7 @@ function connectEvents() {
     for (const id of askDrafts.keys()) if (!pendingAsks.some((question) => question.id === id)) askDrafts.delete(id);
     showAsk();
     gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); $('conn').title = 'view-only mirror'; } loadCustom(s.info.custom); info = s.info; $('session').textContent = `tmux: ${s.info.session}`;
-    setBackgrounds(s.backgrounds || {}); setWorkspaces(s.workspaces || [{ name: 'main', id: 'main' }]); presenceCounts = s.presence || {}; paintPresence(); applyTransparency(s.transparency); fxState.effect = s.fx?.effect; fxState.intensity = s.fx?.intensity; fxCtl.set(s.fx?.effect, s.fx?.intensity);
+    setBackgrounds(s.backgrounds || {}); setWorkspaces(s.workspaces || [{ name: 'main', id: 'main' }]); presenceCounts = s.presence || {}; paintPresence(); applyTransparency(s.transparency); wm.setDefaultTransparency(s.windowTransparency); fxState.effect = s.fx?.effect; fxState.intensity = s.fx?.intensity; fxCtl.set(s.fx?.effect, s.fx?.intensity);
     widgets.clear(); for (const w of s.widgets) widgets.set(w.name, w);
     progressState = s.progress; for (const f of progressListeners) f(progressState);
     plansState.clear(); for (const [n, v] of Object.entries(s.plans || {})) plansState.set(n, v); for (const [n, v] of plansState) for (const f of planListeners) f(n, v);
@@ -200,7 +200,7 @@ function connectEvents() {
     routeOnce();
     reportPresence();
   });
-  es.addEventListener('transparency', (e) => applyTransparency(JSON.parse(e.data).transparency));
+  es.addEventListener('transparency', (e) => { const d = JSON.parse(e.data); applyTransparency(d.transparency); wm.setDefaultTransparency(d.windowTransparency); });
   es.addEventListener('fx', (e) => { const d = JSON.parse(e.data); fxState.effect = d.effect; fxState.intensity = d.intensity; fxCtl.set(d.effect, d.intensity); });
   es.addEventListener('background', (e) => { const d = JSON.parse(e.data); if (d.background) backgrounds[d.ws || 'main'] = d.background; else delete backgrounds[d.ws || 'main']; applyBackground(backgrounds[wm.current()]); });
   es.addEventListener('workspaces', (e) => setWorkspaces(JSON.parse(e.data).workspaces));
@@ -494,6 +494,15 @@ function askBox({ title, text = '', ok = 'OK', input = null, match = null, dange
     sync(); document.body.append(box); const first = field || okBtn; first.focus(); setTimeout(() => { if (box.isConnected && !box.contains(document.activeElement)) first.focus(); }, 80); // a widget frame may grab focus as it loads
   });
 }
+// asks for a transparency percent (or "default" when allowDefault) in a box and hands the validated value to save()
+async function askTransparency(title, text, save, allowDefault = false) {
+  if (isViewOnly()) return;
+  const raw = await askBox({ title, text, ok: 'Set', input: { placeholder: allowDefault ? '0-100 or default' : '0-100' } });
+  if (raw === null) return;
+  const v = allowDefault && raw === 'default' ? 'default' : Number(raw);
+  if (v !== 'default' && !(/^\d{1,3}$/.test(raw) && v >= 0 && v <= 100)) return toast('Use a whole number from 0 to 100', 'bad');
+  try { await save(v); } catch (e) { toast(e.message, 'bad'); }
+}
 async function newWorkspace() {
   if (isViewOnly()) return;
   const n = await askBox({ title: 'New workspace', text: 'Letters, digits, - and _ (up to 32). It gets its own terminal, windows and background.', ok: 'Create', input: { placeholder: 'name' } });
@@ -773,6 +782,8 @@ const palette = createPalette({
     add('Smaller terminal font', '', () => term.setFontSize(-1));
     add('Open desktop gadgets', 'graph, system, clock, top, git, log', () => api('POST', '/api/desktop', {}));
     add('Zen mode', 'Ctrl+Shift+Z', toggleZen);
+    add('Windows: set default transparency...', 'for windows not set one by one; hatch set window-transparency', () => askTransparency('Default window transparency', 'Percent 0-100 (0 = not transparent; above 80 is capped at 80), or "default" to follow the page transparency again.', (v) => api('PUT', '/api/transparency/windows', { percent: v === 'default' ? null : v }), true));
+    add('Windows: set transparency of all open windows...', 'hatch windows transparency N', () => askTransparency('Transparency of all open windows', 'Percent 0-100 (0 = not transparent; above 80 is capped at 80). Applies to every window open now, each kept per window.', (v) => api('POST', '/api/panels/transparency', { percent: v }).then((r) => toast(`${r.changed} window${r.changed === 1 ? '' : 's'} set`, 'info', 1500))));
     for (const c of customCommands) add(c.label, c.hint, c.run);
     add('Show welcome tips', '', () => { store.set('show-welcome', true); store.set('welcome-off', false); paintWelcome(); });
     try { for (const t of await get('/api/tasks')) add(`Task: ${t.cmd}`, t.detail || t.source, () => api('POST', '/api/runs', { cmd: t.cmd, cwd: info.cwd }).then((r) => api('POST', '/api/panels', { type: 'output', title: t.cmd, props: { cmd: t.cmd, runId: r.id, cwd: info.cwd } }))); } catch { /* none */ }

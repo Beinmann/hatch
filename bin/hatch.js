@@ -96,6 +96,7 @@ ask the user (blocks until they answer in the browser; prints the answer)
   set background IMAGE [--ws NAME]  use a PNG, JPEG, GIF or WebP image as the page background (saved in the state dir as background.EXT)
   set background none               remove the background image
   set transparency 0..100           make the terminal and panels see-through: 0 = opaque, 30 = default, 100 = fully transparent (saved in transparency.json)
+  set window-transparency 0..100    transparency of windows you did not set one by one (leader o); "default" = follow the page again (saved in transparency.json). 0 = opaque, above 80 is capped at 80
   set background-mode MODE          how it fits: fill (cover, default) | fit (contain) | stretch | center | tile (saved in background.json)
 workspaces (named sets of windows with their own terminal and background, in this one instance)
   workspace list                    names, window counts, which have a background
@@ -109,6 +110,7 @@ background effects (behind the terminal text, visible at any transparency)
   fx matrix | rain | goo | off      switch the effect (saved in fx.json; open pages update by themselves)
   fx [NAME] --intensity 0-100       how strong the effect is (default 50, kept per effect; no NAME = the active one)
 desktop
+  windows transparency 0..100       set the transparency of every window that is open right now (each kept per window, like leader o)
   desktop                           open a set of live gadgets (graph, system, clock, top, git, log) plus the progress panel
 git (Magit-lite window)
   git [DIR]                         status window: stage with checkboxes, click a file for its diff, commit
@@ -733,11 +735,16 @@ async function main(argv) {
       if (o.ws && (sub === 'background' || sub === 'background-mode')) {
         try { bgDir = wsapi.workspaceDir(dir, wsapi.findWorkspace(dir, o.ws, [])); } catch (e) { if (e instanceof wsapi.WorkspaceError) throw new CliError(e.message); throw e; }
       }
-      const usage = 'usage: set background IMAGE|none, set background-mode fill|fit|stretch|center|tile, set transparency 0..100';
+      const usage = 'usage: set background IMAGE|none, set background-mode fill|fit|stretch|center|tile, set transparency 0..100, set window-transparency 0..100|default';
       if (sub === 'transparency') {
         need(rest[0], usage);
         try { transparency.setTransparency(dir, rest[0]); } catch (e) { if (e instanceof transparency.TransparencyError) throw new CliError(`${e.message} (transparency left unchanged)`); throw e; }
         return console.log(`transparency ${Number(rest[0])} saved in ${dir}; open pages update by themselves`);
+      }
+      if (sub === 'window-transparency') {
+        need(rest[0], usage);
+        let n; try { n = transparency.setWindowTransparency(dir, rest[0]); } catch (e) { if (e instanceof transparency.TransparencyError) throw new CliError(`${e.message}, or default (window transparency left unchanged)`); throw e; }
+        return console.log(n === null ? `windows follow the page transparency again (saved in ${dir}; open pages update by themselves)` : `window transparency ${n} saved in ${dir}; windows without their own setting update by themselves`);
       }
       if (sub === 'background-mode') {
         need(rest[0], usage);
@@ -750,6 +757,14 @@ async function main(argv) {
       try { background.setBackground(bgDir, background.readImageFile(path.resolve(rest[0]))); }
       catch (e) { if (e instanceof background.BackgroundError) throw new CliError(`${e.message} (background left unchanged)`); throw e; }
       return console.log(`background saved in ${bgDir}; open pages update by themselves (the server must be running to show it)`);
+    }
+    case 'windows': {
+      const usage = 'usage: windows transparency 0..100';
+      if (sub !== 'transparency') throw new CliError(usage);
+      need(rest[0], usage);
+      if (!/^\d{1,3}$/.test(rest[0]) || Number(rest[0]) > 100) throw new CliError(`invalid transparency ${JSON.stringify(rest[0])}; use a whole number from 0 (opaque) to 100 (windows stay at least 20% visible) (nothing changed)`);
+      const r = await api('POST', '/api/panels/transparency', { percent: Number(rest[0]) });
+      return console.log(`${r.changed} window${r.changed === 1 ? '' : 's'} set to transparency ${Number(rest[0])}`);
     }
     case 'desktop': { const r = await api('POST', '/api/desktop', {}); return console.log(`desktop open: ${r.opened.join(', ')}`); }
     case 'upload-dir': return console.log(l.uploads);
