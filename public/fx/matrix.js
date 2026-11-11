@@ -37,15 +37,19 @@ function step(dt) {
   }
 }
 
+/** Alpha of a trail glyph with brightness b (0..1) in a column of strength a. Trails fade as alpha, never as black paint: the canvas stays
+ *  transparent so the page background and the terminal's translucent tint show through. Same strength curve as the old dark-on-black look. */
+export const trailAlpha = (b, a) => Math.min(1, Math.max(0, (5 + 52 * Math.pow(b, 1.35)) * a * 2.2 / 60));
+
 function draw() {
   const w = cv.width, h = cv.height;
-  ctx.globalAlpha = 1; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h); // an opaque base: the effect shows whatever the transparency setting is
-  ctx.font = `bold ${FS}px monospace`; ctx.textBaseline = 'top'; ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1; ctx.clearRect(0, 0, w, h); // transparent where nothing falls; everything is redrawn from the per-cell brightness each frame
+  ctx.font = `bold ${FS}px monospace`; ctx.textBaseline = 'top'; ctx.shadowBlur = 0; ctx.fillStyle = 'hsl(126 100% 60%)';
   for (let c = 0; c < cols; c++) {
     const L = lum[c], a = (0.5 + 0.5 * info[c].depth) * DIM;
     for (let r = 0; r < rows; r++) {
       const b = L[r]; if (b < 0.04) continue;
-      ctx.fillStyle = `hsl(126 100% ${(5 + 52 * Math.pow(b, 1.35)) * a * 2.2}%)`;
+      ctx.globalAlpha = trailAlpha(b, a);
       ctx.fillText(chr[c][r], c * CW, r * CH);
     }
   }
