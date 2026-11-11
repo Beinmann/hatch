@@ -59,7 +59,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Runnable notes (Run button on shell blocks) | 063 | md.js, panels/note.js | yes | |
 | Editable notes | 022 | note.js | no | |
 | Named progress plans (--plan, HATCH_PLAN, one window each) | - | plans.js, state.js, server.js, panels/progress.js | server and CLI | window not browser-tested |
-| Background effects (hatch fx matrix/rain/goo/off, --intensity 0-100 per effect) | - | src/fx.js, public/fx.js, public/fx-terminal.js, public/fx/ | file, API, CLI, stub-canvas runs, goo physics, terminal view against a fake xterm | rain seen in headless Chromium (WebGL and 2d fallback); other visuals not seen in a browser (the goo look and its anchoring to real xterm text never seen) |
+| Background effects (hatch fx matrix/rain/goo/off, --intensity 0-100 per effect) | - | src/fx.js, public/fx.js, public/fx-terminal.js, public/fx/ | file, API, CLI, stub-canvas runs, goo physics, terminal view against a fake xterm | rain seen in headless Chromium (WebGL and 2d fallback; the steady drop stream, shrinking and slanted thin background rain seen as a WebGL screenshot only); other visuals not seen in a browser (the goo look and its anchoring to real xterm text never seen) |
 | Progress timeline | 014 | progress.js | yes | |
 | Recent files, clipboard history, find-file | 042 | app.js | partly | |
 | Saved prompts, Zen mode, workspace chords | 049 | app.js, ui.js | yes | |

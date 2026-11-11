@@ -1,8 +1,13 @@
 // GLSL for the rain-on-glass effect (WebGL1). The water map (public/fx/rain-raster.js) says where drops are and how their surface slopes;
 // here each drop pixel looks through the drop at the real page background (image or colour, plus the terminal tint over it), bent and
 // turned upside down like a tiny lens, then adds a dark upper rim, a lighter lower inner edge and a specular glint. Between the drops a very
-// faint, blurred background rain falls behind the glass. Terminal text is not in the picture: it stays crisp on top of this canvas.
+// faint, thin background rain falls behind the glass, slanted from upper right to lower left (table in rain-physics.js). Terminal text is not in the picture: it stays crisp on top of this canvas.
+import { STREAKS, streakAxes } from './rain-physics.js';
+
 export const VERT = `attribute vec2 aPos; void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const f = (v) => v.toFixed(3), { along, across } = streakAxes();
+const RAIN_FAMILIES = STREAKS.families.map((k) => `streaks(q, ${f(k.cell)}, ${f(k.width)}, ${f(k.len)}, ${f(k.speed)}, ${f(k.seed)}) * ${f(k.weight)}`).join(' + ');
 
 export const FRAG = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -22,9 +27,10 @@ float streaks(vec2 p, float cell, float wid, float len, float speed, float seed)
   float lane = abs(p.x - (cx + 0.15 + 0.7 * hash(vec2(cx, seed + 7.0))) * cell);
   float y = p.y / len - uTime * speed * (0.6 + 0.8 * h) + h * 17.0;
   float ph = fract(y), on = step(0.62, hash(vec2(cx, floor(y) + seed)));
-  return smoothstep(wid, 0.0, lane) * smoothstep(0.0, 0.1, ph) * pow(1.0 - ph, 3.0) * on;
+  return smoothstep(wid, 0.0, lane) * smoothstep(0.0, 0.1, ph) * pow(1.0 - ph, 3.0) * on; // wid is the half-width in px: kept small so a streak is never fat
 }
-float rain(vec2 p) { return streaks(p, 41.0, 3.5, 190.0, 1.5, 1.0) * 0.7 + streaks(p, 67.0, 5.5, 260.0, 1.1, 2.0) * 0.9 + streaks(p, 29.0, 2.5, 140.0, 2.0, 3.0) * 0.5; }
+// q is the pixel in the slanted frame of the rain: x across the streaks, y along them (the direction the rain moves), so streaks fall down and to the left
+float rain(vec2 p) { vec2 q = vec2(dot(p, vec2(${f(across[0])}, ${f(across[1])})), dot(p, vec2(${f(along[0])}, ${f(along[1])}))); return min(${RAIN_FAMILIES}, ${f(STREAKS.max)}); }
 
 vec3 scene(vec2 p) { // what a viewer sees at canvas pixel p without the glass: page background under the terminal tint, plus faint rain
   vec2 uv = p * uBgX.xy + uBgX.zw;

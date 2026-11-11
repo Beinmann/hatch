@@ -84,3 +84,23 @@ export function parseCssColor(s, fallback = [0.07, 0.08, 0.1, 0.7]) {
   if ((m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(str))) { const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1]; return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).concat(1); }
   return fallback;
 }
+
+/** The faint background rain behind the glass. Streaks are thin and fall from the upper right toward the lower left, `angleDeg` off
+ *  vertical. `width` is the half-width in px of the lit line (kept small: the blur must never make a streak look thick), `weight` its
+ *  strength, `max` caps the summed brightness where lanes overlap. The shader (rain-shader.js) is built from this table. */
+export const STREAKS = {
+  angleDeg: 15,
+  max: 0.55,
+  families: [ // cell = lane spacing px, width = half-width px, len = px per streak period, speed = periods per second
+    { cell: 41, width: 1.5, len: 190, speed: 1.5, seed: 1, weight: 0.6 },
+    { cell: 67, width: 1.9, len: 260, speed: 1.1, seed: 2, weight: 0.7 },
+    { cell: 29, width: 1.1, len: 140, speed: 2.0, seed: 3, weight: 0.45 },
+  ],
+};
+
+/** Unit vectors for the streak slant: `along` is the direction the rain moves on screen (y points down, so x < 0 and y > 0 means it
+ *  moves down and to the left), `across` is perpendicular to it. */
+export function streakAxes(angleDeg = STREAKS.angleDeg) {
+  const a = num(angleDeg) * Math.PI / 180;
+  return { along: [-Math.sin(a), Math.cos(a)], across: [Math.cos(a), Math.sin(a)] };
+}
