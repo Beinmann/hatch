@@ -4,19 +4,22 @@
 // sits under the terminal text, so text stays sharp. Fallback when WebGL is missing: the same simulation drawn as 2D shapes (no refraction).
 // Effect interface (public/fx.js drives it): start(canvas, { animate, intensity }), setIntensity(n), stop(), resize(). One instance per page.
 import { createGlass } from './rain-sim.js';
-import { rasterStatic, rasterLive } from './rain-raster.js';
+import { rasterStatic, rasterLive, runnerBox } from './rain-raster.js';
 import { rainLevel, bgTransform, parseCssColor } from './rain-physics.js';
 import { VERT, FRAG } from './rain-shader.js';
 
 export const P = {
   FPS: 30,            // frame cap
-  STATIC_EVERY: 0.5,  // seconds between redraws of the resting drops (they change slowly; the running drop is redrawn every frame)
+  TYPING_FPS: 15,     // frame cap while keys are being typed: the shader pass over the whole pane competes with the terminal's own redraw, so typing stays smooth
+  TYPING_HOLD: 0.4,   // seconds after the last keystroke that the lower cap stays
+  STATIC_EVERY: 0.5,  // seconds one sweep over the resting drops takes: they are redrawn a band of rows per frame, so no frame pays for the whole pane
+                      // (the running drop is redrawn every frame, only in its own small box)
   STYLE_EVERY: 1,     // seconds between looks at the page's background and tint (they can change while the effect runs)
   RAIN: 0.075,         // strength of the faint background rain (streak shape: STREAKS in rain-physics.js)
 };
 let level = rainLevel(50);
 let cv = null, gl = null, ctx = null, raf = 0, last = 0, W = 1, H = 1, glass = null, animate = true, time = 0;
-let buf = null, base = null, sinceStatic = 99, sinceStyle = 99, wasRunning = false, lost = false;
+let buf = null, base = null, sinceStyle = 99, lost = false, bandY = 0, lastRunner = null, prevBox = null, needFull = true, scratch = null, typingUntil = 0;
 let gp = null, mapTex = null, bgTex = null, bgUrl = '', bgImg = null, style = null;
 
 const cssVar = (el, name) => getComputedStyle(el).getPropertyValue(name);
@@ -91,9 +94,17 @@ function render() {
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
-function upload() {
+function upload(r) { // only the rectangle that changed goes to the GPU (the whole map is 3 MB at 1200x700)
+  const w = r.x1 - r.x0, h = r.y1 - r.y0; if (w <= 0 || h <= 0) return;
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, mapTex);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  let src;
+  if (w === W) src = buf.subarray(r.y0 * W * 4, r.y1 * W * 4);
+  else {
+    if (!scratch || scratch.length < w * h * 4) scratch = new Uint8Array(w * h * 4);
+    for (let y = 0; y < h; y++) scratch.set(buf.subarray(((r.y0 + y) * W + r.x0) * 4, ((r.y0 + y) * W + r.x1) * 4), y * w * 4);
+    src = scratch.subarray(0, w * h * 4);
+  }
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x0, r.y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, src);
 }
 
 // ---- 2D fallback: the same glass as plain shapes, no refraction ----
@@ -121,31 +132,51 @@ function draw2d() {
 }
 
 // ---- common ----
-function refresh(force) { // redraw the water map and the picture
-  if (gl) {
-    const running = glass.running();
-    if (force || sinceStatic >= P.STATIC_EVERY || running !== wasRunning) { rasterStatic(base, W, H, glass); sinceStatic = 0; }
-    wasRunning = running; rasterLive(buf, base, W, H, glass); upload(); render();
-  } else draw2d();
+const grow = (r, m) => ({ x0: Math.max(0, r.x0 - m), y0: Math.max(0, r.y0 - m), x1: Math.min(W, r.x1 + m), y1: Math.min(H, r.y1 + m) });
+const union = (a, b) => (!a ? b : !b ? a : { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) });
+function fullRefresh() { // everything at once (start, resize, a new intensity, still frame)
+  rasterStatic(base, W, H, glass); rasterLive(buf, base, W, H, glass); bandY = 0; needFull = false;
+  lastRunner = glass.runner; prevBox = runnerBox(W, H, glass);
+  if (gl && !lost) allocMap();
+}
+function refresh(dt) { // bring the water map up to date and draw: only changed parts are redrawn and uploaded
+  if (!gl) { draw2d(); return; }
+  if (needFull) fullRefresh();
+  else {
+    const rects = [];
+    const redo = (c) => { rasterStatic(base, W, H, glass, c); rasterLive(buf, base, W, H, glass, c); rects.push(c); };
+    if (glass.runner !== lastRunner) { // a run began or ended: the resting map must show (or stop showing) that drop and its trail
+      if (lastRunner && prevBox) redo(grow(prevBox, 6));
+      if (glass.runner) redo(runnerBox(W, H, glass));
+      lastRunner = glass.runner;
+    }
+    const bandH = Math.max(8, Math.ceil(H * dt / P.STATIC_EVERY)), y1 = Math.min(H, bandY + bandH);
+    redo({ x0: 0, y0: bandY, x1: W, y1 }); bandY = y1 >= H ? 0 : y1;
+    const box = runnerBox(W, H, glass), live = union(prevBox, box);
+    if (live) { rasterLive(buf, base, W, H, glass, live); rects.push(live); }
+    prevBox = box;
+    for (const r of rects) upload(r);
+  }
+  render();
 }
 function resize() {
   if (!cv) return;
   W = cv.width = Math.max(1, cv.clientWidth); H = cv.height = Math.max(1, cv.clientHeight);
   glass.resize(W, H); buf = new Uint8Array(W * H * 4); base = new Uint8Array(W * H * 4);
-  if (gl && !lost) allocMap();
   if (gl) readStyle();
-  sinceStatic = 99; if (!animate) settle();
+  needFull = true; if (!animate) settle();
 }
-function settle() { for (let i = 0; i < 240; i++) glass.step(0.25); refresh(true); } // reduced motion: one still frame of an already wet pane
+function settle() { for (let i = 0; i < 240; i++) glass.step(0.25); needFull = true; refresh(0); } // reduced motion: one still frame of an already wet pane
 
 function frame(t) {
   raf = requestAnimationFrame(frame);
-  if (document.hidden || t - last < 1000 / P.FPS) return; // paused in a background tab; capped to keep the CPU cost low
-  const dt = Math.min(0.1, (t - last) / 1000); last = t; time += dt; sinceStatic += dt; sinceStyle += dt;
+  if (document.hidden || t - last < 1000 / (t < typingUntil ? P.TYPING_FPS : P.FPS)) return; // paused in a background tab; capped to keep the CPU and GPU cost low
+  const dt = Math.min(0.1, (t - last) / 1000); last = t; time += dt; sinceStyle += dt;
   if (gl && sinceStyle >= P.STYLE_EVERY) { sinceStyle = 0; readStyle(); }
-  glass.step(dt); refresh(false);
+  glass.step(dt); refresh(dt);
 }
 
+const onKey = () => { typingUntil = performance.now() + P.TYPING_HOLD * 1000; };
 const onLost = (e) => { e.preventDefault(); lost = true; };
 const onRestored = () => { lost = false; try { initGl(); } catch (err) { console.warn(`rain: WebGL could not restart: ${err.message}`); } };
 
@@ -162,14 +193,15 @@ export default {
     } else ctx = cv.getContext('2d');
     resize();
     if (!animate) return; // resize() already drew the still frame
+    typingUntil = 0; document.addEventListener?.('keydown', onKey, true); // capture: seen even when the terminal stops the event
     last = performance.now(); raf = requestAnimationFrame(frame);
   },
-  setIntensity(n) { level = rainLevel(n); if (glass) { glass.setCount(level.count); if (cv) { sinceStatic = 99; if (!raf) settle(); } } }, // the pane starts over, which is fine for a setting change
+  setIntensity(n) { level = rainLevel(n); if (glass) { glass.setCount(level.count); if (cv) { needFull = true; if (!raf) settle(); } } }, // the pane starts over, which is fine for a setting change
   stop() {
-    cancelAnimationFrame(raf); raf = 0;
+    cancelAnimationFrame(raf); raf = 0; document.removeEventListener?.('keydown', onKey, true);
     cv?.removeEventListener?.('webglcontextlost', onLost); cv?.removeEventListener?.('webglcontextrestored', onRestored);
     try { gl?.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* already gone */ }
-    cv = gl = ctx = glass = buf = base = bgImg = style = null; bgUrl = ''; gp = mapTex = bgTex = null;
+    cv = gl = ctx = glass = buf = base = bgImg = style = scratch = lastRunner = prevBox = null; needFull = true; bgUrl = ''; gp = mapTex = bgTex = null;
   },
   resize() { resize(); },
 };

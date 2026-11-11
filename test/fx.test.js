@@ -239,6 +239,13 @@ test('rain water map: a drop is a dome (flat in the middle, steep at the rim), t
   let wet = 0, dry = 0; for (let i = 0; i < buf.length; i += 4) { if (buf[i + 3] > 0) wet++; else if (buf[i] + buf[i + 1] + buf[i + 2] === 0) dry++; }
   assert.ok(wet > 100 && dry > 100, 'some wet pixels, and dry glass stays fully clear');
   const base = new Uint8Array(buf.length), live = new Uint8Array(buf.length); R.rasterStatic(base, 120, 80, g); R.rasterLive(live, base, 120, 80, g); assert.deepEqual(live, buf);
+  // redrawing in bands (or in the box of the running drop) gives exactly the pixels of one full redraw, so the work can be spread over frames
+  const g2 = createGlass({ W: 300, H: 200, rand: seeded(9), count: 1.5 }); for (let i = 0; i < 400 && !g2.running(); i++) g2.step(0.1); for (let i = 0; i < 25; i++) g2.step(0.1);
+  assert.ok(g2.running() && g2.runner.run.trail?.pts.length, 'a run is under way in the test glass');
+  const fullS = new Uint8Array(300 * 200 * 4), bands = new Uint8Array(fullS.length), fullL = new Uint8Array(fullS.length), partL = new Uint8Array(fullS.length);
+  R.rasterStatic(fullS, 300, 200, g2); for (let y = 0; y < 200; y += 37) R.rasterStatic(bands, 300, 200, g2, { x0: 0, y0: y, x1: 300, y1: Math.min(200, y + 37) }); assert.deepEqual(bands, fullS, 'static map in bands');
+  R.rasterLive(fullL, fullS, 300, 200, g2); const box = R.runnerBox(300, 200, g2); assert.ok(box && box.x1 > box.x0 && box.y1 > box.y0);
+  partL.set(fullS); R.rasterLive(partL, fullS, 300, 200, g2, box); assert.deepEqual(partL, fullL, 'the running drop only touches its box');
   R.rasterize(new Uint8Array(4), 1, 1, createGlass({ W: 1, H: 1 })); // a 1px glass does not throw
 });
 
@@ -267,7 +274,10 @@ test('rain effect: 2d fallback without WebGL draws shapes with alpha only; WebGL
       rain.start(c, { animate: false }); rain.stop();
     }
     assert.ok(gcalls.drawArrays?.length > 20 && gcalls.texSubImage2D?.length > 20, 'draws and uploads the water map');
-    assert.ok(gcalls.texSubImage2D.some((a) => a[4] === 640 && a[5] === 360 && a[8].length === 640 * 360 * 4), 'the map is one RGBA pixel per canvas pixel');
+    assert.ok(gcalls.texImage2D.some((a) => a[3] === 640 && a[4] === 360 && a[8].length === 640 * 360 * 4), 'the map is one RGBA pixel per canvas pixel');
+    const sub = gcalls.texSubImage2D.filter((a) => a[4] <= 640 && a[5] <= 360 && a[2] + a[4] <= 640 && a[3] + a[5] <= 360 && a[8].length === a[4] * a[5] * 4);
+    assert.equal(sub.length, gcalls.texSubImage2D.length, 'every update is a rectangle inside the map with matching data');
+    assert.ok(sub.filter((a) => a[4] * a[5] < 640 * 360).length > 20, 'frames upload only the part of the map that changed');
     assert.deepEqual(bad, [], 'no NaN or Infinity reached WebGL');
     compileOk = false; const warn = console.warn; console.warn = () => {};
     try { const c = mk(100, 100); rain.start(c, { animate: true }); rain.stop(); } finally { console.warn = warn; }
