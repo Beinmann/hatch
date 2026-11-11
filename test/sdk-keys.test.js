@@ -22,10 +22,11 @@ test('SDK forwards Ctrl+Shift+G and the leader chord, but not the removed Ctrl+S
   assert.ok(s.key({ code: 'KeyG', key: 'G', ctrlKey: true, shiftKey: true }));
   assert.ok(s.key({ code: 'KeyP', key: 'P', ctrlKey: true, shiftKey: true }));
   assert.ok(s.key({ code: 'Space', key: ' ', ctrlKey: true }));
+  assert.ok(s.key({ code: 'KeyP', key: 'p', ctrlKey: true }), 'Ctrl+P opens the palette');
   s.message({ type: 'hatch-leader', armed: false }); // the host disarmed it
   for (const code of ['KeyX', 'KeyM', 'KeyH', 'Period']) assert.ok(!s.key({ code, key: code, ctrlKey: true, shiftKey: true }), code);
   assert.ok(!s.key({ code: 'KeyH', key: 'h' }), 'plain keys stay in the widget');
-  assert.deepEqual(s.posted.filter((m) => m.type === 'hatch-shortcut').map((m) => m.code), ['KeyG', 'KeyP', 'Space']);
+  assert.deepEqual(s.posted.filter((m) => m.type === 'hatch-shortcut').map((m) => m.code), ['KeyG', 'KeyP', 'Space', 'KeyP']);
 });
 
 test('after the leader chord the SDK forwards the next keys until the host says it is disarmed', () => {

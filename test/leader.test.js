@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseChord, chordMatches, leaderAction, isEnter } from '../public/leader.js';
+import { parseChord, chordMatches, leaderAction, isEnter, isPaletteKey } from '../public/leader.js';
 
 test('parseChord reads modifier chords and rejects unusable ones', () => {
   assert.deepEqual(parseChord('Ctrl+Space'), { ctrl: true, alt: false, shift: false, meta: false, code: 'Space' });
@@ -59,4 +59,13 @@ test('leader Return focuses the terminal like t, also for a key remapped to Retu
   assert.deepEqual(leaderAction({ code: 'NumpadEnter', key: 'Enter' }), { action: 'terminal', repeat: false });
   assert.deepEqual(leaderAction({ code: 'CapsLock', key: 'Enter' }), { action: 'terminal', repeat: false });
   assert.equal(leaderAction({ code: 'Enter', key: 'Enter', ctrlKey: true }), null);
+});
+
+test('isPaletteKey accepts Ctrl+P and Ctrl+Shift+P only', () => {
+  assert.ok(isPaletteKey({ code: 'KeyP', ctrlKey: true }));
+  assert.ok(isPaletteKey({ code: 'KeyP', ctrlKey: true, shiftKey: true }));
+  assert.ok(!isPaletteKey({ code: 'KeyP' }), 'plain p is typing');
+  assert.ok(!isPaletteKey({ code: 'KeyP', ctrlKey: true, altKey: true }));
+  assert.ok(!isPaletteKey({ code: 'KeyP', metaKey: true }));
+  assert.ok(!isPaletteKey({ code: 'KeyO', ctrlKey: true }));
 });

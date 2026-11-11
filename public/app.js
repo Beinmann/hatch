@@ -17,7 +17,7 @@ import trashPanel from './panels/trash.js';
 import { initLimits } from './limits.js';
 import { createPalette } from './palette.js';
 import { calc, formatResult } from './calc.js';
-import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, leaderAction, isEnter } from './leader.js';
+import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, leaderAction, isEnter, isPaletteKey } from './leader.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -150,7 +150,7 @@ ctx.focusPanel = (id, keyboard = true) => wm.focusPanel(id, keyboard);
 ctx.leaderChord = () => leaderChord;
 ctx.shortcut = (m) => {
   const key = { code: String(m.code || ''), key: String(m.key || ''), ctrlKey: m.ctrlKey === true, shiftKey: m.shiftKey === true, altKey: m.altKey === true, metaKey: m.metaKey === true };
-  const fold = key.ctrlKey && key.shiftKey && !key.altKey && !key.metaKey && (key.code === 'KeyG' || key.code === 'KeyP');
+  const fold = (key.ctrlKey && key.shiftKey && !key.altKey && !key.metaKey && key.code === 'KeyG') || isPaletteKey(key);
   // Only the leader chord or, once armed, the next key gets through; anything else a widget posts is ignored.
   if (fold || leader.armed || chordMatches(leaderChord, key)) window.dispatchEvent(new KeyboardEvent('keydown', { ...key, cancelable: true }));
   return leader.armed;
@@ -252,7 +252,7 @@ const term = initTerminal({
   onStatus: (s) => { conn.textContent = s; conn.className = `chip ${s === 'connected' ? 'ok' : s === 'connecting' ? '' : 'bad'}`; },
   reconnectUi: (msg) => { $('reconnect').hidden = !msg; if (msg) $('rcmsg').textContent = msg; },
   // Ctrl+Shift+F/Z/G/1..9 stay with the page (the leader key is handled before xterm sees it); Ctrl+B etc. all go to tmux.
-  shortcuts: (e) => (e.ctrlKey && e.shiftKey && (['KeyF', 'KeyZ', 'KeyG', 'KeyP'].includes(e.code) || /^Digit[1-9]$/.test(e.code)) ? (e.preventDefault(), true) : false),
+  shortcuts: (e) => (isPaletteKey(e) ? (e.preventDefault(), true) : e.ctrlKey && e.shiftKey && (['KeyF', 'KeyZ', 'KeyG'].includes(e.code) || /^Digit[1-9]$/.test(e.code)) ? (e.preventDefault(), true) : false),
 });
 ctx.term = term;
 let termPointer = false; // a click already shows where you are; only flash for keyboard focus
@@ -375,7 +375,7 @@ function switchWs(n) { wm.setWorkspace(n); store.set('ws', n); paintWorkspaces()
 const origUpsert = wm.upsert; wm.upsert = (p) => { origUpsert(p); paintWorkspaces(); };
 
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, f maximize, a tile, p palette'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+Shift+P', 'Command palette'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, f maximize, a tile, p palette'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -397,9 +397,10 @@ function showLog() {
 // ---- Zen mode (hide the header, hint and dock; VS Code zen idea) and workspace chords ----
 function toggleZen() { document.body.classList.toggle('zen'); term.fit(); term.focus(); if (document.body.classList.contains('zen')) toast('Zen mode: Ctrl+Shift+Z leaves it', 'info', 2500); }
 addEventListener('keydown', (e) => {
+  // Ctrl+P (also Ctrl+Shift+P) opens the palette from anywhere, the terminal included. Inside the palette Ctrl+P moves up.
+  if (isPaletteKey(e) && !e.isComposing && !e.target.closest?.('#palette')) { e.preventDefault(); e.stopPropagation(); if (!isViewOnly()) palette.open(); return; }
   if (!(e.ctrlKey && e.shiftKey)) return;
   if (e.code === 'KeyG') { e.preventDefault(); toggleProgress(); }
-  else if (e.code === 'KeyP') { e.preventDefault(); if (!isViewOnly()) palette.open(); }
   else if (e.code === 'KeyZ') { e.preventDefault(); toggleZen(); }
   else if (/^Digit[1-9]$/.test(e.code)) { const n = wm.workspaces()[Number(e.code.slice(5)) - 1]; if (n) { e.preventDefault(); switchWs(n); } }
 }, true);
@@ -518,7 +519,7 @@ function paintWelcome() {
   welcome.hidden = !none; if (!none || welcomeBuilt) return; // built once: a periodic rebuild would eat clicks
   welcomeBuilt = true;
   welcome.replaceChildren(el('h3', {}, 'Welcome to Hatch', el('button', { type: 'button', title: 'Do not show again', onclick: () => { store.set('welcome-off', true); paintWelcome(); } }, '×')),
-    el('ul', {}, el('li', {}, el('kbd', {}, `${store.get('leader', DEFAULT_LEADER)}, p`), ' opens the command palette (the leader key, then p)'), el('li', {}, 'Paste or drop an image anywhere to send it to the box'), el('li', {}, 'In the terminal run ', el('code', {}, 'hatch --help')), el('li', {}, el('kbd', {}, 'Ctrl+Shift+F'), ' finds in the scrollback; click ', el('code', {}, 'file:line'), ' in the output')),
+    el('ul', {}, el('li', {}, el('kbd', {}, `${store.get('leader', DEFAULT_LEADER)}, p`), ' opens the command palette (the leader key, then p); Ctrl+P works too'), el('li', {}, 'Paste or drop an image anywhere to send it to the box'), el('li', {}, 'In the terminal run ', el('code', {}, 'hatch --help')), el('li', {}, el('kbd', {}, 'Ctrl+Shift+F'), ' finds in the scrollback; click ', el('code', {}, 'file:line'), ' in the output')),
     el('div', { class: 'row' }, el('button', { type: 'button', onclick: () => api('POST', '/api/desktop', {}) }, 'Open gadgets'), el('button', { type: 'button', onclick: () => api('POST', '/api/panels', { type: 'files', title: 'Files', props: { path: info.cwd } }) }, 'Browse files'), el('button', { type: 'button', onclick: () => palette.open() }, 'Commands')));
 }
 setInterval(paintWelcome, 1500);

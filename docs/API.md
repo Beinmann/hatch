@@ -107,7 +107,7 @@ POST `/api/examples/NAME/open` accepts `w`, `h`, `maximized`, `autoFocus` and `w
 `editor` in config.json picks what opens text files: `"auto"` or unset (vim in a terminal window when installed, else the built-in editor), `"builtin"`, or a command name such as `"nvim"`. `POST /api/panels` applies it to `editor` requests (binary or missing files and `builtin: true` stay in the built-in editor); the window is a `terminal` panel named `vim-FILE-HASH`.
 `imageSize` in config.json is a `WIDTHxHEIGHT` default for image windows (180–8192 wide, 90–8192 high).
 
-The widget SDK forwards Ctrl+Shift+G, Ctrl+Shift+P, the leader chord (sent to the widget in `init`, default Ctrl+Space) and the key pressed after it to the host, so every leader action works with a widget focused. The host accepts shortcut messages
+The widget SDK forwards Ctrl+Shift+G, Ctrl+P (and Ctrl+Shift+P), the leader chord (sent to the widget in `init`, default Ctrl+Space) and the key pressed after it to the host, so every leader action works with a widget focused. The host accepts shortcut messages
 only from the focused widget frame, and answers with `hatch-leader` so the SDK knows whether the leader is still armed. Existing widget source subscriptions are unchanged.
 
 ## Background effect

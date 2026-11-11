@@ -23,6 +23,10 @@ export function parseChord(text) {
 export const isEnter = (e) => e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter';
 export const chordMatches = (c, e) => !!c && e.code === c.code && !!e.ctrlKey === c.ctrl && !!e.altKey === c.alt && !!e.shiftKey === c.shift && !!e.metaKey === c.meta;
 
+// Palette shortcut: Ctrl+P works in Firefox and Chrome (preventDefault stops the print dialog). Ctrl+Shift+P is kept for
+// Chrome but Firefox reserves it for a private window, so it is only a secondary route.
+export const isPaletteKey = (e) => e.code === 'KeyP' && !!e.ctrlKey && !e.altKey && !e.metaKey;
+
 const DIRS = { KeyH: 'h', KeyJ: 'j', KeyK: 'k', KeyL: 'l', ArrowLeft: 'h', ArrowDown: 'j', ArrowUp: 'k', ArrowRight: 'l' };
 const PLAIN = { Tab: 'next', KeyT: 'terminal', KeyQ: 'close', KeyM: 'minimize', KeyD: 'place', KeyU: 'dock', KeyF: 'maximize', KeyA: 'tile', KeyP: 'palette', KeyO: 'opacity', Escape: 'cancel' };
 const MODIFIERS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);

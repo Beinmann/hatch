@@ -50,7 +50,7 @@
   const fields = (e) => ({ type: 'hatch-shortcut', code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey });
   const isLeader = (e) => !!leader && e.code === leader.code && !!e.ctrlKey === leader.ctrl && !!e.altKey === leader.alt && !!e.shiftKey === leader.shift && !!e.metaKey === leader.meta;
   addEventListener('keydown', (e) => {
-    const fold = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && (e.code === 'KeyG' || e.code === 'KeyP');
+    const fold = (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyG') || (e.code === 'KeyP' && e.ctrlKey && !e.altKey && !e.metaKey);
     if (!fold && !armed && !isLeader(e)) return;
     e.preventDefault(); e.stopPropagation();
     if (!fold && !armed) armed = true; // optimistic; the host answers with the real state
