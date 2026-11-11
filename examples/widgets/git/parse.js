@@ -56,30 +56,32 @@
       const ref = p[1].replace(/@\{\d+\}$/, ''); const msg = p[2];
       if (msg === 'update by push' || msg.startsWith('fetch')) continue;
       const key = `${p[0]}\x1f${msg}\x1f${p[3]}`;
-      const ev = { ts: Number(p[0]) || 0, ref, text: describe(ref, msg), hash: p[3] };
+      const ev = { ts: Number(p[0]) || 0, ref, ...describe(ref, msg), hash: p[3] };
       const prev = seen.get(key);
-      if (prev) { if (prev.ref === 'HEAD' && ref !== 'HEAD') { prev.ref = ref; prev.text = ev.text; } continue; }
+      if (prev) { if (prev.ref === 'HEAD' && ref !== 'HEAD') { prev.ref = ref; prev.text = ev.text; prev.kind = ev.kind; } continue; }
       seen.set(key, ev); out.push(ev);
     }
     return out.slice(0, max);
   }
 
-  /** Short human wording for a reflog message; unknown kinds fall back to the raw message. */
+  /** Short human wording for a reflog message plus its kind (picks the icon); unknown kinds fall back to the raw message.
+   *  Git removes a branch's reflog when the branch is deleted, so there is no "deleted branch" entry to recognise. */
   function describe(ref, msg) {
     const on = ref === 'HEAD' ? '' : ` on ${ref}`;
+    const r = (kind, text) => ({ kind, text });
     let m;
-    if (/^branch: Created from/.test(msg)) return `created branch ${ref}`;
-    if ((m = /^branch: Reset to (.*)$/.exec(msg))) return `reset ${ref} to ${m[1]}`;
-    if ((m = /^checkout: moving from (\S+) to (\S+)$/.exec(msg))) return `checkout ${m[1]} → ${m[2]}`;
-    if ((m = /^commit \(initial\): (.*)$/.exec(msg))) return `first commit${on}: ${m[1]}`;
-    if ((m = /^commit \(merge\): (.*)$/.exec(msg))) return `merge commit${on}: ${m[1]}`;
-    if ((m = /^commit \(amend\): (.*)$/.exec(msg))) return `amended${on}: ${m[1]}`;
-    if ((m = /^commit: (.*)$/.exec(msg))) return `commit${on}: ${m[1]}`;
-    if ((m = /^merge (.*)$/.exec(msg))) return `merge${on} ${m[1]}`;
-    if (/^reset: /.test(msg)) return `reset${on}`;
-    if ((m = /^rebase.*?: (.*)$/.exec(msg))) return `rebase${on}: ${m[1]}`;
-    if ((m = /^cherry-pick: (.*)$/.exec(msg))) return `cherry-pick${on}: ${m[1]}`;
-    return `${ref === 'HEAD' ? '' : `${ref}: `}${msg}`;
+    if (/^branch: Created from/.test(msg)) return r('branch', `created branch ${ref}`);
+    if ((m = /^branch: Reset to (.*)$/.exec(msg))) return r('reset', `reset ${ref} to ${m[1]}`);
+    if ((m = /^checkout: moving from (\S+) to (\S+)$/.exec(msg))) return r('checkout', `checkout ${m[1]} → ${m[2]}`);
+    if ((m = /^commit \(initial\): (.*)$/.exec(msg))) return r('first', `first commit${on}: ${m[1]}`);
+    if ((m = /^commit \(merge\): (.*)$/.exec(msg))) return r('mergecommit', `merge commit${on}: ${m[1]}`);
+    if ((m = /^commit \(amend\): (.*)$/.exec(msg))) return r('amend', `amended${on}: ${m[1]}`);
+    if ((m = /^commit: (.*)$/.exec(msg))) return r('commit', `commit${on}: ${m[1]}`);
+    if ((m = /^merge (.*)$/.exec(msg))) return r('merge', `merge${on} ${m[1]}`);
+    if (/^reset: /.test(msg)) return r('reset', `reset${on}`);
+    if ((m = /^rebase.*?: (.*)$/.exec(msg))) return r('rebase', `rebase${on}: ${m[1]}`);
+    if ((m = /^cherry-pick: (.*)$/.exec(msg))) return r('cherry', `cherry-pick${on}: ${m[1]}`);
+    return r('other', `${ref === 'HEAD' ? '' : `${ref}: `}${msg}`);
   }
 
   /** text: the source output. Returns { state: 'ok' | 'norepo' | 'nodir', ... } */

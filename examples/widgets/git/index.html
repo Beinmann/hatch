@@ -34,6 +34,7 @@
   .clean{margin-top:10px;color:var(--ok)}
   .c .h{flex:none;color:var(--accent,#4fd1c0)}
   .c .s{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+  .c .ic{flex:none;width:16px;display:inline-flex;justify-content:center;align-self:center;color:var(--muted,#888)}
   .c .t{flex:none;color:var(--muted,#888)}
   .c.up .h:after{content:"\2191";color:var(--warn);margin-left:1px}
   .pill{flex:none;font-size:10px;line-height:1.3;padding:0 5px;border-radius:8px;box-shadow:inset 0 0 0 1px var(--muted,#888);color:var(--muted,#888)}
@@ -97,10 +98,26 @@
     if (s.activity.length) {   // hidden when the reflog is empty or unavailable
       const f = folded.has('activity');
       h += `<h3 class="${f ? 'fold' : ''}" data-sec="activity"><span class="car">▾</span>Recent activity <span class="n">(${s.activity.length})</span></h3>`;
-      if (!f) h += s.activity.map((a) => `<div class="row c" title="${esc(`${a.hash} ${a.text}`)}"><span class="s">${esc(a.text)}</span><span class="t">${G.relTime(a.ts, now)}</span></div>`).join('');
+      if (!f) h += s.activity.map((a) => `<div class="row c" title="${esc(`${a.hash} ${a.text}`)}">${icon(a.kind)}<span class="s">${esc(a.text)}</span><span class="t">${G.relTime(a.ts, now)}</span></div>`).join('');
     }
     return h;
   }
+
+  // Line icons (16x16 viewBox, drawn with the muted text colour) for the kinds parse.js gives each activity entry.
+  const ICONS = {
+    commit: '<circle cx="8" cy="8" r="3"/><path d="M1 8h4M11 8h4"/>',
+    first: '<circle cx="8" cy="8" r="3"/><path d="M11 8h4M2 4v8"/>',
+    amend: '<circle cx="7" cy="9" r="2.6"/><path d="M1 9h3.4M9.6 9H11"/><path d="M11 3l2 2-4 4-2.4.4.4-2.4z"/>',
+    merge: '<circle cx="4" cy="3.5" r="1.7"/><circle cx="4" cy="12.5" r="1.7"/><circle cx="12" cy="8" r="1.7"/><path d="M4 5.2v5.6M4 5.2c0 3 8 0 8 1.1"/>',
+    mergecommit: '<circle cx="8" cy="8" r="2.6"/><path d="M1.5 3c3 0 3 5 4.2 5M1.5 13c3 0 3-5 4.2-5M10.6 8h4"/>',
+    checkout: '<path d="M2 5h10l-3-3M14 11H4l3 3"/>',
+    branch: '<circle cx="4" cy="3.5" r="1.7"/><circle cx="4" cy="12.5" r="1.7"/><path d="M4 5.2v5.6M4 8c0-2 2-2.5 4-2.5"/><path d="M12 2.5v6M9 5.5h6"/>',
+    reset: '<path d="M3 8a5 5 0 1 0 1.6-3.7M3 2v3.5h3.5"/>',
+    rebase: '<circle cx="4" cy="3" r="1.6"/><circle cx="4" cy="13" r="1.6"/><path d="M4 4.6v6.8M8 3h5M10 1l3 2-3 2"/>',
+    cherry: '<circle cx="5" cy="11.5" r="2.5"/><circle cx="11.5" cy="12" r="2"/><path d="M5 9C5 5 8 3 11 2M11.5 10c0-4-.5-6-.5-8"/><path d="M11 2c2 0 3 1 3.5 2.5C13 4.5 12 4 11 2z"/>',
+    other: '<circle cx="8" cy="8" r="1"/><circle cx="3.5" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/>',
+  };
+  const icon = (k) => `<span class="ic"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[k] || ICONS.other}</svg></span>`;
 
   // Re-render only when the markup changed, so the 3 s refresh never flickers; scroll position is restored anyway.
   function render() {
