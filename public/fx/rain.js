@@ -2,8 +2,9 @@
 // translucent tint show through; everything is drawn with low alpha in cool blue-grey so terminal text stays readable on top.
 // Layers: faint mist; many tiny static droplets (beads with a dark rim, a soft highlight and a lighter lower edge); larger drops that
 // collect mist and nearby droplets, hang, then slide in short stop-and-go bursts leaving a tapered wet trail that dries; now and then a
-// streak of fast drops. Effect interface (public/fx.js drives it): start(canvas, { animate }), stop(), resize(). One instance per page.
-import { mergeRadius, growRadius, shedRadius, touches, trailFade, slideTarget, approachSpeed, stepBurst, beadCount, dropCount, streakSpecs } from './rain-physics.js';
+// streak of fast drops. Effect interface (public/fx.js drives it): start(canvas, { animate, intensity }), setIntensity(n), stop(), resize().
+// One instance per page. The intensity setting (0..100, 50 = the look below) scales the alphas and the number of droplets and drops.
+import { mergeRadius, growRadius, shedRadius, touches, trailFade, slideTarget, approachSpeed, stepBurst, beadCount, dropCount, streakSpecs, rainLevel } from './rain-physics.js';
 
 // ---- Tuning knobs (all in canvas pixels / seconds; the canvas runs at device pixel ratio 1 on purpose) ----
 export const P = {
@@ -28,6 +29,8 @@ export const P = {
   STREAK_COUNT: [3, 6],
 };
 const TAU = Math.PI * 2;
+const INT = () => P.INTENSITY * level.alpha; // base strength times the intensity setting
+let level = rainLevel(50);
 let cv = null, ctx = null, raf = 0, last = 0, W = 1, H = 1, T = 0, nextStreak = 0, beads = [], drops = [], trails = [], sprites = new Map();
 const rnd = (a, b) => a + Math.random() * (b - a);
 const between = ([a, b]) => rnd(a, b);
@@ -57,8 +60,8 @@ function sprite(r) {
 
 const newBead = () => ({ x: rnd(0, W), y: rnd(0, H), r: P.BEAD_R[0] + Math.pow(Math.random(), 2.2) * (P.BEAD_R[1] - P.BEAD_R[0]), a: rnd(0.55, 1) });
 const newDrop = (o = {}) => ({ x: rnd(0, W), y: rnd(0, H * 0.9), r: rnd(2, 3), slide: false, fast: false, vx: 0, vy: 0, limit: between(P.SLIDE_R), grow: between(P.GROW), burst: { moving: true, t: 0.3 }, trail: null, dead: false, ...o });
-const nBeads = () => beadCount(W, H, P.BEAD_DENSITY, P.BEAD_MAX);
-const nDrops = () => dropCount(W, H, P.DROP_DENSITY, P.DROP_MIN, P.DROP_MAX);
+const nBeads = () => (level.count <= 0 ? 0 : beadCount(W, H, P.BEAD_DENSITY / Math.max(0.05, level.count), P.BEAD_MAX * Math.max(1, level.count)));
+const nDrops = () => (level.count <= 0 ? 0 : dropCount(W, H, P.DROP_DENSITY / level.count, P.DROP_MIN, P.DROP_MAX * Math.max(1, level.count)));
 
 function reset() {
   beads = []; drops = []; trails = []; T = 0; nextStreak = between(P.STREAK_EVERY) * 0.5;
@@ -117,7 +120,7 @@ function drawTrail(t) {
   const p = t.pts;
   for (let i = 1; i < p.length; i++) {
     const a = p[i - 1], b = p[i], fa = trailFade(T - a.t, P.TRAIL_LIFE), fb = trailFade(T - b.t, P.TRAIL_LIFE);
-    const alpha = (fa.alpha + fb.alpha) / 2 * P.TRAIL_ALPHA * P.INTENSITY; if (alpha < 0.004) continue;
+    const alpha = (fa.alpha + fb.alpha) / 2 * P.TRAIL_ALPHA * INT(); if (alpha < 0.004) continue;
     const wa = Math.max(0.3, a.w * fa.width) / 2, wb = Math.max(0.3, b.w * fb.width) / 2; // narrower where it is older, i.e. behind the drop
     ctx.fillStyle = `rgba(185,210,232,${alpha.toFixed(3)})`;
     ctx.beginPath(); ctx.moveTo(a.x - wa, a.y); ctx.lineTo(a.x + wa, a.y); ctx.lineTo(b.x + wb, b.y); ctx.lineTo(b.x - wb, b.y); ctx.closePath(); ctx.fill();
@@ -126,13 +129,13 @@ function drawTrail(t) {
 
 function draw() {
   ctx.globalAlpha = 1; ctx.clearRect(0, 0, W, H); // transparent: only the effect itself is painted
-  const m = P.MIST * P.INTENSITY, g = ctx.createLinearGradient(0, 0, 0, H);
+  const m = P.MIST * INT(), g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, `rgba(150,180,205,${(m * 0.4).toFixed(3)})`); g.addColorStop(0.5, 'rgba(150,180,205,0)'); g.addColorStop(1, `rgba(150,180,205,${m.toFixed(3)})`);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  for (const b of beads) { const s = sprite(b.r); ctx.globalAlpha = Math.min(1, b.a * P.INTENSITY); ctx.drawImage(s.el, b.x - s.size / 2, b.y - s.size / 2); }
+  for (const b of beads) { const s = sprite(b.r); ctx.globalAlpha = Math.min(1, b.a * INT()); ctx.drawImage(s.el, b.x - s.size / 2, b.y - s.size / 2); }
   ctx.globalAlpha = 1;
   for (const t of trails) drawTrail(t);
-  ctx.globalAlpha = Math.min(1, P.INTENSITY);
+  ctx.globalAlpha = Math.min(1, INT());
   for (const d of drops) drawBead(ctx, d.x, d.y, d.r * 0.85, d.r * (d.slide && d.burst.moving ? 1.2 : 1));
   ctx.globalAlpha = 1;
 }
@@ -148,11 +151,12 @@ function frame(t) {
 
 export default {
   name: 'rain',
-  start(canvas, { animate = true } = {}) {
-    cv = canvas; ctx = cv.getContext('2d'); sprites = new Map(); resize();
+  start(canvas, { animate = true, intensity } = {}) {
+    level = rainLevel(intensity); cv = canvas; ctx = cv.getContext('2d'); sprites = new Map(); resize();
     if (!animate) { settle(); return; }
     last = performance.now(); raf = requestAnimationFrame(frame);
   },
+  setIntensity(n) { level = rainLevel(n); if (cv) { reset(); if (!raf) settle(); } }, // new counts apply at once; the pane starts over, which is fine for a setting change
   stop() { cancelAnimationFrame(raf); raf = 0; cv = ctx = null; beads = []; drops = []; trails = []; sprites = new Map(); },
   resize() { resize(); if (cv && !raf) settle(); },
 };

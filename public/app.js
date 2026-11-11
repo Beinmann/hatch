@@ -41,7 +41,7 @@ const store = {
 // ---- transparency (state dir transparency.json, percent 0..100): --opa is how opaque the backgrounds stay ----
 const applyTransparency = (pct) => { const r = document.documentElement; const n = Number.isFinite(pct) ? pct : 30; r.style.setProperty('--opa', `${100 - n}%`); r.classList.add('has-tr'); term?.retheme?.(); }; // always on: 0 = fully opaque even with a background image set
 // ---- background effect (state dir fx.json; pushed in the snapshot and by the 'fx' event; drawn by public/fx.js) ----
-const fxCtl = createFx({ canvas: $('fx'), onChange: (name) => { const b = $('fxhint'); b.hidden = !name; b.textContent = name ? 'fx: hatch fx off' : ''; } });
+const fxCtl = createFx({ canvas: $('fx'), getXterm: () => term?.term || null, onChange: (name) => { const b = $('fxhint'); b.hidden = !name; b.textContent = name ? 'fx: hatch fx off' : ''; } });
 $('fxhint').addEventListener('click', () => api('POST', '/api/fx', { effect: 'off' }).catch((e) => toast(e.message, 'bad')));
 // ---- background image (state dir background.*; the server sends its URL in the snapshot and on change) ----
 const applyBackground = (b) => { const r = document.documentElement; if (b?.url) { r.style.setProperty('--bg-image', `url("${b.url}")`); r.dataset.bgmode = b.mode || 'fill'; r.classList.add('has-bg'); } else { r.style.removeProperty('--bg-image'); delete r.dataset.bgmode; r.classList.remove('has-bg'); } term?.retheme?.(); };
@@ -178,7 +178,7 @@ function connectEvents() {
     for (const id of askDrafts.keys()) if (!pendingAsks.some((question) => question.id === id)) askDrafts.delete(id);
     showAsk();
     gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); $('conn').title = 'view-only mirror'; } loadCustom(s.info.custom); info = s.info; $('session').textContent = `tmux: ${s.info.session}`;
-    applyBackground(s.background); applyTransparency(s.transparency); fxCtl.set(s.fx);
+    applyBackground(s.background); applyTransparency(s.transparency); fxCtl.set(s.fx?.effect, s.fx?.intensity);
     widgets.clear(); for (const w of s.widgets) widgets.set(w.name, w);
     progressState = s.progress; for (const f of progressListeners) f(progressState);
     plansState.clear(); for (const [n, v] of Object.entries(s.plans || {})) plansState.set(n, v); for (const [n, v] of plansState) for (const f of planListeners) f(n, v);
@@ -189,7 +189,7 @@ function connectEvents() {
     for (const p of s.panels) wm.upsert(p);
   });
   es.addEventListener('transparency', (e) => applyTransparency(JSON.parse(e.data).transparency));
-  es.addEventListener('fx', (e) => fxCtl.set(JSON.parse(e.data).effect));
+  es.addEventListener('fx', (e) => { const d = JSON.parse(e.data); fxCtl.set(d.effect, d.intensity); });
   es.addEventListener('background', (e) => applyBackground(JSON.parse(e.data).background));
   es.addEventListener('panel', (e) => { const d = JSON.parse(e.data); for (const f of panelListeners) f(d); if (d.action === 'removed') wm.remove(d.panel.id); else { if (d.action === 'created' && d.panel.type === 'editor') remember('recent', d.panel.props.path, 15); wm.upsert(d.panel); if (d.action === 'created') wm.revealDock(d.panel.id); } });
   es.addEventListener('progress', (e) => { progressState = JSON.parse(e.data); window.hatchUI?.emit('progress', progressState); for (const f of progressListeners) f(progressState); });
@@ -618,7 +618,11 @@ const palette = createPalette({
     add('Close focused popup', 'leader q', () => wm.dismiss());
     add('Minimize focused popup', 'leader m', () => wm.dismiss(true));
     add('Show desktop: minimize all windows, again to restore', 'leader Shift+d', () => { if (wm.showDesktop() === 'none') toast('No windows to minimize', 'info', 1500); });
-    try { for (const n of [...(await get('/api/fx')).effects, 'off']) add(n === 'off' ? 'Background effect: off' : `Background effect: ${n}`, `hatch fx ${n}`, () => api('POST', '/api/fx', { effect: n }).catch((e) => toast(e.message, 'bad'))); } catch { /* no effects list */ }
+    try {
+      const f = await get('/api/fx'); const setFx = (body) => api('POST', '/api/fx', body).catch((e) => toast(e.message, 'bad'));
+      for (const n of [...f.effects, 'off']) add(n === 'off' ? 'Background effect: off' : `Background effect: ${n}`, `hatch fx ${n}`, () => setFx({ effect: n }));
+      if (f.effect) for (const [label, d] of [['stronger', 20], ['weaker', -20]]) add(`Background effect: ${label}`, `intensity ${f.intensity}`, () => setFx({ intensity: Math.max(0, Math.min(100, f.intensity + d)) }));
+    } catch { /* no effects list */ }
     add('Dock or release the focused window', 'leader d', () => toastPlace(wm.togglePlacement()));
     add('Restore last minimized popup', 'leader u', () => { if (!wm.restoreNext()) toast('No minimized popups', 'info', 1500); });
     add('Open URL in a window...', '', () => { const u = prompt2('URL to open (the browser must reach it)'); return u && api('POST', '/api/panels', { type: 'iframe', title: u, props: { url: u } }); });

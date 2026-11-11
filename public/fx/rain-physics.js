@@ -46,3 +46,6 @@ export function streakSpecs(W, count, rand) {
   const w = Math.max(1, num(W, 1)), base = rand() * w, n = Math.max(1, Math.round(count[0] + rand() * (count[1] - count[0])));
   return Array.from({ length: n }, () => ({ x: clamp(base + (rand() - 0.5) * 70, 0, w), y: -rand() * 50, r: 1.5 + rand() * 1.0, fast: true }));
 }
+
+/** Intensity 0..100 as { alpha, count }: a multiplier on every alpha and one on how many droplets and drops there are (both 1 at the default 50). */
+export const rainLevel = (n) => { const f = Number.isFinite(n) ? clamp(n / 50, 0, 2) : 1; return { alpha: f, count: f }; };

@@ -1,9 +1,13 @@
 // Film-style digital rain, ported from the matrix example widget and dimmed so terminal text stays readable on top.
-// Effect interface (public/fx.js drives it): start(canvas, { animate }), stop(), resize(). One instance per page.
+// Effect interface (public/fx.js drives it): start(canvas, { animate, intensity }), setIntensity(n), stop(), resize(). One instance per page.
+import { factor } from './intensity.js';
 const GLYPHS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾅﾆﾇﾈﾉ0123456789:=*+-<>'.split('');
 const FS = 16, CW = 12.5, CH = 17, DIM = 0.42, FPS = 30; // font size, column pitch, row pitch, overall strength, frame cap
 const glyph = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
 
+/** Intensity 0..100 as { dens, bright }: how many streams run and how bright the glyphs are (both 1 at the default 50). */
+export const matrixLevel = (n) => { const f = factor(n); return { dens: f, bright: f }; };
+let level = matrixLevel(50);
 let cv = null, ctx = null, raf = 0, last = 0, T = 0, cols = 0, rows = 0, lum = [], chr = [], streams = [], info = [];
 
 const newStream = (c, y) => ({ y, spd: 6 + Math.random() * 18 * info[c].depth + info[c].depth * 6 });
@@ -19,7 +23,7 @@ function resize() {
     const depth = 0.3 + Math.random() * 0.7;
     info.push({ depth, decay: 0.3 + Math.random() * 1.1 });
     lum.push(new Float32Array(rows)); chr.push(Array.from({ length: rows }, glyph)); streams.push([]);
-    for (let k = 0; k < 3; k++) if (Math.random() < 0.55) streams[c].push(newStream(c, Math.random() * rows));
+    for (let k = 0; k < 3; k++) if (Math.random() < 0.55 * Math.min(1, level.dens)) streams[c].push(newStream(c, Math.random() * rows));
   }
 }
 
@@ -27,7 +31,7 @@ function step(dt) {
   T += dt;
   for (let c = 0; c < cols; c++) {
     const L = lum[c], S = streams[c], inf = info[c];
-    if (S.length < 3 && Math.random() < busy(c) * dt) S.push(newStream(c, -Math.random() * 3));
+    if (S.length < Math.round(3 * level.dens) && Math.random() < busy(c) * Math.min(1.5, level.dens) * dt) S.push(newStream(c, -Math.random() * 3));
     for (let i = S.length - 1; i >= 0; i--) {
       const s = S[i], from = Math.floor(s.y); s.y += s.spd * dt;
       for (let r = from + 1; r <= Math.floor(s.y); r++) { s.ch = glyph(); if (r >= 0 && r < rows && Math.random() > 0.1) { L[r] = 1; chr[c][r] = s.ch; } }
@@ -46,7 +50,7 @@ function draw() {
   ctx.globalAlpha = 1; ctx.clearRect(0, 0, w, h); // transparent where nothing falls; everything is redrawn from the per-cell brightness each frame
   ctx.font = `bold ${FS}px monospace`; ctx.textBaseline = 'top'; ctx.shadowBlur = 0; ctx.fillStyle = 'hsl(126 100% 60%)';
   for (let c = 0; c < cols; c++) {
-    const L = lum[c], a = (0.5 + 0.5 * info[c].depth) * DIM;
+    const L = lum[c], a = (0.5 + 0.5 * info[c].depth) * DIM * level.bright;
     for (let r = 0; r < rows; r++) {
       const b = L[r]; if (b < 0.04) continue;
       ctx.globalAlpha = trailAlpha(b, a);
@@ -56,7 +60,7 @@ function draw() {
   ctx.shadowColor = '#3dff5f'; ctx.shadowBlur = 4; ctx.fillStyle = '#b4ffc0';
   for (let c = 0; c < cols; c++) for (const s of streams[c]) {
     const r = Math.floor(s.y); if (r < 0 || r >= rows || !s.ch) continue;
-    ctx.globalAlpha = (0.35 + 0.5 * info[c].depth) * DIM; ctx.fillText(s.ch, c * CW, r * CH);
+    ctx.globalAlpha = Math.min(1, (0.35 + 0.5 * info[c].depth) * DIM * level.bright); ctx.fillText(s.ch, c * CW, r * CH);
   }
   ctx.globalAlpha = 1; ctx.shadowBlur = 0;
 }
@@ -70,11 +74,12 @@ function frame(t) {
 
 export default {
   name: 'matrix',
-  start(canvas, { animate = true } = {}) {
-    cv = canvas; ctx = cv.getContext('2d'); resize();
+  start(canvas, { animate = true, intensity } = {}) {
+    level = matrixLevel(intensity); cv = canvas; ctx = cv.getContext('2d'); resize();
     if (!animate) { for (let i = 0; i < 90; i++) step(1 / 30); draw(); return; } // reduced motion: one still frame
     last = performance.now(); raf = requestAnimationFrame(frame);
   },
+  setIntensity(n) { level = matrixLevel(n); if (cv && !raf) draw(); },
   stop() { cancelAnimationFrame(raf); raf = 0; cv = ctx = null; },
   resize() { resize(); if (cv && !raf) { for (let i = 0; i < 90; i++) step(1 / 30); draw(); } },
 };

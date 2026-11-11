@@ -475,9 +475,9 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       }
 
       if (p === '/api/fx') {
-        if (m === 'GET') return json(res, 200, { effect: readFx(stateDir).effect, effects: EFFECTS });
+        if (m === 'GET') { const f = readFx(stateDir); return json(res, 200, { effect: f.effect, intensity: f.intensity, effects: EFFECTS }); }
         if (m === 'POST') { // the file is the source of truth; the watcher then pushes the change to every open page
-          try { const effect = setFx(stateDir, (await readJson(req)).effect); state.rescan(); return json(res, 200, { effect, effects: EFFECTS }); }
+          try { const b = await readJson(req); const f = setFx(stateDir, b.effect, b.intensity); state.rescan(); return json(res, 200, { ...f, effects: EFFECTS }); }
           catch (e) { if (e instanceof FxError) throw new HttpError(400, e.message); throw e; }
         }
       }

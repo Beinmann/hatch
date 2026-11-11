@@ -97,8 +97,9 @@ ask the user (blocks until they answer in the browser; prints the answer)
   set transparency 0..100           make the terminal and panels see-through: 0 = opaque, 30 = default, 100 = fully transparent (saved in transparency.json)
   set background-mode MODE          how it fits: fill (cover, default) | fit (contain) | stretch | center | tile (saved in background.json)
 background effects (behind the terminal text, visible at any transparency)
-  fx                                show the active effect and the list
+  fx                                show the active effect, its intensity and the list
   fx matrix | rain | off            switch the effect (saved in fx.json; open pages update by themselves)
+  fx [NAME] --intensity 0-100       how strong the effect is (default 50, kept per effect; no NAME = the active one)
 desktop
   desktop                           open a set of live gadgets (graph, system, clock, top, git, log) plus the progress panel
 git (Magit-lite window)
@@ -686,8 +687,8 @@ async function main(argv) {
       return console.log(`sent ${r.bytes} bytes to the browser clipboard`);
     }
     case 'fx': {
-      if (!sub) { const f = readFx(dir); return say(o, { effect: f.effect, effects: EFFECTS }, `active: ${f.effect || 'none'}${f.problem ? ` (${f.problem})` : ''}\neffects: ${EFFECTS.join(', ')}, off`); }
-      try { const e = setFx(dir, sub); return console.log(e ? `fx ${e} on; \`hatch fx off\` turns it off. Open pages update by themselves.` : 'fx off'); }
+      if (!sub && o.intensity === undefined) { const f = readFx(dir); return say(o, { effect: f.effect, intensity: f.intensity, intensities: f.intensities, effects: EFFECTS }, `active: ${f.effect || 'none'}${f.effect ? ` (intensity ${f.intensity}, 0-100)` : ''}${f.problem ? ` (${f.problem})` : ''}\neffects: ${EFFECTS.join(', ')}, off`); }
+      try { const f = setFx(dir, sub, o.intensity); return console.log(f.effect ? `fx ${f.effect} on, intensity ${f.intensity}; \`hatch fx off\` turns it off. Open pages update by themselves.` : 'fx off'); }
       catch (e) { if (e instanceof FxError) throw new CliError(e.message); throw e; }
     }
     case 'set': {

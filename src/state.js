@@ -161,7 +161,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   let progress = { diagram: '', steps: [] };
   let progressSig = '';
   let background = null; // { url, rev } or null
-  let fx = null; // name of the background effect or null
+  let fx = { effect: null, intensity: 50 }; // the background effect (null = none) and its intensity
   let transparency = DEFAULT_TRANSPARENCY;  // percent, 0 = opaque
   let watcher = null; let pollTimer = null; let debounce = null; let closed = false;
 
@@ -284,8 +284,8 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   function scanFx() {
     const f = readFx(dir);
     warn('fx', f.problem || null);
-    if (f.effect === fx) return;
-    fx = f.effect; emit('fx', { effect: fx });
+    if (f.effect === fx.effect && f.intensity === fx.intensity) return;
+    fx = { effect: f.effect, intensity: f.intensity }; emit('fx', fx);
   }
 
   function scanSizes() { warn('sizes', readSizes(dir).problem || null); }
