@@ -197,6 +197,9 @@ export function initTerminal({ host, api, toast, onCopy = () => {}, onBell = () 
   return {
     // Ends the stream, the reconnect timer and the resize observer (a closed terminal window must not keep a connection).
     close() { if (closed) return; closed = true; opened = false; revision++; inputEpoch++; controller.abort(); queue = Promise.resolve(); clearTimeout(retryTimer); clearTimeout(resizeTimer); drop(); observer.disconnect(); term.dispose(); },
+    // Drops the stream without closing the terminal (a workspace that is not shown holds no connection: browsers allow only a few
+    // per origin). The program keeps running in tmux; connect() later re-attaches and the server replays recent output.
+    pause() { if (closed) return; opened = false; revision++; inputEpoch++; controller.abort(); queue = Promise.resolve(); clearTimeout(retryTimer); clearTimeout(resizeTimer); drop(); retry = 0; },
     retheme() { if (closed) return; term.options.theme = themeFromCss(); }, // after custom.css has loaded
     find, resetFind,
     sendKey: (seq) => { if (closed) return; send(seq); term.focus(); },

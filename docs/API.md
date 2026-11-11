@@ -79,6 +79,17 @@ Git commands run asynchronously, serialize mutations within each repository and 
 (504), so slow hooks leave terminal input responsive. Server shutdown stops active git process groups.
 Discovery: `GET /api/tasks`, `GET /api/ports`, `GET /api/report` (markdown).
 
+## Workspaces
+
+A workspace is a name plus its windows (their `ws` field; absent = `main`), its own main terminal and its own background. The registry is `workspaces.json` in the state dir (hand edits work; a name seen only on a window is listed too).
+`GET /api/workspaces` (name, id, window count, whether it has a background), `POST /api/workspaces` (`{name}`),
+`POST /api/workspaces/NAME/rename` (`{to}`), `DELETE /api/workspaces/NAME` (`{confirm: "NAME"}`, the exact name is required; closes its windows, ends its terminals; `main` cannot be closed),
+`PUT /api/workspaces/NAME/background` (image bytes), `DELETE` the same path (remove), `POST` the same path (`{mode}`).
+`GET /background/image?ws=NAME` serves a workspace's background (`main` without the parameter).
+The main terminal of a workspace other than `main` is `/api/pterm/ws-ID` (ID from the listing). `POST /api/presence` (`{cid, ws}`, the `cid` of an open events stream) says which workspace a tab shows;
+the events carry `workspaces`, `presence` (`{counts}`), `activity` (`{terminal}`) and `background` (`{ws, background}`), and the snapshot has `workspaces`, `backgrounds` and `presence`.
+`hatch workspace import STATE-DIR [NAME]` copies another instance's windows (new ids), background and the widgets/uploads they use into a workspace; running terminals cannot move, so they start fresh shells.
+
 ## Saved state (all plain files too)
 
 `GET|PUT /api/commands` (saved commands and prompts), `GET|PUT /api/watches`, `GET|PUT /api/schedules`,

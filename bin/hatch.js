@@ -16,6 +16,7 @@ import { instanceNotice } from '../src/instance.js';
 import { doctor, printChecks } from '../src/doctor.js';
 import { layout, NAME_RE, STEP_STATUS } from '../src/state.js';
 import * as background from '../src/background.js';
+import * as wsapi from '../src/workspaces.js';
 import * as transparency from '../src/transparency.js';
 import { setFx, readFx, FxError, EFFECTS } from '../src/fx.js';
 import { parseEvery } from '../src/schedules.js';
@@ -92,10 +93,17 @@ run a command in its own live output window (Emacs compilation-mode idea)
   runs [--open ID]                  list this server's runs (kept in memory); --open shows one's output again
 ask the user (blocks until they answer in the browser; prints the answer)
   ask "question" [CHOICE ...] [--text] [--timeout SEC]     default choices: Yes No; exit 3 on timeout
-  set background IMAGE              use a PNG, JPEG, GIF or WebP image as the page background (saved in the state dir as background.EXT)
+  set background IMAGE [--ws NAME]  use a PNG, JPEG, GIF or WebP image as the page background (saved in the state dir as background.EXT)
   set background none               remove the background image
   set transparency 0..100           make the terminal and panels see-through: 0 = opaque, 30 = default, 100 = fully transparent (saved in transparency.json)
   set background-mode MODE          how it fits: fill (cover, default) | fit (contain) | stretch | center | tile (saved in background.json)
+workspaces (named sets of windows with their own terminal and background, in this one instance)
+  workspace list                    names, window counts, which have a background
+  workspace new NAME                create an empty workspace (switch to it in the page: palette, "workspace: switch")
+  workspace rename OLD NEW          windows, terminal and background stay with it
+  workspace close NAME --confirm NAME   closes its windows and terminals for good; the name must be typed out
+  workspace import STATE-DIR [NAME]     fold another instance's windows and background into a workspace (terminals start fresh)
+  open a page directly in one with  http://HOST:PORT/#NAME
 background effects (behind the terminal text, visible at any transparency)
   fx                                show the active effect, its intensity and the list
   fx matrix | rain | goo | off      switch the effect (saved in fx.json; open pages update by themselves)
@@ -691,7 +699,40 @@ async function main(argv) {
       try { const f = setFx(dir, sub, o.intensity); return console.log(f.effect ? `fx ${f.effect} on, intensity ${f.intensity}; \`hatch fx off\` turns it off. Open pages update by themselves.` : 'fx off'); }
       catch (e) { if (e instanceof FxError) throw new CliError(e.message); throw e; }
     }
+    case 'workspace': {
+      const usage = 'usage: workspace list | new NAME | rename OLD NEW | close NAME --confirm NAME | import STATE-DIR [NAME]';
+      const enc = encodeURIComponent;
+      if (!sub || sub === 'list') {
+        const list = await api('GET', '/api/workspaces');
+        return say(o, list, list.map((w) => `${w.name}${w.name === 'main' ? ' (default)' : ''}  ${w.windows} window${w.windows === 1 ? '' : 's'}${w.background ? '  background' : ''}`).join('\n'));
+      }
+      if (sub === 'new') { need(rest[0], usage); const w = await api('POST', '/api/workspaces', { name: rest[0] }); return console.log(`workspace ${w.name} created; open pages list it, or use /#${w.name}`); }
+      if (sub === 'rename') { need(rest[0] && rest[1], usage); await api('POST', `/api/workspaces/${enc(rest[0])}/rename`, { to: rest[1] }); return console.log(`workspace ${rest[0]} is now ${rest[1]}`); }
+      if (sub === 'close') {
+        need(rest[0], usage);
+        need(o.confirm === rest[0], `closing ${rest[0]} ends its terminals and closes its windows; run again with --confirm ${rest[0]} (the exact name) to go ahead`);
+        const r = await api('DELETE', `/api/workspaces/${enc(rest[0])}`, { confirm: o.confirm });
+        return console.log(`workspace ${rest[0]} closed (${r.closedWindows} window${r.closedWindows === 1 ? '' : 's'})`);
+      }
+      if (sub === 'import') {
+        need(rest[0], usage);
+        const src = path.resolve(rest[0]);
+        const name = rest[1] || path.basename(path.dirname(src)).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+        need(name, 'could not derive a workspace name from the folder; pass one: workspace import STATE-DIR NAME');
+        wsapi.migrate(dir); // a state dir that never ran a workspace-aware server gets its registry first
+        let r; try { r = wsapi.importState(dir, src, name); } catch (e) { if (e instanceof wsapi.WorkspaceError) throw new CliError(e.message); throw e; }
+        console.log(`imported ${r.windows} window${r.windows === 1 ? '' : 's'} into workspace ${r.workspace}${r.created ? ' (new)' : ''}; terminal windows start fresh shells`);
+        for (const x of r.skipped) console.log(`  skipped: ${x}`);
+        return;
+      }
+      throw new CliError(usage);
+    }
     case 'set': {
+      // --ws NAME: the background (and its fit mode) of that workspace instead of main
+      let bgDir = dir;
+      if (o.ws && (sub === 'background' || sub === 'background-mode')) {
+        try { bgDir = wsapi.workspaceDir(dir, wsapi.findWorkspace(dir, o.ws, [])); } catch (e) { if (e instanceof wsapi.WorkspaceError) throw new CliError(e.message); throw e; }
+      }
       const usage = 'usage: set background IMAGE|none, set background-mode fill|fit|stretch|center|tile, set transparency 0..100';
       if (sub === 'transparency') {
         need(rest[0], usage);
@@ -700,15 +741,15 @@ async function main(argv) {
       }
       if (sub === 'background-mode') {
         need(rest[0], usage);
-        try { background.setMode(dir, rest[0]); } catch (e) { if (e instanceof background.BackgroundError) throw new CliError(`${e.message} (mode left unchanged)`); throw e; }
-        return console.log(`background mode ${rest[0]} saved in ${dir}; open pages update by themselves`);
+        try { background.setMode(bgDir, rest[0]); } catch (e) { if (e instanceof background.BackgroundError) throw new CliError(`${e.message} (mode left unchanged)`); throw e; }
+        return console.log(`background mode ${rest[0]} saved in ${bgDir}; open pages update by themselves`);
       }
       if (sub !== 'background') throw new CliError(usage);
       need(rest[0], usage);
-      if (rest[0] === 'none') return console.log(background.clearBackground(dir) ? 'background removed' : 'no background was set');
-      try { background.setBackground(dir, background.readImageFile(path.resolve(rest[0]))); }
+      if (rest[0] === 'none') return console.log(background.clearBackground(bgDir) ? 'background removed' : 'no background was set');
+      try { background.setBackground(bgDir, background.readImageFile(path.resolve(rest[0]))); }
       catch (e) { if (e instanceof background.BackgroundError) throw new CliError(`${e.message} (background left unchanged)`); throw e; }
-      return console.log(`background saved in ${dir}; open pages update by themselves (the server must be running to show it)`);
+      return console.log(`background saved in ${bgDir}; open pages update by themselves (the server must be running to show it)`);
     }
     case 'desktop': { const r = await api('POST', '/api/desktop', {}); return console.log(`desktop open: ${r.opened.join(', ')}`); }
     case 'upload-dir': return console.log(l.uploads);

@@ -46,6 +46,8 @@ export function leaderAction(e) {
   const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
   if (digit && !e.shiftKey) return { action: 'number', n: Number(digit[1]), repeat: false };
   if (isEnter(e) && !e.shiftKey) return { action: 'terminal', repeat: false }; // same as t; the dock step handles its own Return before this
+  if (!e.shiftKey && (e.code === 'BracketRight' || e.code === 'BracketLeft')) return { action: e.code === 'BracketRight' ? 'wsnext' : 'wsprev', repeat: true }; // workspaces: ] next, [ previous
+  if (e.code === 'KeyW' && !e.shiftKey) return { action: 'wsjump', repeat: false }; // then 1-9 picks a workspace, like 1-9 picks a window
   if (e.code === 'KeyD' && e.shiftKey) return { action: 'desktop', repeat: false }; // Shift+d: show desktop (plain d docks or releases the focused window)
   const action = PLAIN[e.code];
   if (!action || (e.shiftKey && action !== 'next')) return null;

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { findBackground, readMode } from './background.js';
+import { listWorkspaces, workspaceDir } from './workspaces.js';
 import { readFx } from './fx.js';
 import { readTransparency, DEFAULT_TRANSPARENCY } from './transparency.js';
 import { sizeKey, sizeFor, readSizes, rememberSize } from './sizes.js';
@@ -161,7 +162,9 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   const widgetRev = new Map();   // name -> { rev, sig, meta }
   let progress = { diagram: '', steps: [] };
   let progressSig = '';
-  let background = null; // { url, rev } or null
+  let background = null; // main's background: { url, rev, mode } or null
+  const backgrounds = new Map(); // workspace name -> { url, rev, mode } (only those that have one); main is mirrored in `background`
+  let wsList = []; let wsSig = ''; // [{ name, id }] from workspaces.json plus names seen on windows
   let fx = { effect: null, intensity: 50 }; // the background effect (null = none) and its intensity
   let transparency = DEFAULT_TRANSPARENCY;  // percent, 0 = opaque
   let watcher = null; let pollTimer = null; let debounce = null; let closed = false;
@@ -266,13 +269,31 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     }
   }
 
+  // Each workspace has its own background (main: the state dir itself, others: workspaces/<id>/); the registry says which exist.
+  function scanWorkspaces() {
+    const r = listWorkspaces(dir, [...panels.values()]);
+    warn('workspaces.json', r.problem || null);
+    const sig = JSON.stringify(r.list);
+    wsList = r.list;
+    if (sig !== wsSig) { wsSig = sig; emit('workspaces', { workspaces: wsList }); }
+  }
+
   function scanBackground() {
-    const b = findBackground(dir);
-    const m = readMode(dir);
-    warn('background', b.problem || m.problem || null);
-    const next = b.name ? { url: `/background/image?v=${b.rev}`, rev: b.rev, mode: m.mode } : null;
-    if ((next?.rev ?? null) === (background?.rev ?? null) && next?.mode === background?.mode) return;
-    background = next; emit('background', { background });
+    const seen = new Set(); const problems = [];
+    for (const w of wsList) {
+      const wd = workspaceDir(dir, w);
+      const b = findBackground(wd); const m = readMode(wd);
+      if (b.problem || m.problem) problems.push(w.name === 'main' ? (b.problem || m.problem) : `workspace ${w.name}: ${b.problem || m.problem}`);
+      seen.add(w.name);
+      const next = b.name ? { url: `/background/image?${w.name === 'main' ? '' : `ws=${encodeURIComponent(w.name)}&`}v=${b.rev}`, rev: b.rev, mode: m.mode } : null;
+      const before = backgrounds.get(w.name) || null;
+      if ((next?.rev ?? null) === (before?.rev ?? null) && next?.mode === before?.mode) continue;
+      if (next) backgrounds.set(w.name, next); else backgrounds.delete(w.name);
+      if (w.name === 'main') background = next;
+      emit('background', { ws: w.name, background: next });
+    }
+    for (const n of [...backgrounds.keys()]) if (!seen.has(n)) { backgrounds.delete(n); emit('background', { ws: n, background: null }); }
+    warn('background', problems[0] || null);
   }
 
   function scanTransparency() {
@@ -293,7 +314,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
 
   function rescan() {
     if (closed) return;
-    try { scanPanels(); scanProgress(); plansApi.scan(); scanWidgets(); scanBackground(); scanTransparency(); scanFx(); scanSizes(); } catch (e) { log(`rescan failed: ${e.message}`); }
+    try { scanPanels(); scanWorkspaces(); scanProgress(); plansApi.scan(); scanWidgets(); scanBackground(); scanTransparency(); scanFx(); scanSizes(); } catch (e) { log(`rescan failed: ${e.message}`); }
   }
 
   function schedule() { clearTimeout(debounce); debounce = setTimeout(rescan, DEBOUNCE_MS); }
@@ -586,7 +607,8 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   return {
     plan,
     layout: l, start, close, rescan,
-    snapshot: () => ({ background, transparency, fx, panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
+    snapshot: () => ({ background, backgrounds: Object.fromEntries(backgrounds), workspaces: wsList, transparency, fx, panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
+    workspaces: () => wsList, backgroundOf: (name) => backgrounds.get(name) || null,
     listPanels: () => [...panels.values()], getPanel: (id) => panels.get(id),
     createPanel, patchPanel, convertPanel, deletePanel, listTrash, restoreTrash, emptyTrash,
     getProgress: () => progress, setDiagram, setSteps, patchStep, updateStep,

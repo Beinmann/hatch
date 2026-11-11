@@ -41,10 +41,14 @@ const store = {
 // ---- transparency (state dir transparency.json, percent 0..100): --opa is how opaque the backgrounds stay ----
 const applyTransparency = (pct) => { const r = document.documentElement; const n = Number.isFinite(pct) ? pct : 30; r.style.setProperty('--opa', `${100 - n}%`); r.classList.add('has-tr'); term?.retheme?.(); }; // always on: 0 = fully opaque even with a background image set
 // ---- background effect (state dir fx.json; pushed in the snapshot and by the 'fx' event; drawn by public/fx.js) ----
+const fxState = { effect: null, intensity: 50 };
 const fxCtl = createFx({ canvas: $('fx'), getXterm: () => term?.term || null, onChange: (name) => { const b = $('fxhint'); b.hidden = !name; b.textContent = name ? 'fx: hatch fx off' : ''; } });
 $('fxhint').addEventListener('click', () => api('POST', '/api/fx', { effect: 'off' }).catch((e) => toast(e.message, 'bad')));
 // ---- background image (state dir background.*; the server sends its URL in the snapshot and on change) ----
 const applyBackground = (b) => { const r = document.documentElement; if (b?.url) { r.style.setProperty('--bg-image', `url("${b.url}")`); r.dataset.bgmode = b.mode || 'fill'; r.classList.add('has-bg'); } else { r.style.removeProperty('--bg-image'); delete r.dataset.bgmode; r.classList.remove('has-bg'); } term?.retheme?.(); };
+
+let backgrounds = {}; // workspace name -> { url, mode }; each workspace shows its own
+const setBackgrounds = (b) => { backgrounds = b; applyBackground(backgrounds[wm.current()]); };
 
 // ---- toasts + notifications ----
 function toast(text, level = 'info', ms = 4500) {
@@ -184,7 +188,7 @@ function connectEvents() {
     for (const id of askDrafts.keys()) if (!pendingAsks.some((question) => question.id === id)) askDrafts.delete(id);
     showAsk();
     gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); $('conn').title = 'view-only mirror'; } loadCustom(s.info.custom); info = s.info; $('session').textContent = `tmux: ${s.info.session}`;
-    applyBackground(s.background); applyTransparency(s.transparency); fxCtl.set(s.fx?.effect, s.fx?.intensity);
+    setBackgrounds(s.backgrounds || {}); setWorkspaces(s.workspaces || [{ name: 'main', id: 'main' }]); presenceCounts = s.presence || {}; paintPresence(); applyTransparency(s.transparency); fxState.effect = s.fx?.effect; fxState.intensity = s.fx?.intensity; fxCtl.set(s.fx?.effect, s.fx?.intensity);
     widgets.clear(); for (const w of s.widgets) widgets.set(w.name, w);
     progressState = s.progress; for (const f of progressListeners) f(progressState);
     plansState.clear(); for (const [n, v] of Object.entries(s.plans || {})) plansState.set(n, v); for (const [n, v] of plansState) for (const f of planListeners) f(n, v);
@@ -193,10 +197,15 @@ function connectEvents() {
     const ids = new Set(s.panels.map((p) => p.id));
     for (const p of wm.all()) if (!ids.has(p.id)) wm.remove(p.id);
     for (const p of s.panels) wm.upsert(p);
+    routeOnce();
+    reportPresence();
   });
   es.addEventListener('transparency', (e) => applyTransparency(JSON.parse(e.data).transparency));
-  es.addEventListener('fx', (e) => { const d = JSON.parse(e.data); fxCtl.set(d.effect, d.intensity); });
-  es.addEventListener('background', (e) => applyBackground(JSON.parse(e.data).background));
+  es.addEventListener('fx', (e) => { const d = JSON.parse(e.data); fxState.effect = d.effect; fxState.intensity = d.intensity; fxCtl.set(d.effect, d.intensity); });
+  es.addEventListener('background', (e) => { const d = JSON.parse(e.data); if (d.background) backgrounds[d.ws || 'main'] = d.background; else delete backgrounds[d.ws || 'main']; applyBackground(backgrounds[wm.current()]); });
+  es.addEventListener('workspaces', (e) => setWorkspaces(JSON.parse(e.data).workspaces));
+  es.addEventListener('presence', (e) => { presenceCounts = JSON.parse(e.data).counts || {}; paintPresence(); });
+  es.addEventListener('activity', (e) => noteActivityEvent(JSON.parse(e.data).terminal));
   es.addEventListener('panel', (e) => { const d = JSON.parse(e.data); for (const f of panelListeners) f(d); if (d.action === 'removed') wm.remove(d.panel.id); else { if (d.action === 'created' && d.panel.type === 'editor') remember('recent', d.panel.props.path, 15); wm.upsert(d.panel); if (d.action === 'created') wm.revealDock(d.panel.id); } });
   es.addEventListener('progress', (e) => { progressState = JSON.parse(e.data); window.hatchUI?.emit('progress', progressState); for (const f of progressListeners) f(progressState); });
   es.addEventListener('plan', (e) => { const d = JSON.parse(e.data); if (d.removed) plansState.delete(d.name); else plansState.set(d.name, { diagram: d.diagram, steps: d.steps }); for (const f of planListeners) f(d.name, plansState.get(d.name) || { diagram: '', steps: [] }); });
@@ -249,17 +258,43 @@ async function clipboardIn(text, label) {
 
 // ---- terminal ----
 const conn = $('conn');
-const term = initTerminal({
-  host: $('term'), api, toast, onCopy: (t) => { if (t && t.trim()) remember('clips', t.slice(0, 2000), 20); },
-  // the terminal bell (a finished job that rings, tmux monitor-bell, Claude Code) pings you when the tab is in the background; at most once per 10 s
-  onBell: (() => { let last = 0; return () => { if (document.hidden && Date.now() - last > 10000) { last = Date.now(); notify({ text: 'Terminal bell', level: 'info' }); } }; })(),
-  onOpenFile: async (p, line) => { try { const r = await api('GET', `/api/fs/resolve?path=${encodeURIComponent(p)}`); await api('POST', '/api/panels', { type: 'editor', title: r.path.split('/').pop(), props: { path: r.path, line } }); } catch (e) { toast(e.message, 'warn', 7000); } },
-  onClipboard: (t) => clipboardIn(t, 'terminal'), fontSize: store.get('fontSize', 14), onFontSize: (n) => store.set('fontSize', n),
-  onStatus: (s) => { conn.textContent = s; conn.className = `chip ${s === 'connected' ? 'ok' : s === 'connecting' ? '' : 'bad'}`; },
-  reconnectUi: (msg) => { $('reconnect').hidden = !msg; if (msg) $('rcmsg').textContent = msg; },
-  // Ctrl+Shift+F/Z/G/1..9 stay with the page (the leader key is handled before xterm sees it); Ctrl+B etc. all go to tmux.
-  shortcuts: (e) => (isPaletteKey(e) ? (e.preventDefault(), true) : e.ctrlKey && e.shiftKey && (['KeyF', 'KeyZ', 'KeyG'].includes(e.code) || /^Digit[1-9]$/.test(e.code)) ? (e.preventDefault(), true) : false),
-});
+// One terminal per workspace, created the first time the workspace is shown and kept connected afterwards (switching only
+// shows another one; the programs run in tmux either way). `term` stays one stable object that forwards to the shown one.
+let wsList = [{ name: 'main', id: 'main' }]; // workspaces [{ name, id }] from the server
+const terms = new Map(); // workspace name -> { host, id, ctl, status, rc }
+let activeTerm = null;
+const term = new Proxy({}, { get: (_, k) => activeTerm?.[k], set: (_, k, v) => { if (activeTerm) activeTerm[k] = v; return true; } });
+const bellOnce = (() => { let last = 0; return () => { if (document.hidden && Date.now() - last > 10000) { last = Date.now(); notify({ text: 'Terminal bell', level: 'info' }); } }; })(); // a finished job that rings pings you when the tab is in the background; at most once per 10 s
+const paintStatus = (s) => { conn.textContent = s || ''; conn.className = `chip ${s === 'connected' ? 'ok' : s === 'connecting' ? '' : 'bad'}`; };
+const paintReconnect = (msg) => { $('reconnect').hidden = !msg; if (msg) $('rcmsg').textContent = msg; };
+function makeTerm(w) {
+  const host = el('div', { class: 'termhost' }); $('term').append(host);
+  const e = { host, id: w.id, ctl: null, status: 'connecting', rc: null, live: false };
+  const shown = () => terms.get(wm.current()) === e;
+  e.ctl = initTerminal({
+    host, api, toast, base: w.name === 'main' ? '/api/term' : `/api/pterm/ws-${w.id}`, onCopy: (t) => { if (t && t.trim()) remember('clips', t.slice(0, 2000), 20); },
+    onBell: () => { bellOnce(); if (!shown()) markAttention(w.name); },
+    onOpenFile: async (p, line) => { try { const r = await api('GET', `/api/fs/resolve?path=${encodeURIComponent(p)}`); await api('POST', '/api/panels', { type: 'editor', title: r.path.split('/').pop(), props: { path: r.path, line } }); } catch (x) { toast(x.message, 'warn', 7000); } },
+    onClipboard: (t) => clipboardIn(t, 'terminal'), fontSize: store.get('fontSize', 14), onFontSize: (n) => store.set('fontSize', n),
+    onStatus: (s) => { e.status = s; if (shown()) paintStatus(s); },
+    reconnectUi: (msg) => { e.rc = msg; if (shown()) paintReconnect(msg); },
+    // Ctrl+Shift+F/Z/G/1..9 stay with the page (the leader key is handled before xterm sees it); Ctrl+B etc. all go to tmux.
+    shortcuts: (ev) => (isPaletteKey(ev) ? (ev.preventDefault(), true) : ev.ctrlKey && ev.shiftKey && (['KeyF', 'KeyZ', 'KeyG'].includes(ev.code) || /^Digit[1-9]$/.test(ev.code)) ? (ev.preventDefault(), true) : false),
+  });
+  return e;
+}
+/** Shows the terminal of workspace `name` (creating and connecting it the first time). */
+function showTerm(name) {
+  const w = wsList.find((x) => x.name === name) || { name, id: name };
+  let e = terms.get(name);
+  for (const [n, x] of terms) { x.host.hidden = n !== name; if (n !== name && x.live) { x.live = false; x.ctl.pause(); } } // the others keep running in tmux but hold no connection
+  if (!e) { e = makeTerm(w); terms.set(name, e); }
+  e.host.hidden = false; activeTerm = e.ctl;
+  paintStatus(e.status); paintReconnect(e.rc);
+  if (!e.live) { e.live = true; e.ctl.connect(); } else e.ctl.fit();
+  fxCtl?.set?.(fxState.effect, fxState.intensity); // the effect canvas follows the shown terminal
+}
+showTerm('main'); // the other workspaces' terminals are made when first shown (the right one is chosen after the first snapshot)
 ctx.term = term;
 let termPointer = false; // a click already shows where you are; only flash for keyboard focus
 $('term').addEventListener('pointerdown', () => { termPointer = true; setTimeout(() => { termPointer = false; }, 300); wm.blur(); });
@@ -371,17 +406,139 @@ findq.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'E
 $('findnext').addEventListener('click', () => runFind(1)); $('findprev').addEventListener('click', () => runFind(-1)); $('findx').addEventListener('click', closeFind);
 addEventListener('keydown', (e) => { if (e.ctrlKey && e.shiftKey && e.code === 'KeyF') { e.preventDefault(); openFind(); } }, true);
 
-// ---- workspaces: each window belongs to one; the strip in the header switches (hidden windows keep running) ----
+// ---- workspaces: named sets of windows with their own terminal and background (registry on the server, see src/workspaces.js) ----
+let presenceCounts = {}; // workspace -> number of open tabs showing it
+const attention = new Set(); // other workspaces that rang a bell or printed a burst since you left them
+let numbering = false; // leader w: chips show their number
+const wsNames = () => { const n = wsList.map((w) => w.name); const cur = wm.current(); return n.includes(cur) ? n : [...n, cur]; };
 function paintWorkspaces() {
-  const cur = wm.current(); const names = wm.workspaces();
-  $('wsbar').replaceChildren(...names.map((n) => el('button', { type: 'button', class: `chip${n === cur ? ' on' : ''}`, title: `Workspace ${n}`, onclick: () => switchWs(n) }, n)),
-    el('button', { type: 'button', class: 'chip', title: 'New workspace', onclick: () => { const n = (window.prompt('Workspace name (letters, digits, - and _)') || '').trim(); if (/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(n)) switchWs(n); } }, '+'));
+  const cur = wm.current(); const names = wsNames();
+  $('wsbar').replaceChildren(...names.map((n, i) => el('button', { type: 'button', class: `chip${n === cur ? ' on' : ''}${attention.has(n) ? ' attn' : ''}`, title: `Workspace ${n}${attention.has(n) ? ' (something happened there)' : ''}`, onclick: () => switchWs(n) }, numbering && i < 9 ? `${i + 1} ${n}` : n)),
+    el('button', { type: 'button', class: 'chip', title: 'New workspace', onclick: () => newWorkspace() }, '+'));
+  const label = $('wslabel'); if (label) { label.textContent = cur; label.title = 'Current workspace'; }
+  document.title = cur === 'main' && names.length === 1 ? baseTitle : `${cur} · ${baseTitle}`;
 }
-function switchWs(n) { wm.setWorkspace(n); store.set('ws', n); paintWorkspaces(); }
+const markAttention = (n) => { if (n !== wm.current() && !attention.has(n)) { attention.add(n); paintWorkspaces(); } };
+function noteActivityEvent(name) {
+  let ws = null;
+  if (name === '@main') ws = 'main';
+  else if (name?.startsWith('ws-')) ws = wsList.find((w) => w.id === name.slice(3))?.name;
+  else { const p = wm.all().find((x) => x.type === 'terminal' && x.props.name === name); if (p && !p.sticky) ws = p.ws || 'main'; }
+  if (ws) markAttention(ws);
+}
+function setWorkspaces(list) {
+  // a rename changes the name but not the id: keep that workspace's terminal
+  for (const [n, e] of [...terms]) {
+    const now = list.find((w) => w.id === e.id);
+    if (now && now.name !== n) { terms.delete(n); terms.set(now.name, e); if (store.get('ws', 'main') === n) store.set('ws', now.name); if (wm.current() === n) { wm.setWorkspace(now.name); setHash(now.name, true); } }
+    else if (!now && n !== 'main') { e.ctl.close(); e.host.remove(); terms.delete(n); }
+  }
+  wsList = list;
+  for (const n of [...attention]) if (!wsNames().includes(n)) attention.delete(n);
+  if (routed && !list.some((w) => w.name === wm.current())) { toast(`Workspace ${wm.current()} was closed`, 'info', 3000); showWorkspace('main'); setHash('main', true); }
+  paintWorkspaces(); paintPresence();
+}
+/** Shows a workspace: its windows, terminal and background. Terminals of the others keep running. */
+function showWorkspace(n) {
+  wm.setWorkspace(n); store.set('ws', n); attention.delete(n);
+  showTerm(n); applyBackground(backgrounds[n]); paintWorkspaces(); reportPresence();
+  if (document.activeElement === document.body || !document.activeElement) term.focus();
+}
+const hashName = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ''; } };
+function setHash(n, replace = false) { const h = `#${encodeURIComponent(n)}`; if (location.hash === h) return; if (replace) history.replaceState(null, '', h); else location.hash = h; }
+/** Switching sets the URL hash; the hashchange handler shows it, so the address bar, back/forward and bookmarks all agree. */
+function switchWs(n) { if (n === wm.current()) return; setHash(n); }
+let routed = false;
+async function routeTo(n, { initial = false } = {}) {
+  if (wsList.some((w) => w.name === n)) { showWorkspace(n); return true; }
+  const fallback = wsList.some((w) => w.name === store.get('ws', 'main')) ? store.get('ws', 'main') : 'main';
+  if (n && /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(n) && !isViewOnly()) {
+    const go = await askBox({ title: `There is no workspace named ${n}`, text: 'Create it? It starts empty, with its own terminal.', ok: 'Create' });
+    if (go) { try { await createWs(n); showWorkspace(n); return true; } catch (e) { toast(e.message, 'bad'); } }
+  } else if (n) toast(`There is no workspace named ${n}`, 'warn', 4000);
+  showWorkspace(fallback); setHash(fallback, true); return false;
+}
+async function routeOnce() { // after the first snapshot: the URL hash wins, else the last used workspace
+  if (routed) return; routed = true;
+  const h = hashName();
+  if (h) await routeTo(h, { initial: true }); else { const last = store.get('ws', 'main'); showWorkspace(wsList.some((w) => w.name === last) ? last : 'main'); setHash(wm.current(), true); }
+}
+addEventListener('hashchange', () => { if (routed && hashName() !== wm.current()) routeTo(hashName()); });
+async function createWs(name) { const w = await api('POST', '/api/workspaces', { name }); if (!wsList.some((x) => x.name === w.name)) setWorkspaces([...wsList, w]); return w; }
+// tell the server which workspace this tab shows: another tab on the same one gets a notice (no locking, both stay live)
+let reported = null;
+function reportPresence() { const ws = wm.current(); if (!routed || isViewOnly() || reported === `${cid}:${ws}:${gotSnapshot}`) return; reported = `${cid}:${ws}:${gotSnapshot}`; api('POST', '/api/presence', { cid, ws }).catch(() => { reported = null; }); }
+let noticeDismissed = null;
+function paintPresence() {
+  const n = $('wsnotice'); if (!n) return;
+  const others = Math.max(0, (presenceCounts[wm.current()] || 0) - 1);
+  const key = `${wm.current()}:${others}`;
+  n.hidden = !others || noticeDismissed === key;
+  n.textContent = others ? `also open in ${others > 1 ? `${others} other tabs` : 'another tab'}` : '';
+  n.onclick = () => { noticeDismissed = key; n.hidden = true; };
+  n.title = 'Both tabs show the same live windows and terminal. Click to hide this notice.';
+}
 const origUpsert = wm.upsert; wm.upsert = (p) => { origUpsert(p); paintWorkspaces(); };
 
+// A small dialog: a question with optional typed answer. Resolves to the text (or true), or null when cancelled.
+function askBox({ title, text = '', ok = 'OK', input = null, match = null, danger = false }) {
+  return new Promise((resolve) => {
+    const done = (v) => { box.remove(); resolve(v); term.focus(); };
+    const field = input !== null ? el('input', { type: 'text', value: input.value || '', placeholder: input.placeholder || '', autocomplete: 'off', spellcheck: 'false', 'aria-label': title }) : null;
+    const okBtn = el('button', { type: 'button', class: danger ? 'danger' : '', onclick: () => done(field ? field.value.trim() : true) }, ok);
+    const sync = () => { okBtn.disabled = !!field && (match !== null ? field.value !== match : !field.value.trim()); };
+    field?.addEventListener('input', sync);
+    const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) done(null); } }, el('div', { class: 'box pad', role: 'dialog', 'aria-label': title },
+      el('h3', { style: 'margin:0 0 8px' }, title), text ? el('p', { class: 'muted' }, text) : '', field || '', el('div', { style: 'margin-top:10px;display:flex;gap:8px;justify-content:flex-end' }, el('button', { type: 'button', onclick: () => done(null) }, 'Cancel'), okBtn)));
+    box.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') done(null); else if (e.key === 'Enter' && !okBtn.disabled) { e.preventDefault(); okBtn.click(); } });
+    sync(); document.body.append(box); const first = field || okBtn; first.focus(); setTimeout(() => { if (box.isConnected && !box.contains(document.activeElement)) first.focus(); }, 80); // a widget frame may grab focus as it loads
+  });
+}
+async function newWorkspace() {
+  if (isViewOnly()) return;
+  const n = await askBox({ title: 'New workspace', text: 'Letters, digits, - and _ (up to 32). It gets its own terminal, windows and background.', ok: 'Create', input: { placeholder: 'name' } });
+  if (!n) return;
+  try { await createWs(n); switchWs(n); } catch (e) { toast(e.message, 'bad'); }
+}
+async function renameWorkspace() {
+  const cur = wm.current();
+  if (cur === 'main') return toast('main cannot be renamed; create another workspace instead', 'info');
+  const n = await askBox({ title: `Rename workspace ${cur}`, ok: 'Rename', input: { value: cur } });
+  if (!n || n === cur) return;
+  try { await api('POST', `/api/workspaces/${encodeURIComponent(cur)}/rename`, { to: n }); } catch (e) { toast(e.message, 'bad'); }
+}
+async function closeWorkspace(name = wm.current()) {
+  if (name === 'main') return toast('main is the default workspace and cannot be closed', 'info');
+  const count = wm.all().filter((p) => (p.ws || 'main') === name).length;
+  const typed = await askBox({ title: `Close workspace ${name}?`, text: `This closes its ${count} window${count === 1 ? '' : 's'} and ends its terminals for good. Type the workspace name to confirm.`, ok: 'Close workspace', input: { placeholder: name }, match: name, danger: true });
+  if (typed !== name) return;
+  try { await api('DELETE', `/api/workspaces/${encodeURIComponent(name)}`, { confirm: typed }); if (wm.current() === name) { showWorkspace('main'); setHash('main'); } toast(`Workspace ${name} closed`, 'info', 2500); } catch (e) { toast(e.message, 'bad'); }
+}
+// a one-off palette over a list of choices (the workspace and window pickers)
+function pick(labels, onPick, hint = () => '') {
+  const pal = createPalette({ initialEntries: () => labels.map((l) => ({ label: l.label ?? l, hint: hint(l), run: () => onPick(l) })), entries: async () => labels.map((l) => ({ label: l.label ?? l, hint: hint(l), run: () => onPick(l) })), onError: (e) => toast(e.message, 'bad') });
+  pal.open();
+}
+const pickWorkspace = (onPick, { exclude = [] } = {}) => pick(wsNames().filter((n) => !exclude.includes(n)), onPick, (n) => `${wm.all().filter((p) => (p.ws || 'main') === n).length} windows${attention.has(n) ? ' · attention' : ''}${(presenceCounts[n] || 0) ? ' · open in a tab' : ''}`);
+function moveWindowToWorkspace() {
+  const go = (p) => pickWorkspace((n) => ctx.patch(p.id, { ws: n === 'main' ? 'main' : n }).then(() => toast(`Moved ${p.title} to ${n}`, 'info', 2000)).catch((e) => toast(e.message, 'bad')), { exclude: [p.ws || 'main'] });
+  const f = wm.focusedPanel();
+  if (f) return go(f);
+  const here = wm.all().filter((p) => p.sticky || (p.ws || 'main') === wm.current());
+  if (!here.length) return toast('No windows in this workspace', 'info', 1500);
+  pick(here.map((p) => ({ label: `${p.title} (${p.id})`, p })), (x) => go(x.p), (x) => x.p.type);
+}
+function setWorkspaceBackground() {
+  const input = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', hidden: true });
+  input.addEventListener('change', async () => {
+    const f = input.files[0]; input.remove(); if (!f) return;
+    try { const res = await fetch(`/api/workspaces/${encodeURIComponent(wm.current())}/background`, { method: 'PUT', body: f }); if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `upload failed (${res.status})`); toast(`Background set for ${wm.current()}`, 'info', 2000); } catch (e) { toast(e.message, 'bad'); }
+  });
+  document.body.append(input); input.click();
+}
+
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a docked window\'s title bar', 'Reorder the dock (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a docked window\'s title bar', 'Reorder the dock (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -408,22 +565,23 @@ addEventListener('keydown', (e) => {
   if (!(e.ctrlKey && e.shiftKey)) return;
   if (e.code === 'KeyG') { e.preventDefault(); toggleProgress(); }
   else if (e.code === 'KeyZ') { e.preventDefault(); toggleZen(); }
-  else if (/^Digit[1-9]$/.test(e.code)) { const n = wm.workspaces()[Number(e.code.slice(5)) - 1]; if (n) { e.preventDefault(); switchWs(n); } }
+  else if (/^Digit[1-9]$/.test(e.code)) { const n = wsNames()[Number(e.code.slice(5)) - 1]; if (n) { e.preventDefault(); switchWs(n); } }
 }, true);
 
 // ---- leader key (tmux style prefix): Ctrl+Space, then one key. Mapping in leader.js; the hint sits in the bottom-left corner ----
 const leaderHint = el('div', { id: 'leaderhint', role: 'status', hidden: true });
 document.body.append(leaderHint);
 let leaderChord = parseChord(store.get('leader', DEFAULT_LEADER)) || parseChord(DEFAULT_LEADER);
-const leader = { armed: false, timer: null, dock: null }; // dock: { id } while picking a window with Leader u
+const leader = { armed: false, timer: null, dock: null, ws: false }; // dock: { id } while picking a window with Leader u
 function leaderDisarm() {
-  leader.armed = false; leader.dock = null; clearTimeout(leader.timer);
+  leader.armed = false; leader.dock = null; leader.ws = false; clearTimeout(leader.timer);
+  if (numbering) { numbering = false; paintWorkspaces(); }
   leaderHint.hidden = true; wm.showNumbers(false); wm.selectWindow(null);
 }
 function leaderArm() {
   leader.armed = true; leader.dock = null; clearTimeout(leader.timer);
   const name = store.get('leader', DEFAULT_LEADER);
-  leaderHint.textContent = `${name} ...  h j k l focus · 1-9 window · Tab next · t/Return terminal · q close · m minimize · d dock/release window · u dock · s show/hide dock · Shift+d show desktop · Shift+hjkl move · Ctrl+hjkl resize · o transparency · f maximize · a tile · p palette · Esc cancel`;
+  leaderHint.textContent = `${name} ...  h j k l focus · 1-9 window · Tab next · t/Return terminal · q close · m minimize · d dock/release window · u dock · s show/hide dock · Shift+d show desktop · Shift+hjkl move · Ctrl+hjkl resize · o transparency · f maximize · a tile · p palette · ] [ workspace · w 1-9 workspace · Esc cancel`;
   leaderHint.hidden = false; wm.showNumbers(true);
 }
 function leaderDock() {
@@ -440,8 +598,15 @@ function leaderDockKey(e) {
   leaderDisarm(); // Esc or anything else
 }
 const toastPlace = (to) => (to ? toast(to === 'dock' ? 'Window docked' : 'Window released from the dock', 'info', 1200) : toast('No window is focused', 'info', 1500));
+function leaderWsKey(e) { // after leader w: a digit jumps to that workspace
+  const a = leaderAction(e);
+  if (a?.action === 'ignore') return;
+  const n = a?.action === 'number' ? wsNames()[a.n - 1] : null;
+  leaderDisarm(); if (n) switchWs(n);
+}
 function leaderKey(e) {
   if (leader.dock) return leaderDockKey(e);
+  if (leader.ws) return leaderWsKey(e);
   if (chordMatches(leaderChord, e)) return leaderArm(); // leader twice: stay in leader mode (the timer and hint restart)
   const a = leaderAction(e);
   if (a?.action === 'ignore') return;
@@ -474,6 +639,8 @@ function leaderKey(e) {
     case 'maximize': wm.toggleMaximize(); break;
     case 'tile': if (!ro) tileWindows().catch((x) => toast(x.message, 'bad')); break;
     case 'palette': if (!ro) palette.open(); break;
+    case 'wsnext': case 'wsprev': { const names = wsNames(); const i = names.indexOf(wm.current()); const n = names[(i + (a.action === 'wsnext' ? 1 : names.length - 1)) % names.length]; if (n) switchWs(n); break; }
+    case 'wsjump': leader.ws = true; numbering = true; paintWorkspaces(); leaderHint.textContent = 'workspace number 1-9 (Esc cancels)'; clearTimeout(leader.timer); leader.timer = setTimeout(leaderDisarm, 3000); return;
   }
   if (a.repeat) { // stay armed for a moment so h h h works; numbers are refreshed because focus moved
     clearTimeout(leader.timer); leader.timer = setTimeout(leaderDisarm, REPEAT_MS);
@@ -620,8 +787,12 @@ const palette = createPalette({
     add('Open file by path...', 'find-file', () => { const p = (window.prompt('Absolute path, or one relative to the server directory (opens in an editor window)') || '').trim(); if (!p) return; return api('GET', `/api/fs/resolve?path=${encodeURIComponent(p)}`).then((r) => openEditor(r.path)).catch((e) => toast(e.message, 'warn', 7000)); });
     for (const f of store.get('recent', [])) add(`Recent file: ${f.split('/').slice(-2).join('/')}`, f, () => openEditor(f));
     for (const c of store.get('clips', []).slice(0, 10)) add(`Paste from history: ${c.replace(/\s+/g, ' ').slice(0, 50)}`, `${c.length} chars`, () => { term.sendText(c); term.focus(); });
-    for (const n of wm.workspaces()) if (n !== wm.current()) add(`Switch to workspace: ${n}`, '', () => switchWs(n));
-    for (const p of wm.all()) for (const n of wm.workspaces()) if ((p.ws || 'main') !== n) add(`Move window to workspace ${n}: ${p.title}`, p.id, () => ctx.patch(p.id, { ws: n }));
+    add('workspace: switch', `${wsNames().length} workspaces · leader ] [ or w 1-9`, () => pickWorkspace((n) => switchWs(n), { exclude: [wm.current()] }));
+    add('workspace: new', 'its own terminal, windows and background', newWorkspace);
+    add('workspace: rename', wm.current(), renameWorkspace);
+    add('workspace: close', 'asks you to type the name', () => closeWorkspace());
+    add('workspace: set background...', `for ${wm.current()} only`, setWorkspaceBackground);
+    add('window: move to workspace...', 'the terminal keeps running', moveWindowToWorkspace);
     add('Move all windows to the current workspace', '', () => allPanels((p) => ctx.patch(p.id, { ws: wm.current() })));
     add('Close focused popup', 'leader q', () => wm.dismiss());
     add('Minimize focused popup', 'leader m', () => wm.dismiss(true));
@@ -670,9 +841,8 @@ const palette = createPalette({
 function prompt2(msg) { return window.prompt(msg) || ''; }
 $('palbtn').addEventListener('click', () => palette.open());
 
-wm.setWorkspace(store.get('ws', 'main')); paintWorkspaces();
+wm.setWorkspace('main'); paintWorkspaces(); // the right workspace is chosen after the first snapshot (URL hash, else last used)
 connectEvents();
-term.connect();
 // ---- customisation API for .hatch/custom.js (loaded below; it is a plain ES module you own) ----
 const customCommands = []; const customHandlers = {};
 window.hatchUI = {
@@ -692,7 +862,7 @@ function loadCustom(c) {
 }
 
 // expose for tests / debugging
-window.hatchApp = { wm, term, api, widgets };
+window.hatchApp = { wm, term, api, widgets, wsNames, switchWs };
 
 // Claude plan limits in the header (hidden without the Claude CLI)
 const limitsUi = initLimits({ el, api, toast, node: $('limits') });
