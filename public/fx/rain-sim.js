@@ -1,7 +1,7 @@
 // The pane of glass as a pure simulation (no canvas, no globals; `rand` is injected so tests are repeatable). Resting drops of mixed sizes
 // shrink steadily over their life (they evaporate) and fade only at the very end, while new ones condense at a constant, steady rate
-// (never in bursts) that keeps the density at its target. Rarely one drop swells, runs a short wavy way down, wipes the small drops it
-// meets and leaves a thin wet trail. Nothing drips on a timer: runs are rare events.
+// (never in bursts) that keeps the density at its target. Every few seconds one drop swells, runs a wavy way down (shrinking as it goes), wipes the small drops it
+// meets and leaves a thin wet trail. Only one runs at a time, so a new run waits for the last one to stop.
 import { clamp, mergeRadius, touches, sampleRadius, sampleShape, dropLook, wavyOffset, runSpeed, trailFade, dropTarget } from './rain-physics.js';
 
 export const P = {
@@ -10,11 +10,11 @@ export const P = {
   LIFE: [45, 120],       // seconds a resting drop lives: it shrinks the whole time and fades only in the last 20%
   SPAWN_JITTER: 0.6,     // 0..1: how much the gap between new drops varies (0 = metronome); the average rate stays n / mean life
   OVERSHOOT: 1.15,       // new drops pause only if the pane holds this many times its target (runs and the intensity setting can push it up)
-  RUN_EVERY: [22, 65],   // seconds between runs of a heavy drop (rare on purpose)
-  RUN_LEN: [90, 260],    // px a heavy drop runs before it stops again
+  RUN_EVERY: [3, 6.5],    // seconds between starts of a heavy drop's run (divided by the intensity count, within 0.5..2)
+  RUN_LEN: [110, 300],    // px a heavy drop runs before it stops again
   RUN_R: [6.5, 11],      // radius a drop swells to before it lets go
-  SWELL: [1.6, 3.2],     // seconds it takes to swell (it also takes in water from the drops around it)
-  SHED: 0.004,           // radius lost per px run (water left behind as the trail)
+  SWELL: [0.9, 1.8],     // seconds it takes to swell (it also takes in water from the drops around it)
+  RUN_SHRINK: 0.7,       // share of its radius a running drop has lost by the end of the run (it ends small, the water stays as the trail)
   TRAIL_LIFE: 45,        // seconds until a wet trail has dried
   MAX_R: 16,             // no drop gets bigger than this
 };
@@ -22,6 +22,7 @@ export const P = {
 export function createGlass({ W = 1, H = 1, rand = Math.random, count = 1 } = {}) {
   const g = { W, H, T: 0, drops: [], trails: [], runner: null, count, nextRun: 0, spawnAcc: 0 };
   const between = ([a, b]) => a + rand() * (b - a);
+  const runGap = () => between(P.RUN_EVERY) / clamp(g.count, 0.5, 2);
   const target = () => (g.count <= 0 ? 0 : dropTarget(g.W, g.H, P.DENSITY / g.count, P.MAX_DROPS * Math.max(1, g.count)));
 
   function newDrop(over = {}) {
@@ -35,7 +36,7 @@ export function createGlass({ W = 1, H = 1, rand = Math.random, count = 1 } = {}
     }
   }
   function reseed() {
-    g.drops = []; g.trails = []; g.runner = null; g.T = 0; g.nextRun = between(P.RUN_EVERY) * 0.5;
+    g.drops = []; g.trails = []; g.runner = null; g.T = 0; g.nextRun = runGap() * 0.4;
     for (let i = 0, n = target(); i < n; i++) { const d = newDrop(); d.age = rand() * d.life; g.drops.push(d); } // ages spread over the whole life = the steady state, so no wave of fading later
   }
 
@@ -63,14 +64,15 @@ export function createGlass({ W = 1, H = 1, rand = Math.random, count = 1 } = {}
     if (run.phase === 'swell') { // gathers water, trembles, then lets go
       run.t += dt; const f = clamp(run.t / run.swell, 0, 1);
       d.r += (run.to - d.r) * clamp(dt * 1.2, 0, 1); d.tail = 0.25 * f; wipe(d);
-      if (run.t >= run.swell) { run.phase = 'go'; run.trail = { pts: [] }; g.trails.push(run.trail); }
+      if (run.t >= run.swell) { run.phase = 'go'; run.r0 = d.r; run.trail = { pts: [] }; g.trails.push(run.trail); }
       return;
     }
     const dy = runSpeed(d.r, run.dist / Math.max(1, run.len)) * dt;
     run.dist += dy; run.since += dy;
     d.y = run.y0 + run.dist; d.x = run.x0 + wavyOffset(run.dist, run.seed);
-    d.r = Math.max(2.4, d.r - P.SHED * dy); d.tail = Math.min(1.1, 0.35 + dy / dt / 80);
-    wipe(d);
+    d.tail = Math.min(1.1, 0.35 + dy / dt / 80);
+    wipe(d); // taking in small drops must not undo the shrinking: the radius follows the run's progress
+    d.r = Math.max(1.8, Math.min(d.r, run.r0 * (1 - P.RUN_SHRINK * clamp(run.dist / Math.max(1, run.len), 0, 1))));
     const t = run.trail;
     if (run.since >= 3) { run.since = 0; t.pts.push({ x: d.x, y: d.y - d.r * 0.4, w: Math.max(1.3, d.r * 0.45), t: g.T }); if (rand() < 0.1) g.drops.push(newDrop({ x: d.x + (rand() - 0.5) * d.r * 1.6, y: d.y - d.r * 1.2, r: 0.6 + rand() * 0.8, age: 1 })); }
     if (run.dist >= run.len || d.y > g.H) { if (d.y > g.H) { g.drops.splice(g.drops.indexOf(d), 1); g.runner = null; } else finishRun(d); }
@@ -88,7 +90,7 @@ export function createGlass({ W = 1, H = 1, rand = Math.random, count = 1 } = {}
     g.spawnAcc += dt * (n / meanLife) * (1 + P.SPAWN_JITTER * (rand() * 2 - 1));
     while (g.spawnAcc >= 1) { g.spawnAcc -= 1; if (resting < n * P.OVERSHOOT) { const d = newDrop(); place(d); g.drops.push(d); resting++; } }
     if (g.runner) stepRunner(g.runner, dt);
-    else if (g.T >= g.nextRun && g.drops.length) { g.nextRun = g.T + between(P.RUN_EVERY); startRun(); }
+    else if (g.T >= g.nextRun && g.drops.length) { g.nextRun = g.T + runGap(); startRun(); }
     let out = 0;
     for (const d of g.drops) { if (!d.run) { d.age += dt; } if (!d.run && d.age >= d.life) out++; }
     if (out) g.drops = g.drops.filter((d) => d.run || d.age < d.life);

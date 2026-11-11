@@ -174,7 +174,7 @@ test('rain physics: counts are finite for any canvas size, colours and the backg
   assert.deepEqual(P.parseCssColor('wat', [9, 9, 9, 9]), [9, 9, 9, 9]); assert.deepEqual(P.parseCssColor('', [1, 1, 1, 1]), [1, 1, 1, 1]);
 });
 
-test('rain glass: density holds for minutes, drops live long, heavy drops run rarely and one at a time, wiping small drops and leaving a trail', async () => {
+test('rain glass: density holds for minutes, drops live long, heavy drops run every few seconds, one at a time, shrinking as they go, wiping small drops and leaving a trail', async () => {
   const { createGlass, P } = await import('../public/fx/rain-sim.js');
   const g = createGlass({ W: 1000, H: 600, rand: seeded(7) }); const n0 = g.drops.length;
   assert.ok(n0 > 500, 'a wet pane to begin with'); assert.ok(g.drops.every((d) => d.life >= P.LIFE[0] && d.r > 0));
@@ -184,7 +184,7 @@ test('rain glass: density holds for minutes, drops live long, heavy drops run ra
     if (i % 20 === 0) { minN = Math.min(minN, g.drops.length); maxN = Math.max(maxN, g.drops.length); maxLive = Math.max(maxLive, g.drops.filter((d) => d.run).length); trailPts = Math.max(trailPts, g.trails.reduce((s, t) => s + t.pts.length, 0)); }
   }
   assert.ok(minN > 0.8 * n0 && maxN < 1.25 * n0, `density holds (${minN}..${maxN} of ${n0})`);
-  assert.ok(runs >= 6 && runs <= 30, `heavy drops run rarely (${runs} runs in 10 minutes)`); assert.equal(maxLive, 1, 'never two at once');
+  assert.ok(runs >= 70 && runs <= 200, `heavy drops run every few seconds (${runs} runs in 10 minutes)`); assert.equal(maxLive, 1, 'never two at once');
   assert.ok(trailPts > 10, 'a run leaves a trail');
   for (const d of g.drops) { assert.ok(Number.isFinite(d.x + d.y + d.r) && d.r <= P.MAX_R + 1e-9, 'finite and bounded'); }
   g.setCount(0); assert.equal(g.drops.length, 0); g.step(1); assert.equal(g.drops.length, 0, 'intensity 0 = no drops'); g.resize(0, 0); g.step(1);
@@ -219,7 +219,7 @@ test('rain glass: a running drop wipes the small drops on its way and stops, bec
   const { createGlass } = await import('../public/fx/rain-sim.js');
   const g = createGlass({ W: 300, H: 500, rand: seeded(3), count: 0 }); // count 0: no random drops, only the ones placed here
   const mk = (x, y, r, extra = {}) => ({ x, y, r, sx: 1, sy: 1, tail: 0, wob: [], age: 0, life: 1000, run: null, ...extra });
-  const heavy = mk(150, 40, 6); const path = [mk(150, 120, 1), mk(152, 170, 1.2), mk(149, 220, 0.9)]; const far = mk(20, 150, 1);
+  const heavy = mk(150, 40, 6); const path = [mk(150, 75, 1), mk(147, 100, 1.2), mk(145, 125, 0.9)]; const far = mk(20, 150, 1);
   g.drops = [heavy, ...path, far]; g.nextRun = 0;
   for (let i = 0; i < 20 * 60 && !(g.T > 5 && !g.running()); i++) g.step(0.05);
   assert.ok(!g.running() && heavy.run === null, 'it came to rest'); assert.ok(heavy.y > 100, 'it moved down'); assert.ok(g.drops.includes(far), 'drops off its track are left alone');
@@ -317,4 +317,14 @@ test('createFx: switching effects, a live intensity change without a reload, and
     await fx.set('nope'); assert.equal(fx.active(), null);
     real.default.start = orig.start; real.default.setIntensity = orig.setIntensity; await fx.set(null);
   } finally { Object.assign(globalThis, { document: saved.document, ResizeObserver: saved.RO, matchMedia: saved.mm }); for (const k of ['document', 'ResizeObserver', 'matchMedia']) if (!saved[k === 'ResizeObserver' ? 'RO' : k === 'matchMedia' ? 'mm' : k]) delete globalThis[k]; delete globalThis.requestAnimationFrame; delete globalThis.cancelAnimationFrame; }
+});
+
+test('rain glass: a running drop gets smaller on its way down and ends small', async () => {
+  const { createGlass } = await import('../public/fx/rain-sim.js');
+  const g = createGlass({ W: 1000, H: 700, rand: seeded(3) }); let r0 = 0, y0 = 0, rEnd = 0, seen = false;
+  for (let i = 0; i < 20 * 120 && !(seen && !g.running()); i++) {
+    g.step(0.05); const d = g.runner;
+    if (d?.run.phase === 'go') { if (!r0) { r0 = d.r; y0 = d.y; } rEnd = d.r; seen = true; }
+  }
+  assert.ok(seen && r0 > 0, 'a drop ran'); assert.ok(rEnd < r0 * 0.5, `it ended much smaller (${r0.toFixed(1)} -> ${rEnd.toFixed(1)})`);
 });
