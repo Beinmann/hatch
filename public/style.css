@@ -155,14 +155,23 @@ html.has-fx #fx{display:block;position:absolute;inset:0;width:100%;height:100%;z
 .outpre .dadd{background:#16a34a26;color:#86efac}.outpre .ddel{background:#dc262626;color:#fca5a5}.outpre .dhunk{color:#7dd3fc}.outpre .dmeta{opacity:.6}.outpre div{min-height:1em}
 #wsbar button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 body.zen #bar,body.zen #hint,body.zen #dock,body.zen #split,body.zen #keys{display:none!important}
-.chips button.min{opacity:.55;font-style:italic}
 .win.flash{outline:3px solid var(--accent);outline-offset:-1px;transition:outline-color .5s}
-#chips{max-width:55vw;overflow-x:auto;flex-wrap:nowrap}
-#chips button{white-space:nowrap}
-#taskbar{border-top:1px solid var(--line);background:var(--surface);padding:3px 8px;min-height:30px;display:flex;align-items:center;overflow-x:auto;flex:none}
 #taskbar:has(#chips:empty){display:none}
-#chips{max-width:none!important;overflow:visible!important;flex-wrap:nowrap}
 body.zen #taskbar{display:none}
+/* taskbar: tabs on a rail. Full-height cells split by 1px dividers; the focused window gets an accent underline and tint. */
+#taskbar{border-top:1px solid var(--line);background:var(--surface);padding:0 6px;min-height:34px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
+#chips{display:flex;align-items:stretch;gap:0;flex-wrap:nowrap;max-width:none;overflow:visible}
+#chips button{font:12px var(--mono);white-space:nowrap;flex:none;cursor:pointer;border:0;border-right:1px solid var(--line);border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);padding:8px 16px;transition:background .12s,color .12s}
+#chips button:first-child{border-left:1px solid var(--line)}
+#chips button:hover:not(:disabled){background:var(--accent-soft);color:var(--fg)}
+#chips button.ok{color:var(--fg);font-weight:600;border-bottom-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
+#chips button.min{font-style:italic;opacity:.75}
+#chips button.off{opacity:.75}
+#chips button.min.off{opacity:.75}
+#chips button:disabled{cursor:not-allowed;opacity:.45}
+#chips button:focus-visible,#chips button.sel{outline:2px solid var(--accent);outline-offset:-3px;opacity:1}
+/* windows not on screen (minimized, dock folded) sit after a stronger divider */
+.chipsep{align-self:stretch;width:2px;margin:0;background:var(--muted);opacity:.5;flex:none}
 #welcome{position:absolute;right:18px;bottom:18px;width:min(340px,80%);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;box-shadow:0 6px 24px #0004;z-index:4;font-size:13px} #welcome[hidden]{display:none}
 #welcome h3{margin:0 0 6px;font-size:14px;display:flex;justify-content:space-between} #welcome ul{margin:0 0 8px;padding-left:18px} #welcome li{margin:2px 0} #welcome .row{display:flex;gap:6px;flex-wrap:wrap}
 body.zen #welcome{display:none}
@@ -177,10 +186,6 @@ body.viewonly #palbtn,body.viewonly #keys,body.viewonly #hint,body.viewonly #wel
 #conn.ok{background:var(--accent)}#conn.bad{background:var(--bad)}
 #session,#hint{display:none}
 #wsbar:has(button:nth-child(2):last-child){display:none}
-#taskbar{padding:4px 10px;min-height:29px}
-#chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}
-#chips button{white-space:nowrap;background:transparent;border-color:transparent}
-#chips button.ok{background:var(--accent-soft)}
 .win{border-radius:8px;box-shadow:0 12px 48px #0005}
 .win.focus{box-shadow:0 12px 48px #0006,0 0 0 1px var(--accent)}
 .win:focus{outline:none}
@@ -253,12 +258,9 @@ body.viewonly .win .tb button,body.viewonly .win .rz{display:none}
 /* leader key: hint while armed, window numbers on the title bars, selected minimized chip */
 #leaderhint{position:fixed;left:8px;bottom:6px;z-index:60;max-width:calc(100vw - 16px);padding:3px 10px;border:1px solid var(--accent);border-radius:4px;background:var(--surface);color:var(--text,inherit);font:12px var(--mono);box-shadow:0 4px 16px #0005} #leaderhint[hidden]{display:none}
 .win .tb[data-n]::before{content:attr(data-n);font:700 12px var(--mono);padding:0 6px;border-radius:3px;background:var(--accent);color:var(--bg)}
-#chips button.sel{outline:2px solid var(--accent);opacity:1}
 .win.pick{outline:3px solid var(--accent);outline-offset:2px}
 
 /* taskbar: separator between windows on screen and windows not on screen (minimized, dock folded) */
-.chipsep{align-self:stretch;width:1px;margin:0 6px;background:var(--line);flex:none}
-#chips button.off{opacity:.6}
 .limpop{z-index:60;min-width:240px;gap:10px}
 .limpop-row{display:flex;flex-direction:column;gap:2px;font:12px var(--mono)}
 .limpop-h{display:flex;justify-content:space-between;gap:16px}
