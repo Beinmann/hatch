@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { stepSlug as slug } from '../src/progress.js';
 import { firstCommandIndex, SERVER_COMMANDS } from '../src/cli-options.js';
 import { COMMAND_HELP } from './ui-help.js';
-import { CliError, findStateDir, makeClient } from '../src/find.js';
+import { CliError, resolveStateDir, makeClient, readConfig } from '../src/find.js';
+import { instanceNotice } from '../src/instance.js';
 import { doctor, printChecks } from '../src/doctor.js';
 import { layout, NAME_RE, STEP_STATUS } from '../src/state.js';
 import * as background from '../src/background.js';
@@ -232,7 +233,9 @@ async function main(argv) {
 
   if (cmd === 'doctor') { if (!printChecks(await doctor({ state: o.state }))) process.exitCode = 1; return; }
 
-  const dir = findStateDir({ state: o.state });
+  const resolved = resolveStateDir({ state: o.state });
+  const dir = resolved.dir;
+  if (!o.json) { let port; try { port = readConfig(dir).port; } catch { /* makeClient reports it */ } instanceNotice({ resolved, port }); }
   const l = layout(dir);
   let geometry = {};
   if (o.size) {

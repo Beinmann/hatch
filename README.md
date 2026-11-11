@@ -83,7 +83,7 @@ Everything the CLI does is also possible by writing these files directly or by c
 (parent directories are not searched, so a second instance never attaches to another project). If that dir has no valid
 `config.json`, `hatch-server serve|start|restart` asks before creating it; `--yes` creates it without asking. Without a
 terminal (background, systemd, pipes) it fails instead, so pass `--yes` or an existing `--state DIR`. The CLI finds the server through `--state`, `HATCH_STATE`, a `.hatch/` found by walking up from
-the current directory, or `~/.hatch/`. Environment variables `HATCH_URL` and `HATCH_STATE` are set for the tmux
+the current directory, or `~/.hatch/`. When that choice may surprise you (an instance found by walking up or in `~/.hatch/`, or `HATCH_STATE` overriding a nearer `.hatch/`), `hatch` prints one line on stderr naming the state dir and port, once per shell and only in a terminal (never with `--json`, pipes or `--state`). If a server cannot be reached, the error names the `config.json` the port came from and what to do next. Environment variables `HATCH_URL` and `HATCH_STATE` are set for the tmux
 session; windows that already exist only get them in new windows.
 
 ## What you can do

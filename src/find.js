@@ -3,22 +3,29 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { unreachableHelp } from './instance.js';
 
 export class CliError extends Error { constructor(message, code = 1) { super(message); this.code = code; } }
 
-export function findStateDir({ state, env = process.env, cwd = process.cwd() } = {}) {
+/** Where the CLI finds its instance and how: { dir, how: 'flag'|'env'|'walk'|'home', alternatives: [{dir, how}] }.
+ * `alternatives` lists other instances that would have matched had the winner not been there (used for notices). */
+export function resolveStateDir({ state, env = process.env, cwd = process.cwd() } = {}) {
   const tryDir = (d) => (d && fs.existsSync(path.join(d, 'config.json')) ? path.resolve(d) : null);
-  if (state) { const d = tryDir(state); if (!d) throw new CliError(`no config.json in ${state} (--state): start the server with \`hatch-server serve --state ${state}\``, 2); return d; }
-  if (env.HATCH_STATE) { const d = tryDir(env.HATCH_STATE); if (d) return d; }
+  if (state) { const d = tryDir(state); if (!d) throw new CliError(`no config.json in ${state} (--state): start the server with \`hatch-server serve --state ${state}\``, 2); return { dir: d, how: 'flag', alternatives: [] }; }
+  let walk = null;
   for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
-    const d = tryDir(path.join(dir, '.hatch'));
-    if (d) return d;
-    if (path.dirname(dir) === dir) break;
+    walk = tryDir(path.join(dir, '.hatch'));
+    if (walk || path.dirname(dir) === dir) break;
   }
+  const fromEnv = tryDir(env.HATCH_STATE);
+  if (fromEnv) return { dir: fromEnv, how: 'env', alternatives: walk && walk !== fromEnv ? [{ dir: walk, how: 'walk' }] : [] };
+  if (walk) return { dir: walk, how: 'walk', alternatives: [] };
   const home = tryDir(path.join(os.homedir(), '.hatch'));
-  if (home) return home;
+  if (home) return { dir: home, how: 'home', alternatives: [] };
   throw new CliError('cannot find a Hatch state dir (.hatch/config.json). Start the server with `hatch-server serve` in your project, or pass --state DIR.', 2);
 }
+
+export const findStateDir = (opts) => resolveStateDir(opts).dir;
 
 export function readConfig(stateDir) {
   const file = path.join(stateDir, 'config.json');
@@ -41,7 +48,7 @@ export function makeClient(stateDir) {
     let res;
     try {
       res = await fetch(base + route, { method, headers: { 'x-token': cfg.token, ...(body !== undefined && { 'content-type': typeof body === 'string' ? 'text/plain' : 'application/json' }) }, body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body) });
-    } catch (e) { throw new CliError(`cannot reach Hatch at ${base} (${e.cause?.code || e.message}). Start it with \`hatch-server serve\`.`, 2); }
+    } catch (e) { throw new CliError(`cannot reach Hatch at ${base} (${e.cause?.code || e.message}). ${unreachableHelp(stateDir, cfg.port)}`, 2); }
     const text = await res.text();
     if (!res.ok) { let msg = text; try { msg = JSON.parse(text).error || text; } catch { /* plain text */ } throw new CliError(`${method} ${route}: ${res.status} ${msg}`); }
     if (raw) return text;
