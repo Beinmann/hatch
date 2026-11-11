@@ -1,162 +1,175 @@
-// Rain on a window pane, plain 2D canvas. The canvas stays transparent where nothing is drawn, so the page background and the terminal's
-// translucent tint show through; everything is drawn with low alpha in cool blue-grey so terminal text stays readable on top.
-// Layers: faint mist; many tiny static droplets (beads with a dark rim, a soft highlight and a lighter lower edge); larger drops that
-// collect mist and nearby droplets, hang, then slide in short stop-and-go bursts leaving a tapered wet trail that dries; now and then a
-// streak of fast drops. Effect interface (public/fx.js drives it): start(canvas, { animate, intensity }), setIntensity(n), stop(), resize().
-// One instance per page. The intensity setting (0..100, 50 = the look below) scales the alphas and the number of droplets and drops.
-import { mergeRadius, growRadius, shedRadius, touches, trailFade, slideTarget, approachSpeed, stepBurst, beadCount, dropCount, streakSpecs, rainLevel } from './rain-physics.js';
+// Rain on a window pane. The canvas stays transparent where nothing is drawn, so the page and the terminal's translucent tint show through.
+// Main path: WebGL (no libraries). The glass is simulated in plain JS (rain-sim.js), drawn into a small "water map" (rain-raster.js), and a
+// fragment shader (rain-shader.js) refracts the page background through every drop. Only the background is refracted: the effect canvas
+// sits under the terminal text, so text stays sharp. Fallback when WebGL is missing: the same simulation drawn as 2D shapes (no refraction).
+// Effect interface (public/fx.js drives it): start(canvas, { animate, intensity }), setIntensity(n), stop(), resize(). One instance per page.
+import { createGlass } from './rain-sim.js';
+import { rasterStatic, rasterLive } from './rain-raster.js';
+import { rainLevel, bgTransform, parseCssColor } from './rain-physics.js';
+import { VERT, FRAG } from './rain-shader.js';
 
-// ---- Tuning knobs (all in canvas pixels / seconds; the canvas runs at device pixel ratio 1 on purpose) ----
 export const P = {
-  FPS: 30,                 // frame cap
-  INTENSITY: 1,            // overall strength: multiplies every alpha (0.5 = half as visible, 1.6 = more)
-  MIST: 0.05,              // alpha of the faint vertical haze (bottom of the pane is a little hazier)
-  BEAD_DENSITY: 1400,      // canvas px^2 per tiny droplet (smaller = more speckle)
-  BEAD_MAX: 700,           // hard cap on tiny droplets
-  BEAD_R: [0.5, 2.2],      // radius range of tiny droplets (skewed toward small)
-  DROP_DENSITY: 55000,     // canvas px^2 per large drop
-  DROP_MIN: 3, DROP_MAX: 40, // bounds on the number of large drops
-  SLIDE_R: [3.6, 5.6],     // radius at which a hanging drop lets go and starts to slide
-  GROW: [0.03, 0.18],      // px/s a hanging drop grows by collecting mist
-  SPEED: 1,                // multiplier on slide speed
-  GO: [0.15, 0.6], STOP: [0.25, 1.4], // seconds a sliding drop moves / stands still, alternating
-  WOBBLE: 14,              // sideways jitter while sliding (px/s)
-  SHED: 0.0035,            // radius lost per px slid (water left behind)
-  REST_R: 1.9,             // a slider that shrinks below this stops and becomes a tiny droplet
-  TRAIL_LIFE: 7,           // seconds until a wet trail has dried
-  TRAIL_ALPHA: 0.2,        // alpha of fresh trail (lighter than the glass)
-  STREAK_EVERY: [7, 18],   // seconds between streaks of fast drops
-  STREAK_COUNT: [3, 6],
+  FPS: 30,            // frame cap
+  STATIC_EVERY: 0.5,  // seconds between redraws of the resting drops (they change slowly; the running drop is redrawn every frame)
+  STYLE_EVERY: 1,     // seconds between looks at the page's background and tint (they can change while the effect runs)
+  RAIN: 0.07,         // strength of the faint background rain
 };
-const TAU = Math.PI * 2;
-const INT = () => P.INTENSITY * level.alpha; // base strength times the intensity setting
 let level = rainLevel(50);
-let cv = null, ctx = null, raf = 0, last = 0, W = 1, H = 1, T = 0, nextStreak = 0, beads = [], drops = [], trails = [], sprites = new Map();
-const rnd = (a, b) => a + Math.random() * (b - a);
-const between = ([a, b]) => rnd(a, b);
+let cv = null, gl = null, ctx = null, raf = 0, last = 0, W = 1, H = 1, glass = null, animate = true, time = 0;
+let buf = null, base = null, sinceStatic = 99, sinceStyle = 99, wasRunning = false, lost = false;
+let gp = null, mapTex = null, bgTex = null, bgUrl = '', bgImg = null, style = null;
 
-/** One refractive-looking bead: dark rim, faint body, lighter lower edge, soft highlight offset up-left. rx/ry: radii. */
-export function drawBead(c, x, y, rx, ry) {
-  if (!(rx > 0) || !(ry > 0)) return;
-  const g = c.createRadialGradient(x - rx * 0.15, y - ry * 0.15, rx * 0.1, x, y, Math.max(rx, ry));
-  g.addColorStop(0, 'rgba(170,195,220,0.07)'); g.addColorStop(0.65, 'rgba(120,150,180,0.06)'); g.addColorStop(1, 'rgba(5,10,18,0.34)');
-  c.fillStyle = g; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, TAU); c.fill();
-  c.strokeStyle = 'rgba(200,222,240,0.24)'; c.lineWidth = Math.max(0.5, rx * 0.18);
-  c.beginPath(); c.ellipse(x, y + ry * 0.08, rx * 0.82, ry * 0.82, 0, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke();
-  const hx = x - rx * 0.38, hy = y - ry * 0.42, hr = Math.max(0.5, rx * 0.3);
-  const h = c.createRadialGradient(hx, hy, 0, hx, hy, hr); h.addColorStop(0, 'rgba(240,248,255,0.6)'); h.addColorStop(1, 'rgba(240,248,255,0)');
-  c.fillStyle = h; c.beginPath(); c.arc(hx, hy, hr, 0, TAU); c.fill();
+const cssVar = (el, name) => getComputedStyle(el).getPropertyValue(name);
+
+// ---- what is behind the glass: background image (+ its mode), body colour, terminal tint ----
+function readStyle() {
+  const root = document.documentElement, hasBg = root.classList.contains('has-bg');
+  const m = hasBg ? /url\(\s*["']?(.*?)["']?\s*\)/.exec(cssVar(root, '--bg-image')) : null;
+  const rect = cv.getBoundingClientRect();
+  style = {
+    url: m ? m[1] : '', mode: root.dataset.bgmode || 'fill', rect,
+    base: parseCssColor(getComputedStyle(document.body).backgroundColor, [0.08, 0.09, 0.11, 1]),
+    tint: parseCssColor(cv.parentElement ? getComputedStyle(cv.parentElement).backgroundColor : '', [0.08, 0.09, 0.11, 0]),
+  };
+  if (style.url !== bgUrl) loadBg(style.url);
+}
+function loadBg(url) {
+  bgUrl = url; bgImg = null;
+  if (!url || !gl) return;
+  const img = new Image();
+  img.onload = () => { if (bgUrl !== url || !gl || lost) return; bgImg = img; uploadBg(); if (!animate) render(); };
+  img.onerror = () => { if (bgUrl === url) bgImg = null; };
+  img.src = url;
+}
+function uploadBg() {
+  if (!gl || !bgImg) return;
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, bgTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bgImg);
 }
 
-// Tiny beads are drawn from a small cache of pre-rendered sprites (one per quarter-pixel radius): hundreds of them per frame stay cheap.
-function sprite(r) {
-  const key = Math.max(1, Math.round(r * 4)); let s = sprites.get(key);
-  if (!s) {
-    const rr = key / 4, size = Math.ceil(rr * 2 + 4), el = document.createElement('canvas'); el.width = el.height = size;
-    drawBead(el.getContext('2d'), size / 2, size / 2, rr, rr); s = { el, size }; sprites.set(key, s);
-  }
+// ---- WebGL ----
+function compile(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'shader did not compile');
   return s;
 }
-
-const newBead = () => ({ x: rnd(0, W), y: rnd(0, H), r: P.BEAD_R[0] + Math.pow(Math.random(), 2.2) * (P.BEAD_R[1] - P.BEAD_R[0]), a: rnd(0.55, 1) });
-const newDrop = (o = {}) => ({ x: rnd(0, W), y: rnd(0, H * 0.9), r: rnd(2, 3), slide: false, fast: false, vx: 0, vy: 0, limit: between(P.SLIDE_R), grow: between(P.GROW), burst: { moving: true, t: 0.3 }, trail: null, dead: false, ...o });
-const nBeads = () => (level.count <= 0 ? 0 : beadCount(W, H, P.BEAD_DENSITY / Math.max(0.05, level.count), P.BEAD_MAX * Math.max(1, level.count)));
-const nDrops = () => (level.count <= 0 ? 0 : dropCount(W, H, P.DROP_DENSITY / level.count, P.DROP_MIN, P.DROP_MAX * Math.max(1, level.count)));
-
-function reset() {
-  beads = []; drops = []; trails = []; T = 0; nextStreak = between(P.STREAK_EVERY) * 0.5;
-  for (let i = 0, n = Math.floor(nBeads() * 0.7); i < n; i++) beads.push(newBead());
-  for (let i = 0, n = nDrops(); i < n; i++) drops.push(newDrop());
+function texture(unit) {
+  const t = gl.createTexture(); gl.activeTexture(unit); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function initGl() {
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG)); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || 'shader did not link');
+  gl.useProgram(prog);
+  const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW); // one big triangle covers the canvas
+  const loc = gl.getAttribLocation(prog, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  gp = { prog, u: {} };
+  for (const n of ['uMap', 'uBg', 'uRes', 'uBgX', 'uTint', 'uBase', 'uHasImg', 'uTile', 'uAlpha', 'uTime', 'uRain']) gp.u[n] = gl.getUniformLocation(prog, n);
+  mapTex = texture(gl.TEXTURE0); bgTex = texture(gl.TEXTURE1);
+  gl.uniform1i(gp.u.uMap, 0); gl.uniform1i(gp.u.uBg, 1);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  allocMap(); if (bgImg) uploadBg();
+}
+function allocMap() {
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, mapTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+}
+function render() {
+  if (!gl || lost || !style) return;
+  const u = gp.u, s = style, vw = globalThis.innerWidth || W, vh = globalThis.innerHeight || H;
+  const bt = bgTransform(s.mode, bgImg?.naturalWidth, bgImg?.naturalHeight, vw, vh, s.rect.left, s.rect.top);
+  gl.viewport(0, 0, W, H);
+  gl.uniform2f(u.uRes, W, H); gl.uniform4f(u.uBgX, bt.sx, bt.sy, bt.ox, bt.oy);
+  gl.uniform4f(u.uTint, s.tint[0], s.tint[1], s.tint[2], s.tint[3]); gl.uniform3f(u.uBase, s.base[0], s.base[1], s.base[2]);
+  gl.uniform1f(u.uHasImg, bgImg ? 1 : 0); gl.uniform1f(u.uTile, s.mode === 'tile' ? 1 : 0);
+  gl.uniform1f(u.uAlpha, level.alpha); gl.uniform1f(u.uTime, time); gl.uniform1f(u.uRain, P.RAIN * Math.min(1.5, level.alpha));
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function upload() {
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, mapTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
 }
 
+// ---- 2D fallback: the same glass as plain shapes, no refraction ----
+function draw2d() {
+  ctx.globalAlpha = 1; ctx.clearRect(0, 0, W, H);
+  const A = Math.min(1, level.alpha), TAU = Math.PI * 2;
+  for (const t of glass.trails) for (let i = 1; i < t.pts.length; i++) {
+    const a = t.pts[i - 1], b = t.pts[i], fa = glass.trailFade(a), fb = glass.trailFade(b), al = (fa.alpha + fb.alpha) / 2 * 0.2 * A; if (al < 0.004) continue;
+    const wa = Math.max(0.3, a.w * fa.width) / 2, wb = Math.max(0.3, b.w * fb.width) / 2;
+    ctx.fillStyle = `rgba(185,210,232,${al.toFixed(3)})`; ctx.beginPath(); ctx.moveTo(a.x - wa, a.y); ctx.lineTo(a.x + wa, a.y); ctx.lineTo(b.x + wb, b.y); ctx.lineTo(b.x - wb, b.y); ctx.closePath(); ctx.fill();
+  }
+  for (const d of glass.drops) {
+    const look = glass.look(d), al = look.alpha * A; if (!(al > 0.01)) continue;
+    const r = d.r * look.scale, rx = r * d.sx, ry = r * d.sy * (1 + d.tail * 0.5), cy = d.y - r * d.sy * d.tail * 0.5; if (!(rx > 0.2)) continue;
+    ctx.globalAlpha = al;
+    const g = ctx.createRadialGradient(d.x - rx * 0.15, cy - ry * 0.15, rx * 0.1, d.x, cy, Math.max(rx, ry));
+    g.addColorStop(0, 'rgba(170,195,220,0.2)'); g.addColorStop(0.65, 'rgba(120,150,180,0.16)'); g.addColorStop(1, 'rgba(5,10,18,0.5)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(d.x, cy, rx, ry, 0, 0, TAU); ctx.fill();
+    if (r > 1.6) {
+      ctx.strokeStyle = 'rgba(200,222,240,0.3)'; ctx.lineWidth = Math.max(0.5, rx * 0.15); ctx.beginPath(); ctx.ellipse(d.x, cy + ry * 0.08, rx * 0.8, ry * 0.8, 0, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+      ctx.fillStyle = 'rgba(245,250,255,0.75)'; ctx.beginPath(); ctx.arc(d.x - rx * 0.38, cy - ry * 0.42, Math.max(0.5, rx * 0.2), 0, TAU); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---- common ----
+function refresh(force) { // redraw the water map and the picture
+  if (gl) {
+    const running = glass.running();
+    if (force || sinceStatic >= P.STATIC_EVERY || running !== wasRunning) { rasterStatic(base, W, H, glass); sinceStatic = 0; }
+    wasRunning = running; rasterLive(buf, base, W, H, glass); upload(); render();
+  } else draw2d();
+}
 function resize() {
   if (!cv) return;
   W = cv.width = Math.max(1, cv.clientWidth); H = cv.height = Math.max(1, cv.clientHeight);
-  reset();
+  glass.resize(W, H); buf = new Uint8Array(W * H * 4); base = new Uint8Array(W * H * 4);
+  if (gl && !lost) allocMap();
+  if (gl) readStyle();
+  sinceStatic = 99; if (!animate) settle();
 }
-
-function eat(d) { // the drop swallows tiny droplets it touches
-  for (let k = beads.length - 1; k >= 0; k--) {
-    const b = beads[k];
-    if (touches(d, b)) { d.r = mergeRadius(d.r, b.r * 0.55); beads[k] = beads[beads.length - 1]; beads.pop(); }
-  }
-}
-
-const detach = (d) => { d.trail = null; };
-function addTrailPoint(d) {
-  const t = d.trail; if (!t) return; const p = t.pts[t.pts.length - 1];
-  if (!p || Math.hypot(d.x - p.x, d.y - p.y) >= 2.5) t.pts.push({ x: d.x, y: d.y, w: d.r * (d.fast ? 0.7 : 1.05), t: T });
-}
-
-function step(dt) {
-  T += dt;
-  if (beads.length < nBeads() && Math.random() < dt * 25) beads.push(newBead()); // mist settles as new droplets
-  if (drops.filter((d) => !d.fast).length < nDrops() && Math.random() < dt * 0.8) drops.push(newDrop());
-  if (T >= nextStreak) { nextStreak = T + between(P.STREAK_EVERY); for (const s of streakSpecs(W, P.STREAK_COUNT, Math.random)) { const d = newDrop({ ...s, slide: true, burst: { moving: true, t: rnd(0.8, 2) } }); d.trail = { pts: [] }; trails.push(d.trail); drops.push(d); } }
-  for (const d of drops) {
-    if (d.dead) continue;
-    if (!d.slide) {
-      d.r = growRadius(d.r, dt, d.grow); eat(d);
-      if (d.r >= d.limit) { d.slide = true; d.burst = { moving: true, t: rnd(0.2, 0.5) }; d.trail = { pts: [] }; trails.push(d.trail); }
-      continue;
-    }
-    d.burst = stepBurst(d.burst, dt, Math.random, d.fast ? { go: [0.8, 2], stop: [0.05, 0.2] } : { go: P.GO, stop: P.STOP });
-    d.vy = approachSpeed(d.vy, d.burst.moving ? slideTarget(d.r, d.fast, P.SPEED) : 0, dt);
-    d.vx += ((d.burst.moving ? rnd(-1, 1) * P.WOBBLE : 0) - d.vx * 4) * dt;
-    const dy = d.vy * dt; d.y += dy; d.x += d.vx * dt;
-    if (!d.fast) d.r = shedRadius(d.r, dy, P.SHED);
-    if (dy > 0.3 && !d.fast && Math.random() < dy * 0.025 && beads.length < P.BEAD_MAX) beads.push({ x: d.x + rnd(-1, 1) * d.r * 0.4, y: d.y - d.r * 0.8, r: rnd(0.5, 1), a: rnd(0.55, 1) }); // a droplet left behind
-    eat(d); addTrailPoint(d);
-    for (const o of drops) if (o !== d && !o.dead && o.r <= d.r && touches(d, o, 0.7)) { d.r = mergeRadius(d.r, o.r); o.dead = true; detach(o); } // meets another drop: they join
-    if (!d.fast && d.r < P.REST_R) { d.dead = true; detach(d); beads.push({ x: d.x, y: d.y, r: Math.max(0.6, d.r), a: 0.8 }); }
-    else if (d.y - d.r > H) { d.dead = true; detach(d); }
-  }
-  drops = drops.filter((d) => !d.dead);
-  for (const t of trails) { let k = 0; while (k < t.pts.length && trailFade(T - t.pts[k].t, P.TRAIL_LIFE).dead) k++; if (k) t.pts.splice(0, k); }
-  trails = trails.filter((t) => t.pts.length > 1 || drops.some((d) => d.trail === t));
-}
-
-function drawTrail(t) {
-  const p = t.pts;
-  for (let i = 1; i < p.length; i++) {
-    const a = p[i - 1], b = p[i], fa = trailFade(T - a.t, P.TRAIL_LIFE), fb = trailFade(T - b.t, P.TRAIL_LIFE);
-    const alpha = (fa.alpha + fb.alpha) / 2 * P.TRAIL_ALPHA * INT(); if (alpha < 0.004) continue;
-    const wa = Math.max(0.3, a.w * fa.width) / 2, wb = Math.max(0.3, b.w * fb.width) / 2; // narrower where it is older, i.e. behind the drop
-    ctx.fillStyle = `rgba(185,210,232,${alpha.toFixed(3)})`;
-    ctx.beginPath(); ctx.moveTo(a.x - wa, a.y); ctx.lineTo(a.x + wa, a.y); ctx.lineTo(b.x + wb, b.y); ctx.lineTo(b.x - wb, b.y); ctx.closePath(); ctx.fill();
-  }
-}
-
-function draw() {
-  ctx.globalAlpha = 1; ctx.clearRect(0, 0, W, H); // transparent: only the effect itself is painted
-  const m = P.MIST * INT(), g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, `rgba(150,180,205,${(m * 0.4).toFixed(3)})`); g.addColorStop(0.5, 'rgba(150,180,205,0)'); g.addColorStop(1, `rgba(150,180,205,${m.toFixed(3)})`);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  for (const b of beads) { const s = sprite(b.r); ctx.globalAlpha = Math.min(1, b.a * INT()); ctx.drawImage(s.el, b.x - s.size / 2, b.y - s.size / 2); }
-  ctx.globalAlpha = 1;
-  for (const t of trails) drawTrail(t);
-  ctx.globalAlpha = Math.min(1, INT());
-  for (const d of drops) drawBead(ctx, d.x, d.y, d.r * 0.85, d.r * (d.slide && d.burst.moving ? 1.2 : 1));
-  ctx.globalAlpha = 1;
-}
-
-const settle = () => { for (let i = 0; i < 240; i++) step(1 / 30); draw(); }; // reduced motion: one still frame of an already wet pane
+function settle() { for (let i = 0; i < 240; i++) glass.step(0.25); refresh(true); } // reduced motion: one still frame of an already wet pane
 
 function frame(t) {
   raf = requestAnimationFrame(frame);
   if (document.hidden || t - last < 1000 / P.FPS) return; // paused in a background tab; capped to keep the CPU cost low
-  const dt = Math.min(0.1, (t - last) / 1000); last = t;
-  step(dt); draw();
+  const dt = Math.min(0.1, (t - last) / 1000); last = t; time += dt; sinceStatic += dt; sinceStyle += dt;
+  if (gl && sinceStyle >= P.STYLE_EVERY) { sinceStyle = 0; readStyle(); }
+  glass.step(dt); refresh(false);
 }
+
+const onLost = (e) => { e.preventDefault(); lost = true; };
+const onRestored = () => { lost = false; try { initGl(); } catch (err) { console.warn(`rain: WebGL could not restart: ${err.message}`); } };
 
 export default {
   name: 'rain',
-  start(canvas, { animate = true, intensity } = {}) {
-    level = rainLevel(intensity); cv = canvas; ctx = cv.getContext('2d'); sprites = new Map(); resize();
-    if (!animate) { settle(); return; }
+  start(canvas, { animate: anim = true, intensity } = {}) {
+    level = rainLevel(intensity); cv = canvas; animate = anim; lost = false; time = 0; gl = null; ctx = null; bgUrl = ''; bgImg = null;
+    glass = createGlass({ W: 1, H: 1, count: level.count });
+    // the canvas is fresh for every effect start (public/fx.js), so asking for webgl here cannot clash with another effect's 2d context
+    try { gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false }) || cv.getContext('experimental-webgl'); } catch { gl = null; }
+    if (gl) {
+      try { buf = new Uint8Array(4); initGl(); cv.addEventListener?.('webglcontextlost', onLost); cv.addEventListener?.('webglcontextrestored', onRestored); }
+      catch (e) { console.warn(`rain: WebGL setup failed (${e.message}); no effect`); gl = null; cv = null; return; } // the canvas now belongs to webgl, so 2d is not available
+    } else ctx = cv.getContext('2d');
+    resize();
+    if (!animate) return; // resize() already drew the still frame
     last = performance.now(); raf = requestAnimationFrame(frame);
   },
-  setIntensity(n) { level = rainLevel(n); if (cv) { reset(); if (!raf) settle(); } }, // new counts apply at once; the pane starts over, which is fine for a setting change
-  stop() { cancelAnimationFrame(raf); raf = 0; cv = ctx = null; beads = []; drops = []; trails = []; sprites = new Map(); },
-  resize() { resize(); if (cv && !raf) settle(); },
+  setIntensity(n) { level = rainLevel(n); if (glass) { glass.setCount(level.count); if (cv) { sinceStatic = 99; if (!raf) settle(); } } }, // the pane starts over, which is fine for a setting change
+  stop() {
+    cancelAnimationFrame(raf); raf = 0;
+    cv?.removeEventListener?.('webglcontextlost', onLost); cv?.removeEventListener?.('webglcontextrestored', onRestored);
+    try { gl?.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* already gone */ }
+    cv = gl = ctx = glass = buf = base = bgImg = style = null; bgUrl = ''; gp = mapTex = bgTex = null;
+  },
+  resize() { resize(); },
 };
