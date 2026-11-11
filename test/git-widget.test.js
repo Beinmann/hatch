@@ -106,3 +106,28 @@ test('git widget command asks git for only the 5 most recent commits', () => {
   const w = JSON.parse(fs.readFileSync(new URL('../examples/widgets/git/widget.json', import.meta.url), 'utf8'));
   assert.match(JSON.stringify(w), / log --format=\S+ -n 5 /);
 });
+
+test('recent activity: reflog events from a real repo (branch, commit, worktree) are deduplicated and described; empty repo hides it', () => {
+  const d = makeRepo();
+  git(d, 'branch', 'feature'); git(d, 'checkout', '-q', 'feature');
+  fs.writeFileSync(path.join(d, 'f.txt'), 'x'); git(d, 'add', 'f.txt'); git(d, 'commit', '-q', '-m', 'work on feature');
+  git(d, 'worktree', 'add', '-q', '-b', 'side', path.join(fs.realpathSync(tmp()), 'wt'));
+  const s = G.parse(sh(meta.sources[0].cmd.replaceAll('{{cwd}}', `'${d}'`)));
+  const texts = s.activity.map((a) => a.text);
+  assert.ok(s.activity.length >= 3 && s.activity.length <= 5, texts.join(' | '));
+  assert.ok(texts.includes('created branch side'), texts.join(' | '));
+  assert.ok(texts.includes('commit on feature: work on feature'), 'one entry per event, named after the branch');
+  assert.ok(texts.includes('created branch feature') || texts.some((t) => t.startsWith('checkout main')), texts.join(' | '));
+  assert.equal(new Set(s.activity.map((a) => `${a.ts}${a.text}`)).size, s.activity.length);
+  assert.deepEqual(G.parse('@@top /x\n@@status\n@@log\n@@activity\n').activity, []);
+  const fresh = fs.realpathSync(tmp()); git(fresh, 'init', '-q');
+  assert.deepEqual(G.parse(sh(meta.sources[0].cmd.replaceAll('{{cwd}}', `'${fresh}'`))).activity, []);
+});
+
+test('parseActivity: drops fetch and push noise, prefers branch over HEAD, caps at 5', () => {
+  const US = '\x1f';
+  const lines = ['9\x1forigin/main@{0}\x1fupdate by push\x1faaa', '8\x1fmain@{0}\x1fcommit: a\x1fbbb', '8\x1fHEAD@{0}\x1fcommit: a\x1fbbb', '7\x1forigin/x@{0}\x1ffetch origin: fast-forward\x1fccc',
+    ...[6, 5, 4, 3, 2, 1].map((n) => `${n}${US}HEAD@{${n}}${US}checkout: moving from a${n} to b${n}${US}h${n}`)];
+  const a = JSON.parse(JSON.stringify(raw.parseActivity(lines)));
+  assert.equal(a.length, 5); assert.equal(a[0].text, 'commit on main: a'); assert.equal(a[1].text, 'checkout a6 → b6');
+});
