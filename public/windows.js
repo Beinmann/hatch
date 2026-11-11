@@ -268,7 +268,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   function focusNumber(n) { const w = numbered()[n - 1]; if (!w) return false; focus(w); return true; }
   // Leader Tab: raise the next visible window, docked ones included.
   function focusNext() { const list = numbered(); if (!list.length) return false; const i = list.findIndex((w) => w.node.classList.contains('focus')); focus(list[(i + 1) % list.length]); return true; }
-  // Leader Shift+d: the title-bar dock/release button for the focused window. Returns 'dock', 'float', or null when no window is focused.
+  // Leader d: the title-bar dock/release button for the focused window. Returns 'dock', 'float', or null when no window is focused.
   function togglePlacement() {
     const w = focused();
     if (!w || isViewOnly()) return null;
@@ -364,7 +364,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   const workspaces = () => ['main', ...[...new Set([current, ...[...wins.values()].map((w) => wsOf(w.panel))])].filter((n) => n !== 'main').sort()]; // stable: main first, the rest alphabetical
 
-  // Show desktop (leader d): minimize every floating window; again before anything changed: bring them back (see show-desktop.js).
+  // Show desktop (leader Shift+d): minimize every floating window; again before anything changed: bring them back (see show-desktop.js).
   let desktopMemo = null;
   function showDesktop() {
     if (isViewOnly()) return 'none';

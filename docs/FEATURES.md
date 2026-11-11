@@ -48,7 +48,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Localhost proxy for iframes | 026 | src/proxy.js | yes (HTTP) | WebSocket path tested only with a raw socket |
 | Clipboard bridge (copy, OSC 52) | 037 | server /api/copy, terminal.js | button path only | |
 | Terminal find (Ctrl+Shift+F) | 024 | terminal.js | yes | |
-| Leader key window control (Ctrl+Space, then h/j/k/l, 1-9, Tab, t, q, m, u, Shift+d dock or release, Shift/Ctrl+hjkl, o per-window transparency, f, a, p; configurable in Settings) | 142 | leader.js, direction.js, windows.js, app.js | key mapping and focus selection | see ticket Summary for what was browser-checked |
+| Leader key window control (Ctrl+Space, then h/j/k/l, 1-9, Tab, t, q, m, u, d dock or release, Shift/Ctrl+hjkl, o per-window transparency, f, a, p; configurable in Settings) | 142 | leader.js, direction.js, windows.js, app.js | key mapping and focus selection | see ticket Summary for what was browser-checked |
 | Move focused window by keyboard (leader Shift+h/j/k/l) | 134 | windows.js, app.js | no | not browser-tested |
 | Restore minimized popup by keyboard (leader u) | 135 | restore.js, windows.js, app.js | selection logic only | not browser-tested |
 | curl window, docker widget | 060 | ui.js, examples/widgets/docker | curl tested, docker not | |
@@ -73,7 +73,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Task runner, listening ports | 047 | src/discover.js | tests only | |
 | Session report | 046 | server /api/report, ui.js | CLI only | |
 | Maximize | 034 | windows.js | yes | |
-| Show desktop (leader d): minimize all, again restores the same formation | - | show-desktop.js, windows.js, app.js | planning and change detection | not browser-tested |
+| Show desktop (leader Shift+d): minimize all, again restores the same formation | - | show-desktop.js, windows.js, app.js | planning and change detection | not browser-tested |
 | Tile / minimize-all / close-all | 025 | app.js | tile only | |
 | Phone layout + extra keys bar | 015 | style.css, app.js | emulated | |
 | Font size memory | 028 | app.js | no | |

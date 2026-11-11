@@ -25,7 +25,7 @@ test('leaderAction maps every key of the table', () => {
   assert.deepEqual(k('KeyK', { shiftKey: true }), { action: 'move', dir: 'k', repeat: true });
   assert.deepEqual(k('ArrowLeft', { ctrlKey: true }), { action: 'resize', dir: 'h', repeat: true });
   assert.deepEqual(k('Digit3'), { action: 'number', n: 3, repeat: false });
-  for (const [code, action] of [['KeyT', 'terminal'], ['KeyQ', 'close'], ['KeyM', 'minimize'], ['KeyD', 'desktop'], ['KeyU', 'dock'], ['KeyF', 'maximize'], ['KeyA', 'tile'], ['KeyP', 'palette'], ['Tab', 'next']]) assert.equal(k(code).action, action);
+  for (const [code, action] of [['KeyT', 'terminal'], ['KeyQ', 'close'], ['KeyM', 'minimize'], ['KeyD', 'place'], ['KeyU', 'dock'], ['KeyF', 'maximize'], ['KeyA', 'tile'], ['KeyP', 'palette'], ['Tab', 'next']]) assert.equal(k(code).action, action);
   assert.equal(k('KeyT').repeat, false, 'action keys are one-shot');
   assert.equal(k('Control', { key: 'Control', ctrlKey: true }).action, 'ignore', 'pressing Ctrl before h must not cancel');
   assert.equal(k('KeyZ'), null, 'unbound keys cancel');
@@ -33,9 +33,9 @@ test('leaderAction maps every key of the table', () => {
   assert.equal(k('Digit0'), null);
 });
 
-test('leader Shift+d docks or releases the focused window, plain d stays show desktop', () => {
-  assert.deepEqual(leaderAction({ code: 'KeyD', key: 'D', shiftKey: true }), { action: 'place', repeat: false });
-  assert.equal(leaderAction({ code: 'KeyD', key: 'd' }).action, 'desktop');
+test('leader d docks or releases the focused window, Shift+d is show desktop', () => {
+  assert.deepEqual(leaderAction({ code: 'KeyD', key: 'D', shiftKey: true }), { action: 'desktop', repeat: false });
+  assert.deepEqual(leaderAction({ code: 'KeyD', key: 'd' }), { action: 'place', repeat: false });
   assert.equal(leaderAction({ code: 'KeyD', key: 'D', shiftKey: true, ctrlKey: true }), null);
   assert.equal(leaderAction({ code: 'KeyD', key: 'D', shiftKey: true, altKey: true }), null);
   assert.equal(leaderAction({ code: 'KeyU', key: 'U', shiftKey: true }), null, 'other shifted letters stay unbound');
