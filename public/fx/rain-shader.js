@@ -25,6 +25,7 @@ float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32)
 float streaks(vec2 p, float cell, float wid, float len, float speed, float seed) {
   float cx = floor(p.x / cell), h = hash(vec2(cx, seed));
   float lane = abs(p.x - (cx + 0.15 + 0.7 * hash(vec2(cx, seed + 7.0))) * cell);
+  if (lane >= wid) return 0.0; // most pixels are off every lane: skip the hashes (the result is 0 there anyway)
   float y = p.y / len - uTime * speed * (0.6 + 0.8 * h) + h * 17.0;
   float ph = fract(y), on = step(0.62, hash(vec2(cx, floor(y) + seed)));
   return smoothstep(wid, 0.0, lane) * smoothstep(0.0, 0.1, ph) * pow(1.0 - ph, 3.0) * on; // wid is the half-width in px: kept small so a streak is never fat
@@ -32,23 +33,24 @@ float streaks(vec2 p, float cell, float wid, float len, float speed, float seed)
 // q is the pixel in the slanted frame of the rain: x across the streaks, y along them (the direction the rain moves), so streaks fall down and to the left
 float rain(vec2 p) { vec2 q = vec2(dot(p, vec2(${f(across[0])}, ${f(across[1])})), dot(p, vec2(${f(along[0])}, ${f(along[1])}))); return min(${RAIN_FAMILIES}, ${f(STREAKS.max)}); }
 
-vec3 scene(vec2 p) { // what a viewer sees at canvas pixel p without the glass: page background under the terminal tint, plus faint rain
+vec3 backdrop(vec2 p) { // what a viewer sees at canvas pixel p without the glass and without the rain: page background under the terminal tint
   vec2 uv = p * uBgX.xy + uBgX.zw;
   uv = mix(clamp(uv, 0.0, 1.0), fract(uv), uTile);
   vec3 c = uHasImg > 0.5 ? texture2D(uBg, uv).rgb : uBase * (0.78 + 0.5 * (1.0 - p.y / uRes.y)); // plain colour: a soft light-to-dark sky so there is something to bend
-  c = mix(c, uTint.rgb, uTint.a);
-  return c + vec3(0.7, 0.8, 0.92) * rain(p) * uRain;
+  return mix(c, uTint.rgb, uTint.a);
 }
 
 void main() {
   vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
   vec4 m = texture2D(uMap, px / uRes);
-  float rainA = rain(px) * uRain * 0.9; // the faint streaks between the drops (the only thing painted on dry glass)
-  if (m.a < 0.004) { gl_FragColor = vec4(vec3(0.72, 0.8, 0.9) * rainA, rainA); return; }
+  if (m.a < 0.004) {
+    float rainA = rain(px) * uRain * 0.9; // the faint streaks between the drops (the only thing painted on dry glass)
+    gl_FragColor = vec4(vec3(0.72, 0.8, 0.9) * rainA, rainA); return; }
   vec2 n = m.rg * 2.0 - 1.0; float rho = min(1.0, length(n)), R = max(m.b * 24.0, 1.0), h = sqrt(max(0.0, 1.0 - rho * rho));
   // a drop is a lens: the picture inside is flipped and shrunk (more so for the big ones), with a hint of colour fringing at the edge
   float k = 1.4 + 1.6 * clamp(R / 10.0, 0.0, 1.0), disp = 0.05 * rho;
-  vec3 col = vec3(scene(px - n * R * k * (1.0 + disp)).r, scene(px - n * R * k).g, scene(px - n * R * k * (1.0 - disp)).b);
+  vec2 q = px - n * R * k; // the faint rain is looked up once, through the middle of the colour fringe (it moves under a pixel between the channels)
+  vec3 col = vec3(backdrop(px - n * R * k * (1.0 + disp)).r, backdrop(q).g, backdrop(px - n * R * k * (1.0 - disp)).b) + vec3(0.7, 0.8, 0.92) * rain(q) * uRain;
   vec3 N = vec3(n, h);
   float glint = pow(max(dot(N, normalize(vec3(-0.5, -0.6, 0.62))), 0.0), 55.0);
   float back = pow(max(dot(N, normalize(vec3(0.4, 0.55, 0.7))), 0.0), 24.0); // light coming through to the lower inside
