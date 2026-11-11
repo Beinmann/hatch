@@ -1,6 +1,7 @@
 // widget panel: a sandboxed iframe (allow-scripts only, so an opaque origin: it cannot read our cookie or call the
 // API). Data comes through postMessage from here; sources run on the server and arrive over SSE.
 import { el } from '../util.js';
+import { createLastValues } from '../last-values.js';
 
 export default {
   create(panel, ctx) {
@@ -8,15 +9,16 @@ export default {
     const frame = el('iframe', { title: panel.title, sandbox: 'allow-scripts' });
     const status = el('div', { class: 'banner', hidden: true });
     const root = el('div', { style: 'display:flex;flex-direction:column;height:100%' }, status, el('div', { style: 'flex:1;min-height:0' }, frame));
+    const lastValues = createLastValues(); // replayed when the iframe reloads (dock/float move) under a live subscription
     const streams = new Map(); // source name -> unsubscribe function
     const post = (m) => frame.contentWindow?.postMessage(m, '*');
     const declared = () => (ctx.widgetInfo(name)?.meta?.sources || []).map((s) => s.name);
 
-    const closeAll = () => { for (const off of streams.values()) off(); streams.clear(); };
+    const closeAll = () => { for (const off of streams.values()) off(); streams.clear(); lastValues.clear(); };
     const subscribe = (source) => {
-      if (streams.has(source)) return;
+      if (streams.has(source)) { lastValues.replay(source, (value, ts) => post({ type: 'data', source, value, ts })); return; }
       if (!declared().includes(source)) { status.hidden = false; status.textContent = `widget asked for source "${source}" which widget.json does not declare`; return; }
-      streams.set(source, ctx.subscribeSource(name, source, (value, ts) => post({ type: 'data', source, value, ts })));
+      streams.set(source, ctx.subscribeSource(name, source, (value, ts) => { lastValues.set(source, value, ts); post({ type: 'data', source, value, ts }); }));
     };
     // hatch.call: one run of an exec source with an argument; the answer goes back under the widget's own request id
     const call = (m) => {
