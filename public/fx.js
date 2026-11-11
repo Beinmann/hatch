@@ -4,7 +4,7 @@
 // 0..100 (50 = the default look); `terminal` is a read-only view of the xterm screen (public/fx-terminal.js) or null, and effects that
 // do not need it ignore it. To add one: a new file there plus its name in src/fx.js. Effects are loaded on first use.
 import { terminalAdapter } from './fx-terminal.js';
-const LOADERS = { matrix: () => import('./fx/matrix.js'), rain: () => import('./fx/rain.js') };
+const LOADERS = { matrix: () => import('./fx/matrix.js'), rain: () => import('./fx/rain.js'), goo: () => import('./fx/goo.js') };
 
 /** True when the user asked the system for less motion: effects then draw one still frame. */
 export const reducedMotion = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;

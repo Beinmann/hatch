@@ -20,12 +20,15 @@ background shows through; `set transparency 0` gives the opaque look. It is kept
 `{"percent":30}`; edit it by hand if you like. An invalid value is refused and the saved one stays; a broken file shows a
 warning and uses 30.
 
-**Background effects.** `hatch fx matrix` (dim film-style digital rain) or `hatch fx rain` (rain running down a pane of glass) draws an animated
+**Background effects.** `hatch fx matrix` (dim film-style digital rain), `hatch fx rain` (rain running down a pane of glass) or `hatch fx goo` (thin black strands of goo hanging from the letters on screen, each ending in a heavier bead; some let go and fall) draws an animated
 canvas behind the terminal text; `hatch fx off` removes it and `hatch fx` shows what is active. The terminal's own background is always
 transparent, and the canvas has its own opaque base, so the effect shows at any transparency setting (including 0). It takes no mouse or
 keyboard input, pauses in a hidden tab, is capped at 30 frames per second and shows one still frame when the system asks for reduced motion.
-The choice lives in `.hatch/fx.json` (`{"effect":"matrix"}`; delete it or write `"off"` to clear it; a bad file warns and means off) and open
-pages follow it by themselves. While an effect is on the header shows a small `fx: hatch fx off` button that turns it off; the palette has one entry per effect. To add an effect, drop a module with `start(canvas, {animate})`, `stop()` and `resize()` into `public/fx/`, register it in `public/fx.js` and add its name to `src/fx.js`.
+`goo` anchors its drips to the text cells the terminal currently shows: they follow the text when it scrolls and let go when their letter is gone.
+`hatch fx rain --intensity 30` sets how strong the effect is, 0 to 100 (default 50); it is remembered per effect, `hatch fx NAME` keeps the stored value, and
+`hatch fx --intensity N` without a name changes the active effect. Open pages apply a new intensity live.
+The choice lives in `.hatch/fx.json` (`{"effect":"rain","intensity":{"rain":30}}`; the `intensity` part is optional; delete the file or write `"off"` to clear the effect; a bad file or value warns and means off or the default of 50) and open
+pages follow it by themselves. While an effect is on the header shows a small `fx: hatch fx off` button that turns it off; the palette has one entry per effect plus "stronger" and "weaker" (steps of 20). To add an effect, drop a module with `start(canvas, {animate, intensity, terminal})`, `setIntensity(n)`, `stop()` and `resize()` into `public/fx/`, register it in `public/fx.js` and add its name to `src/fx.js`. `terminal` is a read-only view of the xterm screen (`cols`, `rows`, `cellSize()`, `cellsWithText()`, `charAt()`, `viewportY()`, `onChange(cb)`; see `public/fx-terminal.js`) or `null`; effects that do not need it ignore it. The goo colours are at the top of `public/fx/goo.js`, its timings and sizes in the `CFG` table of `public/fx/goo-physics.js`.
 
 ## `custom.css`
 

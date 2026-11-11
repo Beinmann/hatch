@@ -98,7 +98,7 @@ ask the user (blocks until they answer in the browser; prints the answer)
   set background-mode MODE          how it fits: fill (cover, default) | fit (contain) | stretch | center | tile (saved in background.json)
 background effects (behind the terminal text, visible at any transparency)
   fx                                show the active effect, its intensity and the list
-  fx matrix | rain | off            switch the effect (saved in fx.json; open pages update by themselves)
+  fx matrix | rain | goo | off      switch the effect (saved in fx.json; open pages update by themselves)
   fx [NAME] --intensity 0-100       how strong the effect is (default 50, kept per effect; no NAME = the active one)
 desktop
   desktop                           open a set of live gadgets (graph, system, clock, top, git, log) plus the progress panel
