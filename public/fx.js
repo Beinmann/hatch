@@ -10,7 +10,8 @@ const LOADERS = { matrix: () => import('./fx/matrix.js'), rain: () => import('./
 export const reducedMotion = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /** getXterm() returns the xterm instance (or null when there is none yet); it is called at each start. */
-export function createFx({ canvas, root = document.documentElement, onChange = () => {}, getXterm = () => null }) {
+export function createFx({ canvas: first, root = document.documentElement, onChange = () => {}, getXterm = () => null }) {
+  let canvas = first;
   let current = null; let want = null; let intensity = 50; let ro = null; let adapter = null; let token = 0;
   function teardown() {
     if (current) { current.stop(); current = null; }
@@ -27,6 +28,8 @@ export function createFx({ canvas, root = document.documentElement, onChange = (
     let mod;
     try { mod = (await LOADERS[want]()).default; } catch (e) { console.warn(`fx ${want} could not load: ${e.message}`); if (mine === token) want = null; return; }
     if (mine !== token) return; // a newer request arrived while the module loaded
+    // A canvas keeps the first context type it was asked for for life (2d or webgl), so every start gets a fresh canvas in the same place.
+    if (typeof canvas.cloneNode === 'function' && canvas.parentNode) { const fresh = canvas.cloneNode(false); canvas.replaceWith(fresh); canvas = fresh; }
     root.classList.add('has-fx'); // the canvas needs its size before start() reads it
     let xterm = null; try { xterm = getXterm(); } catch { /* no terminal yet */ }
     try { adapter = xterm ? terminalAdapter(xterm, canvas) : null; } catch (e) { console.warn(`fx terminal view unavailable: ${e.message}`); adapter = null; }

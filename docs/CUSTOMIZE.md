@@ -20,7 +20,7 @@ background shows through; `set transparency 0` gives the opaque look. It is kept
 `{"percent":30}`; edit it by hand if you like. An invalid value is refused and the saved one stays; a broken file shows a
 warning and uses 30.
 
-**Background effects.** `hatch fx matrix` (dim film-style digital rain), `hatch fx rain` (rain running down a pane of glass) or `hatch fx goo` (thin black strands of goo hanging from the letters on screen, each ending in a heavier bead; some let go and fall) draws an animated
+**Background effects.** `hatch fx matrix` (dim film-style digital rain), `hatch fx rain` (water drops of mixed sizes on a pane of glass that bend the page background, rarely one runs down; WebGL, with a plain 2D fallback) or `hatch fx goo` (thin black strands of goo hanging from the letters on screen, each ending in a heavier bead; some let go and fall) draws an animated
 canvas behind the terminal text; `hatch fx off` removes it and `hatch fx` shows what is active. The terminal's own background is always
 transparent, and the canvas has its own opaque base, so the effect shows at any transparency setting (including 0). It takes no mouse or
 keyboard input, pauses in a hidden tab, is capped at 30 frames per second and shows one still frame when the system asks for reduced motion.
