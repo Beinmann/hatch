@@ -26,6 +26,7 @@ import { setFx, readFx, FxError, EFFECTS } from './fx.js';
 import { findBackground } from './background.js';
 import { createLimits } from './limits.js';
 import { parseProxyPath, proxyHttp, proxyUpgrade } from './proxy.js';
+import { acquireLock } from './instance-guard.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -72,6 +73,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const logFile = path.join(l.log, 'server.log');
   const log = (m) => { try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${m}\n`); } catch { /* logging must never break the server */ } };
 
+  let lock = null; // server.lock (src/instance-guard.js), taken on the first listen
   let state; // assigned below; the bus snapshot reads it lazily
   const bus = createBus((req) => ({ ...state.snapshot(), info: { ...info(), viewOnly: viewOnly || levelOf(req) === 'view' }, asks: [...asks.values()].filter((a) => a.answer === null).map(({ id, question, choices, freeText }) => ({ id, question, choices, freeText })) }), { log });
   // Opt-in (--tmux-status): the running progress step is mirrored into THIS session's tmux status line ("now: build (2/4)").
@@ -668,8 +670,10 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   return {
     viewOnly, server, state, term, bus, sources, token: cfg.token, session: cfg.session, config: cfg,
     async listen(at = port) { // `at` lets the caller retry on another port after EADDRINUSE; the same server object can listen again
+      lock ||= acquireLock(stateDir, { host }); // before binding or writing config.json: refuses when a live server owns this state dir
       await new Promise((resolve, reject) => { const fail = (e) => { server.off('listening', resolve); reject(e); }; server.once('error', fail); server.listen(at, host, () => { server.off('error', fail); resolve(); }); });
       const actual = server.address().port;
+      lock.update({ port: actual });
       saveConfig(stateDir, { ...cfg, port: actual, host });
       cfg.port = actual;
       state.start();
@@ -677,7 +681,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       term.setEnv?.({ HATCH_URL: `http://127.0.0.1:${actual}`, HATCH_STATE: stateDir });
       return actual;
     },
-    async close() { gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
+    async close() { lock?.release(); lock = null; gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
     baseUrl,
   };
 }

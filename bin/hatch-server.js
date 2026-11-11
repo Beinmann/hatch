@@ -172,8 +172,8 @@ const port = explicitPort ? Number(o.port) : DEFAULT_PORT;
 if (!Number.isInteger(port) || port < 0 || port > 65535) fail('--port must be a number between 0 and 65535');
 const stateDir = findServerStateDir({ state: o.state });
 { // before anything is created or written: a live server owns this state dir
-  const { liveOwner, ownerMessage } = await import('../src/instance-guard.js');
-  const owner = await liveOwner(stateDir); if (owner) fail(ownerMessage(stateDir, owner));
+  const { liveOwner, OwnerError } = await import('../src/instance-guard.js');
+  const owner = liveOwner(stateDir); if (owner) fail(new OwnerError(stateDir, owner).message);
 }
 await confirmStateDir(stateDir);
 let hatch;
@@ -182,7 +182,7 @@ catch (e) { fail(['EACCES', 'EROFS', 'EPERM', 'ENOENT'].includes(e.code) ? `cann
 let actual;
 try { const r = await listenFromPort(hatch, port, { explicit: explicitPort }); actual = r.port; if (r.moved) console.log(`Port ${port} is in use (another Hatch?), so this instance uses ${actual} and saved it in ${path.join(stateDir, 'config.json')}; hatch commands run from here find it there.`); }
 catch (e) {
-  fail(e.code === 'EADDRINUSE' ? (explicitPort ? `port ${port} is in use. Pick another with --port N (is hatch-server already running?)` : `ports ${port} to ${port + 49} are all in use. Pick one with --port N.`) : e.message);
+  fail(e.code === 'EOWNED' ? e.message : e.code === 'EADDRINUSE' ? (explicitPort ? `port ${port} is in use. Pick another with --port N (is hatch-server already running?)` : `ports ${port} to ${port + 49} are all in use. Pick one with --port N.`) : e.message);
 }
 const shown = host === '0.0.0.0' || host === '::' ? lanAddress() : host;
 console.log(`Hatch ${hatch.config.session ? '' : ''}is running (tmux session "${hatch.session}", state ${stateDir})`);

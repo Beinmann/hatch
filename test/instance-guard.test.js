@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { startHatch, tmp } from './helpers.js';
-import { livePidFileOwner } from '../src/instance-guard.js';
+import { livePidFileOwner, acquireLock, OwnerError, startTime } from '../src/instance-guard.js';
 
 const SERVER = fileURLToPath(new URL('../bin/hatch-server.js', import.meta.url));
 // A second `serve` with the real state of nobody: HATCH_STATE/HATCH_URL are scrubbed so it can only touch the dir given.
@@ -25,6 +25,7 @@ test('serve refuses a state dir owned by a live server (answering port) and leav
     assert.equal(r.status, 1, r.out); assert.match(r.err, new RegExp(`port ${h.port}`)); assert.match(r.err, /--state DIR --port N/);
     assert.equal(fs.readFileSync(file, 'utf8'), before, 'config.json unchanged');
     assert.equal(fs.existsSync(path.join(h.stateDir, 'hatch.pid')), false, 'no pid file written');
+    assert.match(r.err, /HATCH_STATE is exported/); assert.equal(JSON.parse(fs.readFileSync(path.join(h.stateDir, 'server.lock'), 'utf8')).pid, process.pid, 'the first server keeps its lock');
     const r2 = await serve(['--state', h.stateDir, '--port', '0']); assert.equal(r2.status, 1);
     assert.equal(fs.readFileSync(file, 'utf8'), before);
   } finally { await h.close(); }
@@ -39,7 +40,7 @@ test('serve refuses when hatch.pid names a live process that is a Hatch server; 
   try {
     fs.writeFileSync(path.join(state, 'hatch.pid'), `${fake.pid}\n`);
     const r = await serve(['--state', state]);
-    assert.equal(r.status, 1); assert.match(r.err, new RegExp(`pid ${fake.pid}`)); assert.match(r.err, /port 7999/);
+    assert.equal(r.status, 1); assert.match(r.err, new RegExp(`pid ${fake.pid}`));
     assert.equal(fs.readFileSync(path.join(state, 'config.json'), 'utf8'), before);
   } finally { fake.kill('SIGKILL'); }
 });
@@ -62,4 +63,33 @@ test('serve on a free state dir still starts and writes config.json with the por
     await new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error('no start')), 8000); p.stdout.on('data', (d) => { if (/is running/.test(String(d))) { clearTimeout(t); resolve(); } }); });
     assert.ok(JSON.parse(fs.readFileSync(path.join(state, 'config.json'), 'utf8')).port > 0);
   } finally { p.kill('SIGTERM'); }
+});
+
+test('server.lock: records pid and port, is removed on close, a stale record is replaced, a reused pid does not block', async () => {
+  const h = await startHatch(); const file = path.join(h.stateDir, 'server.lock');
+  const rec = JSON.parse(fs.readFileSync(file, 'utf8')); assert.equal(rec.pid, process.pid); assert.equal(rec.port, h.port);
+  if (startTime(process.pid)) assert.ok(rec.start);
+  await h.close(); assert.equal(fs.existsSync(file), false, 'clean shutdown removes it');
+  const gone = spawn('node', ['-e', '0']); await new Promise((r) => gone.on('close', r));
+  fs.writeFileSync(file, JSON.stringify({ pid: gone.pid, start: '1', port: 1 })); // crashed server: stale
+  const l = acquireLock(h.stateDir, {}); assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).pid, process.pid, 'stale record replaced'); l.release();
+  const other = spawn('node', ['-e', 'setTimeout(()=>{},20000)']);
+  try {
+    fs.writeFileSync(file, JSON.stringify({ pid: other.pid, start: startTime(other.pid), port: 4242 }));
+    assert.throws(() => acquireLock(h.stateDir, {}), (e) => e instanceof OwnerError && /pid \d+, port 4242/.test(e.message), 'live owner refuses');
+    if (startTime(other.pid)) { fs.writeFileSync(file, JSON.stringify({ pid: other.pid, start: '1', port: 4242 })); acquireLock(h.stateDir, {}).release(); } // pid reused by another process
+  } finally { other.kill('SIGKILL'); }
+  fs.rmSync(file, { force: true });
+});
+
+test('serve CLI: a stale server.lock does not block, and the lock is gone after SIGTERM', async () => {
+  const dir = tmp(); const state = path.join(dir, '.hatch'); fs.mkdirSync(state);
+  const gone = spawn('node', ['-e', '0']); await new Promise((r) => gone.on('close', r));
+  fs.writeFileSync(path.join(state, 'server.lock'), JSON.stringify({ pid: gone.pid, port: 7000 }));
+  const env = { ...process.env }; for (const k of ['HATCH_STATE', 'HATCH_URL', 'HATCH_PLAN']) delete env[k];
+  const p = spawn('node', [SERVER, 'serve', '--host', '127.0.0.1', '--yes', '--state', state, '--port', '0'], { env, cwd: dir });
+  await new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error('no start')), 8000); p.stdout.on('data', (d) => { if (/is running/.test(String(d))) { clearTimeout(t); resolve(); } }); });
+  const rec = JSON.parse(fs.readFileSync(path.join(state, 'server.lock'), 'utf8')); assert.equal(rec.pid, p.pid); assert.ok(rec.port > 0);
+  await new Promise((r) => { p.on('close', r); p.kill('SIGTERM'); });
+  assert.equal(fs.existsSync(path.join(state, 'server.lock')), false);
 });
