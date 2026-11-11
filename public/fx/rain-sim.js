@@ -1,12 +1,15 @@
 // The pane of glass as a pure simulation (no canvas, no globals; `rand` is injected so tests are repeatable). Resting drops of mixed sizes
-// stay a long time and fade out very slowly while new ones condense to keep a target density. Rarely one drop swells, runs a short wavy
-// way down, wipes the small drops it meets and leaves a thin wet trail. Nothing drips on a timer: runs are rare events.
+// shrink steadily over their life (they evaporate) and fade only at the very end, while new ones condense at a constant, steady rate
+// (never in bursts) that keeps the density at its target. Rarely one drop swells, runs a short wavy way down, wipes the small drops it
+// meets and leaves a thin wet trail. Nothing drips on a timer: runs are rare events.
 import { clamp, mergeRadius, touches, sampleRadius, sampleShape, dropLook, wavyOffset, runSpeed, trailFade, dropTarget } from './rain-physics.js';
 
 export const P = {
   DENSITY: 520,          // px^2 of glass per resting drop (before the intensity setting scales the count)
   MAX_DROPS: 3200,       // hard cap on resting drops
-  LIFE: [70, 200],       // seconds a resting drop stays before it has faded out completely (it holds full strength for the first 60%)
+  LIFE: [45, 120],       // seconds a resting drop lives: it shrinks the whole time and fades only in the last 20%
+  SPAWN_JITTER: 0.6,     // 0..1: how much the gap between new drops varies (0 = metronome); the average rate stays n / mean life
+  OVERSHOOT: 1.15,       // new drops pause only if the pane holds this many times its target (runs and the intensity setting can push it up)
   RUN_EVERY: [22, 65],   // seconds between runs of a heavy drop (rare on purpose)
   RUN_LEN: [90, 260],    // px a heavy drop runs before it stops again
   RUN_R: [6.5, 11],      // radius a drop swells to before it lets go
@@ -33,7 +36,7 @@ export function createGlass({ W = 1, H = 1, rand = Math.random, count = 1 } = {}
   }
   function reseed() {
     g.drops = []; g.trails = []; g.runner = null; g.T = 0; g.nextRun = between(P.RUN_EVERY) * 0.5;
-    for (let i = 0, n = target(); i < n; i++) { const d = newDrop(); d.age = rand() * d.life * 0.7; g.drops.push(d); } // staggered ages: no mass fade later
+    for (let i = 0, n = target(); i < n; i++) { const d = newDrop(); d.age = rand() * d.life; g.drops.push(d); } // ages spread over the whole life = the steady state, so no wave of fading later
   }
 
   function startRun() {
@@ -80,9 +83,10 @@ export function createGlass({ W = 1, H = 1, rand = Math.random, count = 1 } = {}
   g.step = function step(dt) {
     dt = clamp(dt, 0, 0.5); g.T += dt;
     const n = target(); let resting = g.drops.length;
-    g.spawnAcc += dt * (n / 110) + Math.max(0, n - resting) * 0.3 * dt; // replace what fades, and catch up when many are missing
-    while (g.spawnAcc >= 1 && resting < n) { g.spawnAcc -= 1; const d = newDrop(); place(d); g.drops.push(d); resting++; }
-    if (g.spawnAcc > 5) g.spawnAcc = 5;
+    // a constant trickle: as many new drops per second as die per second on average (n / mean life), with a jittered gap, whatever the count is now
+    const meanLife = (P.LIFE[0] + P.LIFE[1]) / 2;
+    g.spawnAcc += dt * (n / meanLife) * (1 + P.SPAWN_JITTER * (rand() * 2 - 1));
+    while (g.spawnAcc >= 1) { g.spawnAcc -= 1; if (resting < n * P.OVERSHOOT) { const d = newDrop(); place(d); g.drops.push(d); resting++; } }
     if (g.runner) stepRunner(g.runner, dt);
     else if (g.T >= g.nextRun && g.drops.length) { g.nextRun = g.T + between(P.RUN_EVERY); startRun(); }
     let out = 0;

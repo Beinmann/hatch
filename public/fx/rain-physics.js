@@ -28,12 +28,13 @@ export function sampleShape(rand, r) {
   };
 }
 
-/** Current look of a drop at `age` seconds: it condenses in over `appear` s, stays until `life`*hold, then fades out slowly to nothing at
- *  `life`. Returns { alpha, scale } (scale 0..1 of its radius) and whether it is gone. */
-export function dropLook(age, life, { appear = 2.5, hold = 0.6 } = {}) {
-  const a = num(age), grow = clamp(a / appear, 0, 1);
-  const fadeStart = life * hold, out = life > fadeStart ? clamp((a - fadeStart) / (life - fadeStart), 0, 1) : (a >= life ? 1 : 0);
-  return { alpha: grow * (1 - out * out * (3 - 2 * out)), scale: 0.35 + 0.65 * grow, dead: a >= life };
+/** Current look of a drop at `age` seconds: it condenses in over `appear` s, then evaporates: its radius shrinks steadily over its whole life
+ *  (down to `shrink` of full size at the end) and it only fades in the last `fade` share of its life, gently. Returns { alpha, scale }
+ *  (scale 0..1 of its radius) and whether it is gone. */
+export function dropLook(age, life, { appear = 2.5, fade = 0.2, shrink = 0.3 } = {}) {
+  const a = num(age), grow = clamp(a / appear, 0, 1), f = life > 0 ? clamp(a / life, 0, 1) : 1;
+  const out = f > 1 - fade ? (f - (1 - fade)) / fade : 0;
+  return { alpha: grow * (1 - out * out * (3 - 2 * out)), scale: (0.35 + 0.65 * grow) * (1 - (1 - shrink) * f), dead: a >= life };
 }
 
 /** Sideways offset (px) of a running drop after it has travelled `dist` px: a slow lean plus a small wobble, so the track is not a ruler line.
@@ -82,4 +83,24 @@ export function parseCssColor(s, fallback = [0.07, 0.08, 0.1, 0.7]) {
   if ((m = /^color\(\s*(?:srgb|display-p3)\s+(.*)\)$/i.exec(str))) { const v = nums(m[1]); if (v.length >= 3) return [0, 1, 2].map((i) => clamp(parseFloat(v[i]), 0, 1)).concat(v[3] === undefined ? 1 : clamp(parseFloat(v[3]) / (v[3].endsWith('%') ? 100 : 1), 0, 1)); }
   if ((m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(str))) { const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1]; return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).concat(1); }
   return fallback;
+}
+
+/** The faint background rain behind the glass. Streaks are thin and fall from the upper right toward the lower left, `angleDeg` off
+ *  vertical. `width` is the half-width in px of the lit line (kept small: the blur must never make a streak look thick), `weight` its
+ *  strength, `max` caps the summed brightness where lanes overlap. The shader (rain-shader.js) is built from this table. */
+export const STREAKS = {
+  angleDeg: 15,
+  max: 0.55,
+  families: [ // cell = lane spacing px, width = half-width px, len = px per streak period, speed = periods per second
+    { cell: 41, width: 1.5, len: 190, speed: 1.5, seed: 1, weight: 0.6 },
+    { cell: 67, width: 1.9, len: 260, speed: 1.1, seed: 2, weight: 0.7 },
+    { cell: 29, width: 1.1, len: 140, speed: 2.0, seed: 3, weight: 0.45 },
+  ],
+};
+
+/** Unit vectors for the streak slant: `along` is the direction the rain moves on screen (y points down, so x < 0 and y > 0 means it
+ *  moves down and to the left), `across` is perpendicular to it. */
+export function streakAxes(angleDeg = STREAKS.angleDeg) {
+  const a = num(angleDeg) * Math.PI / 180;
+  return { along: [-Math.sin(a), Math.cos(a)], across: [Math.cos(a), Math.sin(a)] };
 }

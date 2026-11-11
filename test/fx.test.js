@@ -139,7 +139,7 @@ test('matrix draws no opaque base: it clears, and its fillRect is never used (tr
 
 const seeded = (seed) => () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 
-test('rain physics: sizes are mixed, shapes are not all circles, drops stay long and fade slowly, runs wobble and slow down', async () => {
+test('rain physics: sizes are mixed, shapes are not all circles, drops shrink as they age and fade only at the end, runs wobble and slow down', async () => {
   const P = await import('../public/fx/rain-physics.js'); const rand = seeded(1);
   assert.ok(Math.abs(P.mergeRadius(3, 4) - 5) < 1e-9, 'r^2 adds up'); assert.ok(P.mergeRadius(2, 1) > 2);
   assert.equal(P.touches({ x: 0, y: 0, r: 4 }, { x: 4, y: 0, r: 1 }), true); assert.equal(P.touches({ x: 0, y: 0, r: 4 }, { x: 8, y: 0, r: 1 }), false);
@@ -148,9 +148,10 @@ test('rain physics: sizes are mixed, shapes are not all circles, drops stay long
   const shapes = Array.from({ length: 500 }, () => P.sampleShape(rand, 6));
   assert.ok(shapes.some((s) => s.tail > 0.2) && shapes.some((s) => s.tail === 0), 'teardrops and round ones'); assert.ok(shapes.some((s) => Math.abs(s.sx - 1) > 0.1), 'flattened');
   assert.ok(shapes.every((s) => s.wob.length === 3 && Number.isFinite(s.sx) && Number.isFinite(s.sy)));
-  const l0 = P.dropLook(0, 100), l1 = P.dropLook(30, 100), l2 = P.dropLook(75, 100), l3 = P.dropLook(99, 100), l4 = P.dropLook(100, 100);
-  assert.ok(l0.alpha === 0 && l0.scale < 1 && l1.alpha === 1 && l1.scale === 1, 'condenses in, then holds');
-  assert.ok(l2.alpha < 1 && l2.alpha > l3.alpha && l3.alpha > 0, 'fades slowly, last 40% of its life'); assert.ok(l4.dead && l4.alpha === 0 && !l3.dead);
+  const l0 = P.dropLook(0, 100), l1 = P.dropLook(10, 100), l2 = P.dropLook(50, 100), l25 = P.dropLook(85, 100), l3 = P.dropLook(99, 100), l4 = P.dropLook(100, 100);
+  assert.ok(l0.alpha === 0 && l0.scale < 1 && l1.alpha === 1, 'condenses in');
+  assert.ok(l1.scale > l2.scale && l2.scale > l25.scale && l25.scale > l3.scale && l3.scale > 0.25, 'radius shrinks steadily with age, never to nothing');
+  assert.equal(l2.alpha, 1, 'no fading in the first 80% of its life'); assert.ok(l25.alpha < 1 && l25.alpha > l3.alpha && l3.alpha > 0, 'fades gently at the very end'); assert.ok(l4.dead && l4.alpha === 0 && !l3.dead);
   assert.equal(P.wavyOffset(0, 0.3), 0); assert.ok(Math.abs(P.wavyOffset(80, 0.2) - P.wavyOffset(80, 0.9)) > 0.5, 'seed varies the track');
   let maxStep = 0, prev = 0, sideways = false; for (let d = 1; d <= 300; d++) { const o = P.wavyOffset(d, 0.7); maxStep = Math.max(maxStep, Math.abs(o - prev)); prev = o; if (Math.abs(o) > 2) sideways = true; }
   assert.ok(maxStep < 1.5 && sideways, 'smooth but not straight');
@@ -190,6 +191,30 @@ test('rain glass: density holds for minutes, drops live long, heavy drops run ra
   g.setCount(2); g.resize(300, 200); assert.ok(g.drops.length > 100);
 });
 
+test('rain glass: new drops appear all the time (no long gaps), and drops shrink while they live', async () => {
+  const { createGlass, P } = await import('../public/fx/rain-sim.js');
+  for (const [W, H] of [[1000, 600], [400, 300]]) {
+    const g = createGlass({ W, H, rand: seeded(11) }); const seen = new Set(g.drops); let last = 0, maxGap = 0, spawns = 0;
+    for (let i = 1; i <= 20 * 300; i++) { // five minutes in 0.05 s steps
+      g.step(0.05); let fresh = 0; for (const d of g.drops) if (!seen.has(d)) { seen.add(d); fresh++; }
+      if (fresh) { maxGap = Math.max(maxGap, g.T - last); last = g.T; spawns += fresh; }
+    }
+    const perSec = spawns / 300, expect = g.drops.length / ((P.LIFE[0] + P.LIFE[1]) / 2);
+    assert.ok(maxGap < 1.5 && maxGap < 3 / Math.max(perSec, 0.1), `no gap longer than ${maxGap.toFixed(2)} s between new drops at ${W}x${H}`);
+    assert.ok(perSec > 0.6 * expect && perSec < 1.6 * expect, `steady rate ${perSec.toFixed(1)}/s vs ${expect.toFixed(1)}/s`);
+  }
+  const g = createGlass({ W: 600, H: 400, rand: seeded(5) }); const d = g.drops.find((x) => x.r > 3 && !x.run);
+  d.age = 3; const early = g.look(d).scale; d.age = d.life * 0.7; assert.ok(g.look(d).scale < early * 0.8 && g.look(d).alpha === 1, 'shrinks well before it fades');
+});
+test('rain streaks: thin, capped, and slanted from the upper right toward the lower left', async () => {
+  const { STREAKS, streakAxes } = await import('../public/fx/rain-physics.js'); const { FRAG } = await import('../public/fx/rain-shader.js');
+  const { along, across } = streakAxes(), deg = Math.atan2(-along[0], along[1]) * 180 / Math.PI;
+  assert.ok(along[0] < 0 && along[1] > 0, 'moves left and down (y points down)'); assert.ok(deg >= 10 && deg <= 20, `slight slant, ${deg.toFixed(1)} degrees from vertical`);
+  assert.ok(Math.abs(along[0] * across[0] + along[1] * across[1]) < 1e-9 && Math.abs(Math.hypot(...along) - 1) < 1e-9, 'orthonormal axes');
+  assert.ok(STREAKS.families.every((k) => k.width > 0 && k.width <= 2.5 && k.weight <= 0.8 && k.cell > 4 * k.width), 'streaks are thin and lanes are far wider than the lit line');
+  assert.ok(STREAKS.max <= 0.6, 'overlapping streaks cannot add up to a bright fat line');
+  assert.ok(FRAG.includes(along[0].toFixed(3)) && FRAG.includes('vec2 q =') && FRAG.includes(`min(`), 'the shader uses the table');
+});
 test('rain glass: a running drop wipes the small drops on its way and stops, becoming an ordinary drop again', async () => {
   const { createGlass } = await import('../public/fx/rain-sim.js');
   const g = createGlass({ W: 300, H: 500, rand: seeded(3), count: 0 }); // count 0: no random drops, only the ones placed here
