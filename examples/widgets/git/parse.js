@@ -131,9 +131,107 @@
     return out;
   }
 
+  // ---- inspect views: `git show` of a commit and the diff of one file ----
+
+  /** Argument for the `diff` source: mode TAB ref TAB path TAB from (ref is "-" outside commit mode).
+   *  Returns null for names the tab-separated form cannot carry (tab or control characters). */
+  function diffArg(mode, ref, path, from) {
+    const parts = [mode, ref || '-', path, from || ''];
+    return parts.some((p) => /[\x00-\x1f\x7f]/.test(p)) || !path ? null : parts.join('\t');
+  }
+
+  /** `git diff` / `git show` patch text -> files [{path, from, status: M|A|D|R, binary, add, del, hunks:[{head, lines:[{t, s}]}]}].
+   *  t is '+', '-', ' ' or '\\' (no newline marker). Tolerates a patch cut off in the middle and combined diffs of conflicts. */
+  function parseDiff(text) {
+    const files = []; let f = null; let h = null;
+    for (const line of String(text || '').split('\n')) {
+      if (/^diff --(git|cc|combined) /.test(line)) {
+        const cc = !line.startsWith('diff --git ');
+        f = { path: '', from: '', to: '', status: 'M', binary: false, add: 0, del: 0, hunks: [], cc }; h = null; files.push(f);
+        const rest = line.slice(line.indexOf(' ', 7) + 1);
+        if (cc) f.to = rest;
+        else { const x = (rest.length - 5) / 2; if (Number.isInteger(x) && x > 0 && rest === `a/${rest.slice(2, 2 + x)} b/${rest.slice(2, 2 + x)}`) f.to = f.from = rest.slice(2, 2 + x); }
+        continue;
+      }
+      if (!f) continue;
+      if (h === null) {   // still in the header lines of this file
+        let m;
+        if (line.startsWith('new file mode')) { f.status = 'A'; f.from = ''; }
+        else if (line.startsWith('deleted file mode')) f.status = 'D';
+        else if ((m = /^(?:rename|copy) from (.*)$/.exec(line))) { f.status = 'R'; f.from = m[1]; }
+        else if ((m = /^(?:rename|copy) to (.*)$/.exec(line))) { f.to = m[1]; }
+        else if (/^Binary files |^GIT binary patch/.test(line)) f.binary = true;
+        else if ((m = /^--- (?:a\/)?([^\t]*)/.exec(line))) { if (m[1] !== '/dev/null') f.from = m[1]; }   // git adds a tab after names with spaces
+        else if ((m = /^\+\+\+ (?:b\/)?([^\t]*)/.exec(line))) { if (m[1] !== '/dev/null') f.to = m[1]; }
+        else if (/^@@+ /.test(line)) { h = { head: line, lines: [] }; f.hunks.push(h); }
+        continue;
+      }
+      if (/^@@+ /.test(line)) { h = { head: line, lines: [] }; f.hunks.push(h); continue; }
+      const mark = f.cc ? line.slice(0, 2) : line[0];
+      const t = mark === undefined || mark === '' ? ' ' : mark.includes('+') ? '+' : mark.includes('-') ? '-' : mark[0] === '\\' ? '\\' : ' ';
+      if (t === '+') f.add++; else if (t === '-') f.del++;
+      h.lines.push({ t, s: line.slice(f.cc ? 2 : 1) });
+    }
+    for (const x of files) { x.path = x.status === 'D' ? x.from || x.to : x.to || x.from; if (x.status !== 'R') x.from = ''; delete x.to; }
+    return files;
+  }
+
+  /** `git show --numstat -z` text -> [{path, from, add, del, binary}] */
+  function parseNumstat(text) {
+    const t = String(text || '').split('\0'); const out = [];
+    for (let i = 0; i < t.length; i++) {
+      const m = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/.exec(t[i].replace(/^\n/, '')); if (!m) continue;
+      let path = m[3]; let from = '';
+      if (path === '') { from = t[i + 1] || ''; path = t[i + 2] || ''; i += 2; }
+      out.push({ path, from, add: m[1] === '-' ? 0 : Number(m[1]), del: m[2] === '-' ? 0 : Number(m[2]), binary: m[1] === '-' });
+    }
+    return out;
+  }
+
+  /** Output of the `show` source -> { state: 'ok'|'bad'|'nodir', hash, parents, author, ts, refs, subject, body, truncated, files }.
+   *  files come from numstat (every file, in order) with the parsed patch attached as `diff` when it was not cut off. */
+  function parseShow(text) {
+    text = String(text || '');
+    if (/^@@nodir/.test(text)) return { state: 'nodir' };
+    if (!/^@@meta\n/.test(text)) return { state: 'bad' };
+    const bi = text.indexOf('\n@@body\n');
+    const head = bi < 0 ? text : text.slice(0, bi); const body = bi < 0 ? '' : text.slice(bi + 8);
+    const secs = { meta: [], numstat: [], diff: [] }; let cur = 'meta'; let truncated = false;
+    for (const line of head.split('\n')) {
+      if (line === '@@meta' || line === '@@numstat' || line === '@@diff') { cur = line.slice(2); continue; }
+      if (line === '@@trunc') { truncated = true; continue; }
+      secs[cur].push(line);
+    }
+    const p = (secs.meta[0] || '').split(US);
+    const [subject, ...rest] = body.replace(/\s+$/, '').split('\n');
+    const patches = parseDiff(secs.diff.join('\n'));
+    const files = parseNumstat(secs.numstat.join('\n')).map((n) => {
+      const d = patches.find((x) => x.path === n.path) || null;
+      return { ...n, status: d ? d.status : n.from ? 'R' : 'M', diff: d };
+    });
+    return { state: 'ok', hash: p[0] || '', parents: (p[1] || '').split(' ').filter(Boolean), author: p[2] || '', ts: Number(p[3]) || 0, refs: parseRefs(p[4]), subject: subject || '', body: rest.join('\n').replace(/^\n+/, ''), truncated, files };
+  }
+
+  /** Output of the `diff` source -> { state: 'ok'|'bad'|'nodir', truncated, list: [paths] | null, files }.
+   *  `list` is set when the path was an untracked folder (git reports the folder, not what is in it). */
+  function parseFileDiff(text) {
+    text = String(text || '');
+    if (/^@@nodir/.test(text)) return { state: 'nodir' };
+    if (/^@@bad/.test(text)) return { state: 'bad' };
+    const truncated = /^@@trunc\n/.test(text); text = text.replace(/^@@trunc\n/, '');
+    if (/^@@list\n?/.test(text)) return { state: 'ok', truncated, list: text.replace(/^@@list\n?/, '').split('\n').filter(Boolean), files: [] };
+    return { state: 'ok', truncated, list: null, files: parseDiff(text) };
+  }
+
+  /** Bar lengths for a stat listing, like `git diff --stat`: the busiest file gets `width` cells, others scale, nonzero parts get at least one. */
+  function statBars(files, width = 20) {
+    const max = Math.max(1, ...files.map((f) => f.add + f.del)); const k = max > width ? width / max : 1;
+    return files.map((f) => ({ plus: f.add ? Math.max(1, Math.round(f.add * k)) : 0, minus: f.del ? Math.max(1, Math.round(f.del * k)) : 0 }));
+  }
+
   const splitPath = (p) => { const i = p.lastIndexOf('/'); return i < 0 ? { dir: '', name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) }; };
   const baseName = (p) => String(p || '').replace(/\/+$/, '').split('/').pop() || '/';
 
-  const api = { rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
+  const api = { diffArg, parseDiff, parseNumstat, parseShow, parseFileDiff, statBars, rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GitParse = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -12,7 +12,7 @@ import { createBus } from './events.js';
 import { createState, loadConfig, saveConfig, layout, atomicWrite, NAME_RE } from './state.js';
 import { createTerminal, TerminalError } from './terminal.js';
 import { saveUpload, sniff, MIME, MAX_BYTES, UploadError } from './uploads.js';
-import { createSources, checkSource, runOnce as runSourceOnce, ARG_RE } from './sources.js';
+import { createSources, checkSource, runOnce as runSourceOnce, ARG_RE, ANY_ARG_RE } from './sources.js';
 import { hostAllowed, readAllowedHostsFile, hostRefusedMessage } from './hosts.js';
 import * as fsapi from './files.js';
 import { pickEditor, vimRequest, which } from './editor.js';
@@ -379,7 +379,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         if (typeof b?.widget !== 'string' || typeof b.source !== 'string') throw new HttpError(400, 'call needs widget and source');
         const def = widgetSource(b.widget, b.source);
         if (def.kind !== 'exec') throw new HttpError(400, `source ${b.source} is ${def.kind}; hatch.call only runs exec sources`);
-        if (b.arg !== undefined && (typeof b.arg !== 'string' || !ARG_RE.test(b.arg))) throw new HttpError(400, 'arg must be a file-name-like word: letters, digits, _ . - and spaces, starting with a letter or digit, at most 200 characters');
+        if (b.arg !== undefined && (typeof b.arg !== 'string' || !(def.arg === 'any' ? ANY_ARG_RE : ARG_RE).test(b.arg))) throw new HttpError(400, 'arg must be a file-name-like word: letters, digits, _ . - and spaces, starting with a letter or digit, at most 200 characters');
         if (calls >= MAX_CALLS) throw new HttpError(429, `already running ${MAX_CALLS} widget calls; wait for one to finish`);
         calls++;
         try { return json(res, 200, { value: await runSourceOnce(def, b.arg) }); } finally { calls--; }

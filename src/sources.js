@@ -85,7 +85,7 @@ export function checkSource(d) {
   const kind = d.kind;
   const everyMs = Math.max(MIN_MS, Number.isFinite(d.everyMs) ? d.everyMs : 1000);
   if (kind === 'metric') { if (!METRICS.includes(d.id)) return { error: `unknown metric ${d.id}; known: ${METRICS.join(', ')}` }; return { def: { kind, id: d.id, path: d.path, everyMs } }; }
-  if (kind === 'exec') { if (typeof d.cmd !== 'string' || !d.cmd) return { error: 'exec sources need cmd' }; return { def: { kind, cmd: d.cmd, json: !!d.json, everyMs, timeoutMs: Math.min(30000, d.timeoutMs || 10000) } }; }
+  if (kind === 'exec') { if (typeof d.cmd !== 'string' || !d.cmd) return { error: 'exec sources need cmd' }; return { def: { kind, cmd: d.cmd, json: !!d.json, everyMs, timeoutMs: Math.min(30000, d.timeoutMs || 10000), ...(d.arg === 'any' && { arg: 'any' }) } }; }
   if (kind === 'tail' || kind === 'file') { if (typeof d.path !== 'string' || !d.path) return { error: `${kind} sources need path` }; return { def: { kind, path: d.path, everyMs: Math.max(MIN_MS, d.everyMs || 500) } }; }
   return { error: `unknown source kind ${kind}; use metric, exec, tail or file` };
 }
@@ -93,6 +93,9 @@ export function checkSource(d) {
 /** Arguments a widget may pass to hatch.call: a plain file-name-like word, so a command can use it in a path without
  *  being able to climb out of a folder (no slash, no leading dot) or add shell syntax. */
 export const ARG_RE = /^\w[\w. -]{0,199}$/;
+/** For sources that declare `"arg": "any"` (they must treat $HATCH_ARG as data only, e.g. a path after `--`): any text up to
+ *  4000 characters without control characters other than tab. */
+export const ANY_ARG_RE = /^[^\x00-\x08\x0a-\x1f\x7f]{1,4000}$/;
 
 /** Runs an exec definition once and calls `done({out, code, json?, error?})`. `arg` reaches the command as $HATCH_ARG
  *  (environment, never part of the shell text, so it cannot inject commands). */
