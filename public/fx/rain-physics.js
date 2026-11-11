@@ -28,12 +28,13 @@ export function sampleShape(rand, r) {
   };
 }
 
-/** Current look of a drop at `age` seconds: it condenses in over `appear` s, stays until `life`*hold, then fades out slowly to nothing at
- *  `life`. Returns { alpha, scale } (scale 0..1 of its radius) and whether it is gone. */
-export function dropLook(age, life, { appear = 2.5, hold = 0.6 } = {}) {
-  const a = num(age), grow = clamp(a / appear, 0, 1);
-  const fadeStart = life * hold, out = life > fadeStart ? clamp((a - fadeStart) / (life - fadeStart), 0, 1) : (a >= life ? 1 : 0);
-  return { alpha: grow * (1 - out * out * (3 - 2 * out)), scale: 0.35 + 0.65 * grow, dead: a >= life };
+/** Current look of a drop at `age` seconds: it condenses in over `appear` s, then evaporates: its radius shrinks steadily over its whole life
+ *  (down to `shrink` of full size at the end) and it only fades in the last `fade` share of its life, gently. Returns { alpha, scale }
+ *  (scale 0..1 of its radius) and whether it is gone. */
+export function dropLook(age, life, { appear = 2.5, fade = 0.2, shrink = 0.3 } = {}) {
+  const a = num(age), grow = clamp(a / appear, 0, 1), f = life > 0 ? clamp(a / life, 0, 1) : 1;
+  const out = f > 1 - fade ? (f - (1 - fade)) / fade : 0;
+  return { alpha: grow * (1 - out * out * (3 - 2 * out)), scale: (0.35 + 0.65 * grow) * (1 - (1 - shrink) * f), dead: a >= life };
 }
 
 /** Sideways offset (px) of a running drop after it has travelled `dist` px: a slow lean plus a small wobble, so the track is not a ruler line.
