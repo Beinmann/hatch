@@ -411,6 +411,14 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     return panels.get(id);
   }
 
+  /** Sets the transparency (percent, 0 = opaque; floored at 20% opacity like leader o) of every open window at once. Returns how many changed. */
+  function setAllTransparency(percent) {
+    if (!Number.isInteger(percent) || percent < 0 || percent > 100) throw Object.assign(new Error('transparency must be a whole number from 0 (opaque) to 100'), { status: 400 });
+    const opacity = Math.max(20, 100 - percent); let changed = 0;
+    for (const p of [...panels.values()]) if (p.opacity !== opacity) { patchPanel(p.id, { opacity }); changed++; }
+    return changed;
+  }
+
   /** Turns a window into another type (see convert.js), keeping title, position, size and workspace. Returns the new panel. */
   function convertPanel(id, to) {
     const cur = panels.get(id);
@@ -610,7 +618,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     layout: l, start, close, rescan,
     snapshot: () => ({ background, backgrounds: Object.fromEntries(backgrounds), workspaces: wsList, transparency, windowTransparency, fx, panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
     workspaces: () => wsList, backgroundOf: (name) => backgrounds.get(name) || null,
-    listPanels: () => [...panels.values()], getPanel: (id) => panels.get(id),
+    listPanels: () => [...panels.values()], setAllTransparency, getPanel: (id) => panels.get(id),
     createPanel, patchPanel, convertPanel, deletePanel, listTrash, restoreTrash, emptyTrash,
     getProgress: () => progress, setDiagram, setSteps, patchStep, updateStep,
     widgetMeta: (name) => widgetRev.get(name)?.meta, widgetNames: () => [...widgetRev.keys()],

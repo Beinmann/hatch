@@ -495,6 +495,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
           } catch (e) { if (e instanceof BackgroundError) throw new HttpError(400, e.message); throw e; }
         }
       }
+      if (p === '/api/panels/transparency' && m === 'POST') return json(res, 200, { changed: state.setAllTransparency((await readJson(req))?.percent) });
       if (p === '/api/transparency/windows' && m === 'PUT') {
         const pc = (await readJson(req))?.percent;
         try { setWindowTransparency(stateDir, pc === null ? 'default' : pc); } catch (e) { if (e instanceof TransparencyError) throw new HttpError(400, e.message); throw e; }

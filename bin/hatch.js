@@ -110,6 +110,7 @@ background effects (behind the terminal text, visible at any transparency)
   fx matrix | rain | goo | off      switch the effect (saved in fx.json; open pages update by themselves)
   fx [NAME] --intensity 0-100       how strong the effect is (default 50, kept per effect; no NAME = the active one)
 desktop
+  windows transparency 0..100       set the transparency of every window that is open right now (each kept per window, like leader o)
   desktop                           open a set of live gadgets (graph, system, clock, top, git, log) plus the progress panel
 git (Magit-lite window)
   git [DIR]                         status window: stage with checkboxes, click a file for its diff, commit
@@ -756,6 +757,14 @@ async function main(argv) {
       try { background.setBackground(bgDir, background.readImageFile(path.resolve(rest[0]))); }
       catch (e) { if (e instanceof background.BackgroundError) throw new CliError(`${e.message} (background left unchanged)`); throw e; }
       return console.log(`background saved in ${bgDir}; open pages update by themselves (the server must be running to show it)`);
+    }
+    case 'windows': {
+      const usage = 'usage: windows transparency 0..100';
+      if (sub !== 'transparency') throw new CliError(usage);
+      need(rest[0], usage);
+      if (!/^\d{1,3}$/.test(rest[0]) || Number(rest[0]) > 100) throw new CliError(`invalid transparency ${JSON.stringify(rest[0])}; use a whole number from 0 (opaque) to 100 (windows stay at least 20% visible) (nothing changed)`);
+      const r = await api('POST', '/api/panels/transparency', { percent: Number(rest[0]) });
+      return console.log(`${r.changed} window${r.changed === 1 ? '' : 's'} set to transparency ${Number(rest[0])}`);
     }
     case 'desktop': { const r = await api('POST', '/api/desktop', {}); return console.log(`desktop open: ${r.opened.join(', ')}`); }
     case 'upload-dir': return console.log(l.uploads);

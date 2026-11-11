@@ -783,6 +783,7 @@ const palette = createPalette({
     add('Open desktop gadgets', 'graph, system, clock, top, git, log', () => api('POST', '/api/desktop', {}));
     add('Zen mode', 'Ctrl+Shift+Z', toggleZen);
     add('Windows: set default transparency...', 'for windows not set one by one; hatch set window-transparency', () => askTransparency('Default window transparency', 'Percent 0-100 (0 = not transparent; above 80 is capped at 80), or "default" to follow the page transparency again.', (v) => api('PUT', '/api/transparency/windows', { percent: v === 'default' ? null : v }), true));
+    add('Windows: set transparency of all open windows...', 'hatch windows transparency N', () => askTransparency('Transparency of all open windows', 'Percent 0-100 (0 = not transparent; above 80 is capped at 80). Applies to every window open now, each kept per window.', (v) => api('POST', '/api/panels/transparency', { percent: v }).then((r) => toast(`${r.changed} window${r.changed === 1 ? '' : 's'} set`, 'info', 1500))));
     for (const c of customCommands) add(c.label, c.hint, c.run);
     add('Show welcome tips', '', () => { store.set('show-welcome', true); store.set('welcome-off', false); paintWelcome(); });
     try { for (const t of await get('/api/tasks')) add(`Task: ${t.cmd}`, t.detail || t.source, () => api('POST', '/api/runs', { cmd: t.cmd, cwd: info.cwd }).then((r) => api('POST', '/api/panels', { type: 'output', title: t.cmd, props: { cmd: t.cmd, runId: r.id, cwd: info.cwd } }))); } catch { /* none */ }

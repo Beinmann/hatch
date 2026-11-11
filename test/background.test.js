@@ -156,3 +156,24 @@ test('window transparency: default for windows without their own setting, keeps 
     await waitFor(async () => { const s = await snap(h); return s.transparency === 10 && s.windowTransparency === null && s.warnings.some((w) => w.file === 'transparency'); }, 5000);
   } finally { await h.close(); }
 });
+
+test('windows transparency sets every open window at once, caps at 80 and refuses bad input', async () => {
+  const h = await startHatch();
+  try {
+    const ids = [];
+    for (const t of ['a', 'b']) ids.push((await h.call('POST', '/api/panels', { type: 'note', title: t, props: { markdown: t } })).data.id);
+    await h.call('PATCH', `/api/panels/${ids[0]}`, { opacity: 100 });
+    let r = await ui(['windows', 'transparency', '40'], h.stateDir);
+    assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /2 windows set to transparency 40/);
+    for (const id of ids) assert.equal((await h.call('GET', '/api/panels')).data.find((p) => p.id === id).opacity, 60);
+    r = await ui(['windows', 'transparency', '95'], h.stateDir);
+    assert.equal(r.status, 0, r.stderr);
+    for (const id of ids) assert.equal((await h.call('GET', '/api/panels')).data.find((p) => p.id === id).opacity, 20, 'capped at 80% transparent');
+    for (const bad of ['101', 'abc', '-1']) { r = await ui(['windows', 'transparency', bad], h.stateDir); assert.notEqual(r.status, 0, bad); assert.match(r.stderr, /invalid transparency/); }
+    assert.notEqual((await ui(['windows'], h.stateDir)).status, 0);
+    assert.equal((await h.call('POST', '/api/panels/transparency', { percent: 1.5 })).status, 400);
+    r = await ui(['windows', 'transparency', '0'], h.stateDir);
+    assert.match(r.stdout, /2 windows set to transparency 0/);
+    assert.equal((await h.call('GET', '/api/panels')).data[0].opacity, 100);
+  } finally { await h.close(); }
+});

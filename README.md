@@ -123,7 +123,7 @@ session; windows that already exist only get them in new windows.
 - **Search and review.** `hatch grep PATTERN [DIR]` and `hatch diff [git args]` open output windows: results are `path:line` links that open the editor on that line, diffs are coloured.
 - **man, tail, log, curl.** `hatch man PAGE`, `hatch tail FILE`, `hatch log [git args]` and `hatch curl [curl args] URL` open output windows (tail follows until you press Stop).
 - **Terminal windows.** `hatch term build --cmd "npm run watch"` opens another terminal in a floating window, on its own tmux session named after the main session plus `-build`. Closing the window leaves the session running (`DELETE /api/pterm/build` ends it, or kill that session with tmux).
-- **Window transparency.** Windows follow the page transparency (`hatch set transparency N`, default 30) until you set one with leader `o`. `hatch set window-transparency N` (or the palette entry "Windows: set default transparency...") gives every window without its own setting another default, for example 0 so new widgets open opaque; `default` goes back to following the page. See `docs/CUSTOMIZE.md`.
+- **Window transparency.** Windows follow the page transparency (`hatch set transparency N`, default 30) until you set one with leader `o`. `hatch set window-transparency N` (or the palette entry "Windows: set default transparency...") gives every window without its own setting another default, for example 0 so new widgets open opaque; `default` goes back to following the page. `hatch windows transparency N` (or "Windows: set transparency of all open windows..." in the palette) sets every window that is open right now at once. See `docs/CUSTOMIZE.md`.
 - **Background image.** `hatch set background IMAGE` stores the image in the state dir and shows it behind the page (see `docs/CUSTOMIZE.md`).
 - **Customising.** `.hatch/custom.css` and `.hatch/custom.js` are loaded when present; `window.hatchUI` lets `custom.js` add palette commands and react to events (`docs/CUSTOMIZE.md`).
 - **Taskbar and snapping.** The chips in the header list every window of the current workspace; click one to bring it to the front (or restore it). The palette snaps a window to the left or right half or makes it fill the terminal area.
@@ -188,7 +188,7 @@ hatch widget new NAME [--from cpu|graph|clock|git|top|sysinfo|log-tail|matrix|an
 hatch files [DIR] | edit FILE | image PATH | open URL | note "markdown" | panels | close ID | notify "text" [--level info|warn|done]
 hatch cmd add NAME TEXT | cmd list | cmd rm NAME   (saved commands for the palette)
 hatch prompt add NAME TEXT|- | prompt list | prompt rm NAME
-hatch set background IMAGE | set transparency 0..100 | set window-transparency 0..100|default
+hatch set background IMAGE | set transparency 0..100 | set window-transparency 0..100|default | windows transparency 0..100
 hatch git [DIR] | grep PATTERN [DIR] | diff [GIT-ARGS] | log [GIT-ARGS] | man PAGE | tail FILE | term NAME [--cmd CMD] | run "CMD" [--wait] | desktop
 hatch ask "question" [CHOICE ...] [--text] [--timeout SEC]
 hatch copy TEXT|-
