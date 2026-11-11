@@ -19,7 +19,8 @@
   <span id="conn" class="chip" title="terminal connection">connecting</span>
   <span id="session" class="muted"></span>
   <button id="fxhint" type="button" hidden title="Background effect is on; click to turn it off"></button>
-  <span id="wsbar" class="chips" title="Workspaces (virtual desktops)"></span>
+  <span id="wsbar" class="chips" title="Workspaces: switch with the palette (workspace: switch) or leader ] [ / w 1-9"></span>
+  <button id="wsnotice" type="button" class="chip warn" hidden></button>
   <span class="grow"></span>
   <button id="limits" type="button" hidden></button>
   <button id="warnbtn" class="chip warn" hidden title="Files the page could not read"></button>
@@ -54,7 +55,7 @@
   <aside id="dock" hidden></aside>
 </main>
 <div id="askbox" hidden><div class="box" role="dialog" aria-modal="true" aria-labelledby="askq"><p id="askq"></p><input id="asktext" type="text" hidden autocomplete="off"><div id="askbtns"></div></div></div>
-<footer id="taskbar" aria-label="Windows"><span id="chips" class="chips"></span></footer>
+<footer id="taskbar" aria-label="Windows"><span id="wslabel" class="chip on"></span><span id="chips" class="chips"></span></footer>
 <div id="toasts" aria-live="polite"></div>
 <script type="module" src="/app.js"></script>
 </body>

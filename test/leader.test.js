@@ -43,7 +43,7 @@ test('leader d docks or releases the focused window, Shift+d is show desktop', (
 
 test('leader o asks for the transparency of the focused window', () => {
   assert.deepEqual(leaderAction({ code: 'KeyO', key: 'o' }), { action: 'opacity', repeat: false });
-  assert.equal(leaderAction({ code: 'BracketLeft', key: '[' }), null);
+  assert.equal(leaderAction({ code: 'KeyZ', key: 'z' }), null);
   assert.equal(leaderAction({ code: 'KeyO', key: 'O', shiftKey: true }), null);
 });
 
@@ -74,4 +74,12 @@ test('leader s toggles the dock column; Shift+s and Ctrl+s stay unbound', () => 
   assert.deepEqual(leaderAction({ code: 'KeyS', key: 's' }), { action: 'toggledock', repeat: false });
   assert.equal(leaderAction({ code: 'KeyS', key: 'S', shiftKey: true }), null);
   assert.equal(leaderAction({ code: 'KeyS', key: 's', ctrlKey: true }), null);
+});
+
+test('leader ] [ w move between workspaces', () => {
+  assert.deepEqual(leaderAction({ code: 'BracketRight', key: ']' }), { action: 'wsnext', repeat: true });
+  assert.deepEqual(leaderAction({ code: 'BracketLeft', key: '[' }), { action: 'wsprev', repeat: true });
+  assert.deepEqual(leaderAction({ code: 'KeyW', key: 'w' }), { action: 'wsjump', repeat: false });
+  assert.equal(leaderAction({ code: 'KeyW', key: 'W', shiftKey: true }), null);
+  assert.equal(leaderAction({ code: 'BracketRight', key: ']', ctrlKey: true }), null);
 });

@@ -21,7 +21,7 @@ that is a git repo, open the printed URL, and open a terminal on the same box fo
    "done" --level done` with the tab in the background.
 10. **Widgets.** `hatch widget new w --from graph`, `hatch widget open w`; edit `.hatch/widgets/w/index.html` and
     watch it reload. `hatch open http://localhost:PORT` for a dev server on the box.
-11. **Workspaces.** Palette > Move window to workspace ..., then Ctrl+Shift+1 / 2.
+11. **Workspaces.** Palette > workspace: new, then leader `]` / `[` (or Ctrl+Shift+1 / 2) to switch; palette > window: move to workspace ...
 12. **Look and feel.** Zen mode (Ctrl+Shift+Z), snap a window to a half from the
     palette, and watch the taskbar at the bottom. Put your own commands into the palette with `.hatch/custom.js`
     (`docs/CUSTOMIZE.md`).

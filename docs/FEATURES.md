@@ -42,7 +42,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Customisation (custom.css, custom.js) | 054 | app.js hatchUI, server /custom | yes | docs/CUSTOMIZE.md |
 | Taskbar and window snapping | 053 | windows.js, app.js | yes | |
 | Sticky windows, window cycling | 062 | windows.js | yes | |
-| Workspaces | 044 | windows.js, app.js | yes | |
+| Workspaces (named, own terminal and background, URL `#name`, tab notice, import) | - | workspaces.js, windows.js, app.js | yes | one instance replaces several; old state is wrapped as `main` with a backup |
 | Progress in the tmux status line (--tmux-status) | 080 | server mirrorStatus | tests (real tmux) | opt-in |
 | Watches (pattern / idle notify) | 023 | src/watches.js | server only | |
 | Localhost proxy for iframes | 026 | src/proxy.js | yes (HTTP) | WebSocket path tested only with a raw socket |

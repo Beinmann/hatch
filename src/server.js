@@ -23,7 +23,8 @@ import * as discover from './discover.js';
 import { widgetStatus, recordShipped, staleMessage, gitProjectMeta, staleProjectCopies } from './update-widgets.js';
 import * as gitapi from './git.js';
 import { setFx, readFx, FxError, EFFECTS } from './fx.js';
-import { findBackground } from './background.js';
+import { findBackground, setBackground, clearBackground, setMode, BackgroundError } from './background.js';
+import * as wsapi from './workspaces.js';
 import { createLimits } from './limits.js';
 import { parseProxyPath, proxyHttp, proxyUpgrade } from './proxy.js';
 import { acquireLock } from './instance-guard.js';
@@ -77,7 +78,10 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const configGuard = createConfigGuard({ stateDir, current: () => ({ port: cfg.port, host }), log, ...guardOpts }); // repairs port/host in config.json if another writer clobbers them
   let lock = null; // server.lock (src/instance-guard.js), taken on the first listen
   let state; // assigned below; the bus snapshot reads it lazily
-  const bus = createBus((req) => ({ ...state.snapshot(), info: { ...info(), viewOnly: viewOnly || levelOf(req) === 'view' }, asks: [...asks.values()].filter((a) => a.answer === null).map(({ id, question, choices, freeText }) => ({ id, question, choices, freeText })) }), { log });
+  const migration = wsapi.migrate(stateDir); // first start with workspaces: wraps the existing layout and background as `main`
+  const presence = new Map(); // cid -> workspace shown in that tab (in memory: a restart drops it, tabs report again)
+  const presenceCounts = () => { const c = {}; for (const n of presence.values()) c[n] = (c[n] || 0) + 1; return c; };
+  const bus = createBus((req) => ({ ...state.snapshot(), presence: presenceCounts(), info: { ...info(), viewOnly: viewOnly || levelOf(req) === 'view' }, asks: [...asks.values()].filter((a) => a.answer === null).map(({ id, question, choices, freeText }) => ({ id, question, choices, freeText })) }), { log });
   // Opt-in (--tmux-status): the running progress step is mirrored into THIS session's tmux status line ("now: build (2/4)").
   let lastStatus = null;
   const mirrorStatus = (prog) => {
@@ -89,6 +93,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   };
   state = createState(stateDir, { emit: (e, d) => { bus.emit(e, d); if (e === 'progress') mirrorStatus(d); }, poll: pollState, log });
   for (const message of configWarnings) state.warn('config.json', message);
+  if (migration.migrated && migration.backup) log(`workspaces: wrapped the existing state as workspace main; the previous state is kept in ${path.basename(migration.backup)}/ until you delete it`);
   const sources = createSources({ procRoot });
   const gitClient = gitapi.createGit();
   const runs = createRuns({ cwd, notify: (n) => bus.emit('notify', n) });
@@ -98,12 +103,20 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const baseUrl = () => `http://127.0.0.1:${server.address()?.port ?? cfg.port}`;
   const watches = createWatches({ file: l.watches, notify: (n) => bus.emit('notify', n), warn: (m) => state.warn('watches.json', m) });
   const extra = new Map(); // terminal windows: name -> terminal; with a command it runs directly in the pty (no tmux), else on its own tmux session (hatch-NAME)
+  // Output of terminals nobody may be watching: a burst (not a clock redraw) tells the page another workspace wants attention.
+  const activity = new Map(); // terminal name -> { bytes, at }
+  const noteActivity = (name) => (buf) => {
+    const a = activity.get(name) || { bytes: 0, at: 0 }; a.bytes += buf.length; activity.set(name, a);
+    if (a.bytes >= 512 && Date.now() - a.at > 2000) { a.bytes = 0; a.at = Date.now(); bus.emit('activity', { terminal: name }); }
+  };
+  const closedTerms = new Set(); // main terminals of closed workspaces: a browser stream that reconnects must not start their tmux session again
   const termFor = (name, cmd) => {
+    if (closedTerms.has(name)) throw new HttpError(404, 'that workspace was closed');
     if (!NAME_RE.test(name)) throw new HttpError(400, 'terminal names are letters, digits, - and _');
-    if (!extra.has(name)) extra.set(name, createTerminal({ session: `${cfg.session}-${name}`, cwd, attach, tmuxBin, env: { HATCH_URL: `http://127.0.0.1:${cfg.port}`, HATCH_STATE: stateDir }, command: cmd }));
+    if (!extra.has(name)) extra.set(name, createTerminal({ session: `${cfg.session}-${name}`, cwd, attach, tmuxBin, env: { HATCH_URL: `http://127.0.0.1:${cfg.port}`, HATCH_STATE: stateDir }, command: cmd, onOutput: cmd ? undefined : noteActivity(name) }));
     return extra.get(name);
   };
-  const term = createTerminal({ session: cfg.session, cwd, attach, tmuxBin, env: {}, onOutput: (b) => watches.feed(b) });
+  const term = createTerminal({ session: cfg.session, cwd, attach, tmuxBin, env: {}, onOutput: (b) => { watches.feed(b); noteActivity('@main')(b); } });
   const info = () => ({ viewOnly, custom: { css: fs.existsSync(path.join(stateDir, 'custom.css')), js: fs.existsSync(path.join(stateDir, 'custom.js')) }, root: fsapi.getRoot(), version: VERSION, session: cfg.session, stateDir, uploadsDir: l.uploads, port: server.address()?.port ?? cfg.port, cwd });
 
   // ---- static ----
@@ -180,7 +193,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     if (!sub.cids.size) { sub.off(); subs.delete(key); }
   }
   const streamsOf = new Map(); // cid -> open /api/events streams (a reconnect overlaps the old, half-open one)
-  const dropClient = (cid) => { for (const key of [...(byClient.get(cid) || [])]) unsub(cid, key); byClient.delete(cid); };
+  const dropClient = (cid) => { if (presence.delete(cid)) bus.emit('presence', { counts: presenceCounts() }); for (const key of [...(byClient.get(cid) || [])]) unsub(cid, key); byClient.delete(cid); };
 
   function sse(req, res, subscribe) {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
@@ -436,6 +449,51 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': st.size, 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(f))}`, 'x-content-type-options': 'nosniff' });
         return pipeline(fs.createReadStream(f), res, () => {});
       }
+      // ---- workspaces: named sets of windows in this one instance (see workspaces.js) ----
+      if (p === '/api/workspaces' && m === 'GET') return json(res, 200, state.workspaces().map((w) => ({ ...w, terminal: w.name === 'main' ? null : wsapi.terminalName(w), windows: state.listPanels().filter((x) => (x.ws || 'main') === w.name).length, background: !!state.backgroundOf(w.name) })));
+      if (p === '/api/workspaces' && m === 'POST') { const b = await readJson(req); const w = wsapi.createWorkspace(stateDir, b?.name, state.listPanels()); state.rescan(); return json(res, 201, w); }
+      if (p === '/api/presence' && m === 'POST') {
+        const b = await readJson(req); const cid = String(b?.cid || '');
+        if (!cid || !streamsOf.has(cid)) throw new HttpError(400, 'cid must be the id of this page\'s open event stream');
+        const w = state.workspaces().find((x) => x.name === b.ws); if (!w) throw new HttpError(404, `no workspace named ${b.ws}`);
+        if (presence.get(cid) !== w.name) { presence.set(cid, w.name); bus.emit('presence', { counts: presenceCounts() }); }
+        return json(res, 200, { counts: presenceCounts() });
+      }
+      if ((g = /^\/api\/workspaces\/([\w-]+)(?:\/(rename|background))?$/.exec(p))) {
+        const w = wsapi.findWorkspace(stateDir, g[1], state.listPanels());
+        if (!g[2] && m === 'DELETE') {
+          // closing is irreversible for the workspace's terminals, so the exact name must come with the request, not only from the page
+          const b = await readJson(req);
+          if (b?.confirm !== w.name) throw new HttpError(400, `to close workspace ${w.name} send { "confirm": "${w.name}" } (type the exact name)`);
+          if (w.name === 'main') throw new HttpError(400, 'main cannot be closed; it is the default workspace');
+          const mine = state.listPanels().filter((x) => (x.ws || 'main') === w.name);
+          for (const x of mine) {
+            if (x.type === 'terminal' && x.props?.name) { const t = extra.get(x.props.name) || termFor(x.props.name); t.kill(); extra.delete(x.props.name); }
+            state.deletePanel(x.id);
+          }
+          const tn = wsapi.terminalName(w); (extra.get(tn) || termFor(tn)).kill(); extra.delete(tn); closedTerms.add(tn);
+          wsapi.removeWorkspace(stateDir, w.name, state.listPanels()); state.rescan();
+          for (const [cid, n] of [...presence]) if (n === w.name) presence.delete(cid);
+          bus.emit('presence', { counts: presenceCounts() });
+          return json(res, 200, { ok: true, closedWindows: mine.length });
+        }
+        if (g[2] === 'rename' && m === 'POST') {
+          const b = await readJson(req);
+          wsapi.renameWorkspace(stateDir, w.name, b?.to, state.listPanels());
+          for (const x of state.listPanels()) if (x.ws === w.name) state.patchPanel(x.id, { ws: b.to });
+          for (const [cid, n] of [...presence]) if (n === w.name) presence.set(cid, b.to);
+          state.rescan(); bus.emit('presence', { counts: presenceCounts() });
+          return json(res, 200, { ok: true, name: b.to });
+        }
+        if (g[2] === 'background') {
+          const wd = wsapi.workspaceDir(stateDir, w);
+          try {
+            if (m === 'DELETE') { const removed = clearBackground(wd); state.rescan(); return json(res, 200, { removed }); }
+            if (m === 'PUT') { const f = setBackground(wd, await readBody(req, MAX_BYTES)); state.rescan(); return json(res, 200, { file: f }); }
+            if (m === 'POST') { setMode(wd, (await readJson(req))?.mode); state.rescan(); return json(res, 200, { ok: true }); }
+          } catch (e) { if (e instanceof BackgroundError) throw new HttpError(400, e.message); throw e; }
+        }
+      }
       if (p === '/api/panels' && m === 'GET') return json(res, 200, state.listPanels());
       if (p === '/api/panels' && m === 'POST') return json(res, 201, state.createPanel(vimRequest(await readJson(req), pickEditor(readEditorPref(), findBin))));
       if (m === 'POST' && (g = /^\/api\/panels\/([\w-]+)\/convert$/.exec(p))) return json(res, 200, state.convertPanel(g[1], (await readJson(req))?.to));
@@ -629,9 +687,12 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     }
 
     if (p === '/background/image' && (m === 'GET' || m === 'HEAD')) {
-      const b = findBackground(stateDir);
-      if (!b.name) throw new HttpError(404, 'no background set; run `hatch set background IMAGE`');
-      return serveImage(res, path.join(stateDir, b.name));
+      const wsName = url.searchParams.get('ws') || 'main';
+      const w = state.workspaces().find((x) => x.name === wsName); if (!w) throw new HttpError(404, `no workspace named ${wsName}`);
+      const wd = wsapi.workspaceDir(stateDir, w);
+      const b = findBackground(wd);
+      if (!b.name) throw new HttpError(404, 'no background set; run `hatch set background IMAGE` (add --ws NAME for another workspace)');
+      return serveImage(res, path.join(wd, b.name));
     }
 
     // ---- files ----

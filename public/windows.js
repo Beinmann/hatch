@@ -444,7 +444,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     },
     restore: (id) => setMinimized(id, false), minimize: (id) => setMinimized(id, true),
     close: requestClose, hasUnsavedChanges: () => [...wins.values()].some((w) => w.view.isDirty?.()),
-    focusDirection, focusedTransparency, setTransparency, moveFocused, resizeFocused, focusNumber, focusNext, toggleMaximize, togglePlacement, showNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current,
+    focusDirection, focusedTransparency, setTransparency, moveFocused, resizeFocused, focusNumber, focusNext, toggleMaximize, togglePlacement, showNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current, focusedPanel: () => focused()?.panel || null,
     // a window was just opened live (not from a snapshot): unfold the dock when it is docked
     revealDock(id) { const w = wins.get(id); if (w && w.panel.placement === 'dock' && !w.panel.minimized && w.panel.autoFocus !== false) { openDock(); paintChips(); paintDock(); } },
     refit,
