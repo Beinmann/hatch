@@ -90,11 +90,11 @@ export function parseCssColor(s, fallback = [0.07, 0.08, 0.1, 0.7]) {
  *  strength, `max` caps the summed brightness where lanes overlap. The shader (rain-shader.js) is built from this table. */
 export const STREAKS = {
   angleDeg: 15,
-  max: 0.55,
+  max: 0.7,
   families: [ // cell = lane spacing px, width = half-width px, len = px per streak period, speed = periods per second
-    { cell: 41, width: 1.5, len: 190, speed: 1.5, seed: 1, weight: 0.6 },
-    { cell: 67, width: 1.9, len: 260, speed: 1.1, seed: 2, weight: 0.7 },
-    { cell: 29, width: 1.1, len: 140, speed: 2.0, seed: 3, weight: 0.45 },
+    { cell: 41, width: 2.3, len: 190, speed: 1.5, seed: 1, weight: 0.7 },
+    { cell: 67, width: 3.4, len: 260, speed: 1.1, seed: 2, weight: 0.75 },
+    { cell: 29, width: 1.8, len: 140, speed: 2.0, seed: 3, weight: 0.6 },
   ],
 };
 

@@ -206,13 +206,13 @@ test('rain glass: new drops appear all the time (no long gaps), and drops shrink
   const g = createGlass({ W: 600, H: 400, rand: seeded(5) }); const d = g.drops.find((x) => x.r > 3 && !x.run);
   d.age = 3; const early = g.look(d).scale; d.age = d.life * 0.7; assert.ok(g.look(d).scale < early * 0.8 && g.look(d).alpha === 1, 'shrinks well before it fades');
 });
-test('rain streaks: thin, capped, and slanted from the upper right toward the lower left', async () => {
+test('rain streaks: thin but visible, capped, and slanted from the upper right toward the lower left', async () => {
   const { STREAKS, streakAxes } = await import('../public/fx/rain-physics.js'); const { FRAG } = await import('../public/fx/rain-shader.js');
   const { along, across } = streakAxes(), deg = Math.atan2(-along[0], along[1]) * 180 / Math.PI;
   assert.ok(along[0] < 0 && along[1] > 0, 'moves left and down (y points down)'); assert.ok(deg >= 10 && deg <= 20, `slight slant, ${deg.toFixed(1)} degrees from vertical`);
   assert.ok(Math.abs(along[0] * across[0] + along[1] * across[1]) < 1e-9 && Math.abs(Math.hypot(...along) - 1) < 1e-9, 'orthonormal axes');
-  assert.ok(STREAKS.families.every((k) => k.width > 0 && k.width <= 2.5 && k.weight <= 0.8 && k.cell > 4 * k.width), 'streaks are thin and lanes are far wider than the lit line');
-  assert.ok(STREAKS.max <= 0.6, 'overlapping streaks cannot add up to a bright fat line');
+  assert.ok(STREAKS.families.every((k) => k.width >= 1.5 && k.width <= 3.5 && k.weight <= 0.8 && k.cell > 4 * k.width), 'streaks are thin but visible (half-width 1.5 to 3.5 px) and lanes are far wider than the lit line');
+  assert.ok(STREAKS.max <= 0.75, 'overlapping streaks cannot add up to a bright fat line');
   assert.ok(FRAG.includes(along[0].toFixed(3)) && FRAG.includes('vec2 q =') && FRAG.includes(`min(`), 'the shader uses the table');
 });
 test('rain glass: a running drop wipes the small drops on its way and stops, becoming an ordinary drop again', async () => {

@@ -12,7 +12,7 @@ export const P = {
   FPS: 30,            // frame cap
   STATIC_EVERY: 0.5,  // seconds between redraws of the resting drops (they change slowly; the running drop is redrawn every frame)
   STYLE_EVERY: 1,     // seconds between looks at the page's background and tint (they can change while the effect runs)
-  RAIN: 0.06,         // strength of the faint background rain (streak shape: STREAKS in rain-physics.js)
+  RAIN: 0.075,         // strength of the faint background rain (streak shape: STREAKS in rain-physics.js)
 };
 let level = rainLevel(50);
 let cv = null, gl = null, ctx = null, raf = 0, last = 0, W = 1, H = 1, glass = null, animate = true, time = 0;
