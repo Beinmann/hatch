@@ -101,3 +101,8 @@ test('widget open git: one instance per project, titled, quoted dir, reused; col
     r = await cli(['widget', 'rm', name], repo, s); assert.equal(r.status, 0, r.stderr);
   } finally { await h.close(); }
 });
+
+test('git widget command asks git for only the 5 most recent commits', () => {
+  const w = JSON.parse(fs.readFileSync(new URL('../examples/widgets/git/widget.json', import.meta.url), 'utf8'));
+  assert.match(JSON.stringify(w), / log --format=\S+ -n 5 /);
+});
