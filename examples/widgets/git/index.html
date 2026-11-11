@@ -94,6 +94,11 @@
       h += `<h3 class="${f ? 'fold' : ''}" data-sec="commits"><span class="car">▾</span>Recent commits <span class="n">(${s.commits.length})</span></h3>`;
       if (!f) h += s.commits.map((c, i) => commitRow(c, i, b.ahead, now)).join('');
     } else h += '<h3 data-sec="none" style="cursor:default">Recent commits</h3><div class="empty">no commits yet</div>';
+    if (s.activity.length) {   // hidden when the reflog is empty or unavailable
+      const f = folded.has('activity');
+      h += `<h3 class="${f ? 'fold' : ''}" data-sec="activity"><span class="car">▾</span>Recent activity <span class="n">(${s.activity.length})</span></h3>`;
+      if (!f) h += s.activity.map((a) => `<div class="row c" title="${esc(`${a.hash} ${a.text}`)}"><span class="s">${esc(a.text)}</span><span class="t">${G.relTime(a.ts, now)}</span></div>`).join('');
+    }
     return h;
   }
 
