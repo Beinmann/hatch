@@ -1,1 +1,0 @@
-- maybe per system only one global .hatch dir or per user at least such that it would simplify a lot of things... since my goal is that in future if things go well and hatch turns out to be  really useful to spend most of my time in it (I am thinking of something like emacs even though I personally never really used emacs)
