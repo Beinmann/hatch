@@ -75,6 +75,64 @@ test('effects run their simulation and drawing against a stub canvas without thr
       mod.start(c, { animate: false }); assert.ok(c.width === 640 && c.height === 360, `${name} sizes its canvas`); mod.resize(); mod.stop();
       mod.start(c, { animate: true }); for (let t = 100; t < 1500; t += 40) queued(t); mod.resize(); mod.stop();
     }
-    assert.ok(calls.fillRect > 0, 'drew a base');
+    assert.ok(calls.clearRect > 0, 'clears the canvas each frame, so it stays transparent where nothing is drawn');
+  } finally { Object.assign(globalThis, { document: saved.document, requestAnimationFrame: saved.raf, cancelAnimationFrame: saved.caf }); if (!saved.document) delete globalThis.document; }
+});
+
+test('matrix draws no opaque base: it clears, and its fillRect is never used (trails fade as alpha)', async () => {
+  const calls = {};
+  const ctx2d = () => new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...a) => { calls[k] = (calls[k] || 0) + 1; return undefined; }), set: (t, k, v) => { t[k] = v; return true; } });
+  const c = { clientWidth: 300, clientHeight: 200, width: 0, height: 0, getContext: () => ctx2d() };
+  const mod = (await import('../public/fx/matrix.js')); globalThis.document = { hidden: false }; globalThis.cancelAnimationFrame = () => {};
+  try { mod.default.start(c, { animate: false }); mod.default.stop(); } finally { delete globalThis.document; delete globalThis.cancelAnimationFrame; }
+  assert.ok(calls.clearRect > 0); assert.equal(calls.fillRect, undefined); assert.ok(calls.fillText > 0);
+  const { trailAlpha } = mod;
+  assert.ok(trailAlpha(1, 0.4) > trailAlpha(0.3, 0.4) && trailAlpha(0.3, 0.4) > trailAlpha(0.05, 0.4), 'dimmer cells are more transparent');
+  assert.ok(trailAlpha(1, 100) <= 1 && trailAlpha(0, 0) >= 0);
+});
+
+test('rain physics: merging conserves area, drops grow, trails fade and narrow, speed eases, bursts alternate, absorption by contact', async () => {
+  const P = await import('../public/fx/rain-physics.js');
+  assert.ok(Math.abs(P.mergeRadius(3, 4) - 5) < 1e-9, 'r^2 adds up'); assert.ok(P.mergeRadius(2, 1) > 2);
+  assert.equal(P.growRadius(2, 10, 0.1), 3); assert.equal(P.growRadius(2, 10, -1), 2, 'never shrinks by growth'); assert.equal(P.growRadius(NaN, 1, 1), 1);
+  assert.ok(P.shedRadius(4, 100, 0.0035) < 4 && P.shedRadius(1, 1e6, 1) === 0);
+  const f0 = P.trailFade(0, 7), f1 = P.trailFade(3.5, 7), f2 = P.trailFade(7, 7);
+  assert.equal(f0.alpha, 1); assert.equal(f0.width, 1); assert.ok(f1.alpha < f0.alpha && f1.alpha > f2.alpha && f1.width < f0.width);
+  assert.equal(f2.dead, true); assert.equal(f2.alpha, 0); assert.equal(P.trailFade(-5, 7).alpha, 1); assert.equal(P.trailFade(1, 0).dead, true);
+  assert.ok(P.slideTarget(5) > P.slideTarget(2) && P.slideTarget(3, true) > P.slideTarget(3));
+  let v = 0; for (let i = 0; i < 60; i++) v = P.approachSpeed(v, 30, 1 / 30); assert.ok(v > 29 && v <= 30); assert.equal(P.approachSpeed(5, 0, 0), 5);
+  const spec = { go: [0.2, 0.2], stop: [0.5, 0.5] }; let b = { moving: true, t: 0.1 };
+  b = P.stepBurst(b, 0.05, Math.random, spec); assert.equal(b.moving, true);
+  b = P.stepBurst(b, 0.1, Math.random, spec); assert.deepEqual(b, { moving: false, t: 0.5 });
+  b = P.stepBurst(b, 0.6, Math.random, spec); assert.deepEqual(b, { moving: true, t: 0.2 });
+  assert.equal(P.touches({ x: 0, y: 0, r: 4 }, { x: 4, y: 0, r: 1 }), true); assert.equal(P.touches({ x: 0, y: 0, r: 4 }, { x: 6, y: 0, r: 1 }), false);
+});
+
+test('rain physics: counts and streaks are finite for any canvas size, including zero', async () => {
+  const P = await import('../public/fx/rain-physics.js');
+  for (const [w, h] of [[0, 0], [1, 1], [NaN, 5], [-3, 10], [1920, 1080], [1e6, 1e6]]) {
+    const nb = P.beadCount(w, h, 1400, 700), nd = P.dropCount(w, h, 55000, 3, 40);
+    assert.ok(Number.isInteger(nb) && nb >= 0 && nb <= 700, `beads ${w}x${h}`); assert.ok(Number.isInteger(nd) && nd >= 3 && nd <= 40, `drops ${w}x${h}`);
+    for (const s of P.streakSpecs(w, [3, 6], Math.random)) { assert.ok(Number.isFinite(s.x) && Number.isFinite(s.y) && s.r > 0 && s.fast); }
+  }
+  assert.ok(P.streakSpecs(500, [3, 6], Math.random).length >= 3);
+});
+
+test('rain runs against a stub canvas: zero-size canvas gives no NaN coordinates, a still frame clears and draws beads and trails with alpha only', async () => {
+  const bad = []; const calls = {};
+  const finite = (a) => a.every((v) => typeof v !== 'number' || Number.isFinite(v));
+  const ctx2d = () => new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...a) => { calls[k] = (calls[k] || 0) + 1; if (!finite(a)) bad.push([k, a]); return String(k).startsWith('create') ? { addColorStop() {} } : undefined; }), set: (t, k, v) => { t[k] = v; return true; } });
+  const mk = (w, h) => ({ clientWidth: w, clientHeight: h, width: 0, height: 0, getContext: () => ctx2d() });
+  const saved = { document: globalThis.document, raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame };
+  globalThis.document = { hidden: false, createElement: () => mk(1, 1) };
+  let queued = null; globalThis.requestAnimationFrame = (f) => { queued = f; return 1; }; globalThis.cancelAnimationFrame = () => {};
+  try {
+    const rain = (await import('../public/fx/rain.js')).default;
+    for (const [w, h] of [[0, 0], [1, 1], [800, 500]]) {
+      const c = mk(w, h); rain.start(c, { animate: false }); assert.ok(c.width >= 1 && c.height >= 1); rain.resize(); rain.stop();
+      rain.start(c, { animate: true }); for (let t = 100; t < 2000; t += 33) queued(t); rain.stop();
+    }
+    assert.deepEqual(bad, [], 'no NaN or Infinity reached the canvas');
+    assert.ok(calls.clearRect > 0 && calls.drawImage > 0 && calls.fill > 0); assert.ok(calls.fillRect <= calls.clearRect, 'the only fillRect is the faint mist gradient, once per frame');
   } finally { Object.assign(globalThis, { document: saved.document, requestAnimationFrame: saved.raf, cancelAnimationFrame: saved.caf }); if (!saved.document) delete globalThis.document; }
 });
