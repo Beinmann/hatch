@@ -184,6 +184,10 @@ try { const r = await listenFromPort(hatch, port, { explicit: explicitPort }); a
 catch (e) {
   fail(e.code === 'EOWNED' ? e.message : e.code === 'EADDRINUSE' ? (explicitPort ? `port ${port} is in use. Pick another with --port N (is hatch-server already running?)` : `ports ${port} to ${port + 49} are all in use. Pick one with --port N.`) : e.message);
 }
+// Installed before the "is running" line below: whoever waits for that line may signal at once, and a signal that arrives
+// before the handler exists kills the process without releasing server.lock.
+const stop = async () => { await hatch.close(); process.exit(0); };
+process.on('SIGINT', stop); process.on('SIGTERM', stop);
 const shown = host === '0.0.0.0' || host === '::' ? lanAddress() : host;
 console.log(`Hatch ${hatch.config.session ? '' : ''}is running (tmux session "${hatch.session}", state ${stateDir})`);
 console.log(`\n  http://${shown}:${actual}/?t=${hatch.token}\n`);
@@ -193,5 +197,3 @@ console.log(host === '0.0.0.0' || host === '::'
 if (hatch.viewOnly) console.log('VIEW-ONLY: this page mirrors the terminal and panels; it cannot type, run, read files or change anything.');
 if (o.root) console.log(`File access (browser, editor, downloads, uploads) is confined to ${path.resolve(o.root)}. Terminal, run and widget commands are NOT confined.`);
 console.log('Inside tmux, Claude can drive the page with `hatch` (see README). Ctrl+C stops the server; the tmux session keeps running.');
-const stop = async () => { await hatch.close(); process.exit(0); };
-process.on('SIGINT', stop); process.on('SIGTERM', stop);
