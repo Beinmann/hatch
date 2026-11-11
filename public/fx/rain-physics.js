@@ -13,8 +13,8 @@ export function touches(d, b, reach = 0.6) {
 }
 
 /** Radius of a new resting drop: many tiny ones, some medium, a few large (as on a real pane). rand() in [0,1). */
-export function sampleRadius(rand, { tiny = [0.7, 2.1], mid = [2.2, 5.5], big = [5.5, 11] } = {}) {
-  const u = rand(), pick = u < 0.66 ? tiny : u < 0.94 ? mid : big, v = rand();
+export function sampleRadius(rand, { tiny = [0.7, 2.1], mid = [2.2, 6], big = [6, 14] } = {}) {
+  const u = rand(), pick = u < 0.62 ? tiny : u < 0.92 ? mid : big, v = rand();
   return pick[0] + (pick[1] - pick[0]) * v * v; // skewed to the small end of each band
 }
 
@@ -24,7 +24,7 @@ export function sampleShape(rand, r) {
   const big = clamp(r / 6, 0, 1), sx = 0.88 + rand() * 0.3, round = rand() < 0.45;
   return {
     sx, sy: 1 / Math.sqrt(sx) * (0.9 + rand() * 0.1), tail: round ? 0 : rand() * (0.15 + 0.5 * big),
-    wob: [2, 3, 5].map((k) => ({ k, a: (rand() - 0.5) * (0.06 + 0.2 * big) * (k === 2 ? 1.5 : 1), p: rand() * Math.PI * 2 })),
+    wob: [2, 3, 5].map((k) => ({ k, a: (rand() - 0.5) * (0.05 + 0.13 * big) * (k === 2 ? 1.5 : k === 5 ? 0.6 : 1), p: rand() * Math.PI * 2 })),
   };
 }
 

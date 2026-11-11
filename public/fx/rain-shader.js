@@ -48,7 +48,7 @@ void main() {
   float back = pow(max(dot(N, normalize(vec3(0.4, 0.55, 0.7))), 0.0), 24.0); // light coming through to the lower inside
   float rim = smoothstep(0.5, 0.98, rho), up = clamp(0.5 - 0.5 * n.y / max(rho, 0.05), 0.0, 1.0); // up = 1 on the upper edge
   col *= 1.0 - rim * mix(0.2, 0.72, up);
-  col += vec3(0.85, 0.92, 1.0) * (back * 0.22 + rim * (1.0 - up) * 0.12 * h) * min(uAlpha, 1.5);
+  col += vec3(0.85, 0.92, 1.0) * (back * 0.4 + rim * (1.0 - up) * 0.2 * h + 0.03 * h) * min(uAlpha, 1.5);
   col += vec3(1.0) * glint * (0.35 + 0.65 * clamp(R / 4.0, 0.0, 1.0)) * min(uAlpha, 1.5);
   col = mix(vec3(dot(col, vec3(0.3, 0.59, 0.11))), col, 1.05) * (0.92 + 0.12 * h);
   float a = m.a * clamp(uAlpha, 0.0, 1.0);

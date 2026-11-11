@@ -144,7 +144,7 @@ test('rain physics: sizes are mixed, shapes are not all circles, drops stay long
   assert.ok(Math.abs(P.mergeRadius(3, 4) - 5) < 1e-9, 'r^2 adds up'); assert.ok(P.mergeRadius(2, 1) > 2);
   assert.equal(P.touches({ x: 0, y: 0, r: 4 }, { x: 4, y: 0, r: 1 }), true); assert.equal(P.touches({ x: 0, y: 0, r: 4 }, { x: 8, y: 0, r: 1 }), false);
   const rs = Array.from({ length: 4000 }, () => P.sampleRadius(rand));
-  assert.ok(rs.every((r) => r >= 0.7 && r <= 11), 'radius range'); assert.ok(rs.filter((r) => r < 2.2).length > 0.55 * rs.length, 'many tiny'); assert.ok(rs.filter((r) => r > 5.5).length > 0.02 * rs.length, 'some large');
+  assert.ok(rs.every((r) => r >= 0.7 && r <= 14), 'radius range'); assert.ok(rs.filter((r) => r < 2.2).length > 0.5 * rs.length, 'many tiny'); assert.ok(rs.filter((r) => r > 6).length > 0.02 * rs.length, 'some large');
   const shapes = Array.from({ length: 500 }, () => P.sampleShape(rand, 6));
   assert.ok(shapes.some((s) => s.tail > 0.2) && shapes.some((s) => s.tail === 0), 'teardrops and round ones'); assert.ok(shapes.some((s) => Math.abs(s.sx - 1) > 0.1), 'flattened');
   assert.ok(shapes.every((s) => s.wob.length === 3 && Number.isFinite(s.sx) && Number.isFinite(s.sy)));
@@ -161,7 +161,7 @@ test('rain physics: sizes are mixed, shapes are not all circles, drops stay long
 
 test('rain physics: counts are finite for any canvas size, colours and the background mapping parse', async () => {
   const P = await import('../public/fx/rain-physics.js');
-  for (const [w, h] of [[0, 0], [1, 1], [NaN, 5], [-3, 10], [1920, 1080], [1e6, 1e6]]) { const n = P.dropTarget(w, h, 450, 3200); assert.ok(Number.isInteger(n) && n >= 0 && n <= 3200, `${w}x${h}`); }
+  for (const [w, h] of [[0, 0], [1, 1], [NaN, 5], [-3, 10], [1920, 1080], [1e6, 1e6]]) { const n = P.dropTarget(w, h, 520, 3200); assert.ok(Number.isInteger(n) && n >= 0 && n <= 3200, `${w}x${h}`); }
   assert.deepEqual(P.rainLevel(50), { alpha: 1, count: 1 });
   const id = P.bgTransform('fill', 1000, 500, 1000, 500); assert.ok(Math.abs(id.sx - 0.001) < 1e-9 && id.ox === 0 && id.oy === 0, 'same aspect: image = viewport');
   const cover = P.bgTransform('fill', 1000, 1000, 800, 400); assert.ok(Math.abs(cover.sx - 1 / 800) < 1e-9 && Math.abs(cover.oy - (0 - (400 - 800) / 2) / 800) < 1e-9, 'cover scales to the wider side and centres');

@@ -72,7 +72,7 @@ export function rasterLive(buf, base, W, H, glass) {
 function stampTrail(buf, W, H, t, glass) {
   for (let i = 1; i < t.pts.length; i++) {
     const a = t.pts[i - 1], b = t.pts[i], fa = glass.trailFade(a), fb = glass.trailFade(b);
-    stampSegment(buf, W, H, a, b, a.w * fa.width, b.w * fb.width, ((fa.alpha + fb.alpha) / 2) * 0.55);
+    stampSegment(buf, W, H, a, b, a.w * fa.width, b.w * fb.width, ((fa.alpha + fb.alpha) / 2) * 0.85);
   }
 }
 

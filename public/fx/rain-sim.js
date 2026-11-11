@@ -4,16 +4,16 @@
 import { clamp, mergeRadius, touches, sampleRadius, sampleShape, dropLook, wavyOffset, runSpeed, trailFade, dropTarget } from './rain-physics.js';
 
 export const P = {
-  DENSITY: 450,          // px^2 of glass per resting drop (before the intensity setting scales the count)
+  DENSITY: 520,          // px^2 of glass per resting drop (before the intensity setting scales the count)
   MAX_DROPS: 3200,       // hard cap on resting drops
   LIFE: [70, 200],       // seconds a resting drop stays before it has faded out completely (it holds full strength for the first 60%)
   RUN_EVERY: [22, 65],   // seconds between runs of a heavy drop (rare on purpose)
   RUN_LEN: [90, 260],    // px a heavy drop runs before it stops again
-  RUN_R: [5.5, 10],      // radius a drop swells to before it lets go
+  RUN_R: [6.5, 11],      // radius a drop swells to before it lets go
   SWELL: [1.6, 3.2],     // seconds it takes to swell (it also takes in water from the drops around it)
   SHED: 0.004,           // radius lost per px run (water left behind as the trail)
   TRAIL_LIFE: 45,        // seconds until a wet trail has dried
-  MAX_R: 13,             // no drop gets bigger than this
+  MAX_R: 16,             // no drop gets bigger than this
 };
 
 export function createGlass({ W = 1, H = 1, rand = Math.random, count = 1 } = {}) {
@@ -39,7 +39,7 @@ export function createGlass({ W = 1, H = 1, rand = Math.random, count = 1 } = {}
   function startRun() {
     for (let k = 0; k < 40; k++) { // a medium or large resting drop with room below
       const d = g.drops[Math.floor(rand() * g.drops.length)];
-      if (!d || d.run || d.r < 3 || d.r > 9 || d.y > g.H - 80 || d.age > d.life * 0.6) continue;
+      if (!d || d.run || d.r < 3 || d.r > 10 || d.y > g.H - 80 || d.age > d.life * 0.6) continue;
       const len = Math.min(between(P.RUN_LEN), g.H - d.y - 10);
       d.run = { phase: 'swell', t: 0, swell: between(P.SWELL), to: Math.max(d.r * 1.2, between(P.RUN_R)), len, dist: 0, x0: d.x, y0: d.y, seed: rand(), trail: null, since: 0 };
       d.life = Infinity; g.runner = d; return;
