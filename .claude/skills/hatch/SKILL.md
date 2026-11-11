@@ -4,6 +4,7 @@ description: Show things to the user in their browser on a box running Hatch (pr
 ---
 
 This box runs Hatch. Drive the user's browser page with the `hatch` CLI. If it fails with "cannot reach Hatch", the server is not running: tell the user to run `hatch-server serve`.
+When you test Hatch itself, use your own state dir and port (`--state DIR`, `--port N`), never the `HATCH_STATE` inherited from your terminal, and unset `HATCH_STATE` and `HATCH_URL` for test runs.
 
 - Progress: `hatch progress plan "Inspect" "Build" "Verify"` creates the step journey. `hatch progress step "write tests" running|done|blocked --detail "Current finding"` updates a step; follow the granular workflow below. A Mermaid diagram via `hatch progress set diagram.mmd` is optional.
 - Show: `hatch image PATH`, `hatch note "markdown"`, `hatch files DIR`, `hatch edit FILE`, `hatch open URL` (http://localhost:PORT is proxied to this box).

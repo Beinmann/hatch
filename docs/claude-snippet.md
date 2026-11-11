@@ -14,6 +14,7 @@ This box runs Hatch. You can show things to the user in their browser with the `
 - `hatch every 5m "npm test"` re-runs a check in the background and tells the user when it goes red or green.
 - `hatch watch idle 30` tells the user when the terminal goes quiet; `hatch cmd add NAME TEXT` saves a command for their palette.
 If `hatch` fails with "cannot reach Hatch", the server is not running: tell the user to run `hatch-server serve`.
+When you test Hatch itself, use your own state dir and port (`--state DIR`, `--port N`), never the `HATCH_STATE` inherited from your terminal, and unset `HATCH_STATE` and `HATCH_URL` for test runs.
 
 
 ## Granular progress workflow
