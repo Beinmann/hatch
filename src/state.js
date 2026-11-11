@@ -142,6 +142,7 @@ export function checkPanel(p, id) {
     props, created: typeof p.created === 'string' ? p.created : new Date().toISOString(),
   };
   for (const k of ['x', 'y', 'w', 'h']) if (num(p[k]) !== undefined) out[k] = num(p[k]);
+  if (Number.isInteger(p.dockOrder) && p.dockOrder >= 0) out.dockOrder = p.dockOrder; // position in the dock column; absent = after the numbered ones
   if (Number.isFinite(p.opacity)) { const o = Math.max(20, Math.min(100, Math.round(p.opacity))); out.opacity = o; } // percent for this window alone; 100 = explicitly opaque (ignores the global transparency); absent = follows the global setting
   if (p.autoFocus === false) out.autoFocus = false;
   if (p.maximized === true) out.maximized = true;
@@ -375,7 +376,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     if (!cur) throw Object.assign(new Error(`no panel ${id}`), { status: 404 });
     if (patch?.ifMarkdown !== undefined && (cur.type !== 'note' || cur.props.markdown !== patch.ifMarkdown)) throw Object.assign(new Error('note changed since editing began; your draft was not saved'), { status: 409 });
     const merged = { ...cur };
-    for (const k of ['title', 'placement', 'x', 'y', 'w', 'h', 'minimized', 'ws', 'sticky', 'autoFocus', 'maximized', 'activation', 'opacity']) if (isObj(patch) && patch[k] !== undefined) merged[k] = patch[k];
+    for (const k of ['title', 'placement', 'x', 'y', 'w', 'h', 'minimized', 'ws', 'sticky', 'autoFocus', 'maximized', 'activation', 'opacity', 'dockOrder']) if (isObj(patch) && patch[k] !== undefined) merged[k] = patch[k];
     if (isObj(patch?.props)) merged.props = { ...cur.props, ...patch.props };
     const c = checkPanel(merged, id);
     if (c.error) throw Object.assign(new Error(c.error), { status: 400 });

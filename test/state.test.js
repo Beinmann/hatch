@@ -192,3 +192,12 @@ test('restore by a 3+ char id prefix: unique restores, ambiguous and too short d
   assert.equal(st.listTrash().length, 2);
   st.close();
 });
+
+test('dockOrder is a non-negative integer, patchable and persisted', () => {
+  assert.equal(checkPanel({ type: 'note', props: { markdown: 'x' }, dockOrder: 2 }, 'p1').panel.dockOrder, 2);
+  assert.equal(checkPanel({ type: 'note', props: { markdown: 'x' }, dockOrder: -1 }, 'p1').panel.dockOrder, undefined);
+  assert.equal(checkPanel({ type: 'note', props: { markdown: 'x' }, dockOrder: 1.5 }, 'p1').panel.dockOrder, undefined);
+  const dir = tmp(); const st = createState(dir, { poll: true }); st.start(); const p = st.createPanel({ type: 'note', props: { markdown: 'x' }, placement: 'dock' });
+  assert.equal(st.patchPanel(p.id, { dockOrder: 3 }).dockOrder, 3);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(layout(dir).panels, `${p.id}.json`), 'utf8')).dockOrder, 3); st.close();
+});
