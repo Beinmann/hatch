@@ -20,6 +20,12 @@ background shows through; `set transparency 0` gives the opaque look. It is kept
 `{"percent":30}`; edit it by hand if you like. An invalid value is refused and the saved one stays; a broken file shows a
 warning and uses 30.
 
+**Window transparency.** Windows (widgets included) that were never set one by one with leader `o` follow the page transparency above, so with the
+default 30 every new window opens see-through. `hatch set window-transparency N` (0 to 100; 0 = not transparent; above 80 is capped at 80 so a window
+cannot vanish) gives those windows their own default instead, and `hatch set window-transparency default` goes back to following the page. The
+same is in the command palette ("Windows: set default transparency..."). It is the optional `"windows"` field of `transparency.json`
+(`{"percent":30,"windows":0}`), applies to open windows at once, and a window set with leader `o` keeps its own value.
+
 **Background effects.** `hatch fx matrix` (dim film-style digital rain), `hatch fx rain` (water drops of mixed sizes on a pane of glass that bend the page background, shrinking as they evaporate while new ones keep appearing at a steady pace, rarely one runs down, with a faint thin background rain slanting from upper right to lower left; WebGL, with a plain 2D fallback) or `hatch fx goo` (thin black strands of goo hanging from the letters on screen, each ending in a heavier bead; some let go and fall) draws an animated
 canvas behind the terminal text; `hatch fx off` removes it and `hatch fx` shows what is active. The terminal's own background is always
 transparent, and the canvas has its own opaque base, so the effect shows at any transparency setting (including 0). It takes no mouse or

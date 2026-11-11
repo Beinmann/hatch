@@ -132,3 +132,27 @@ test('transparency: set, reset, invalid input, bad saved file, reaching the snap
     await waitFor(async () => (await snap(h)).warnings.some((w) => w.file === 'transparency'), 5000);
   } finally { await h.close(); }
 });
+
+test('window transparency: default for windows without their own setting, keeps and is kept by the page value', async () => {
+  const h = await startHatch();
+  const file = path.join(h.stateDir, 'transparency.json');
+  try {
+    assert.equal((await snap(h)).windowTransparency, null); // unset: windows follow the page
+    assert.equal((await ui(['set', 'window-transparency', '0'], h.stateDir)).status, 0);
+    await waitFor(async () => (await snap(h)).windowTransparency === 0, 5000);
+    assert.equal((await ui(['set', 'transparency', '50'], h.stateDir)).status, 0); // page value change keeps the window default
+    await waitFor(async () => (await snap(h)).transparency === 50, 5000);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { percent: 50, windows: 0 });
+    for (const bad of ['101', '-1', 'abc', '']) {
+      const r = await ui(['set', 'window-transparency', bad], h.stateDir);
+      assert.notEqual(r.status, 0, bad); assert.match(r.stderr, /unchanged|usage/);
+    }
+    assert.equal((await ui(['set', 'window-transparency', 'default'], h.stateDir)).status, 0);
+    await waitFor(async () => (await snap(h)).windowTransparency === null, 5000);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { percent: 50 });
+    assert.equal((await h.call('PUT', '/api/transparency/windows', { percent: 25 })).status, 200);
+    await waitFor(async () => (await snap(h)).windowTransparency === 25, 5000);
+    fs.writeFileSync(file, '{"percent":10,"windows":250}');
+    await waitFor(async () => { const s = await snap(h); return s.transparency === 10 && s.windowTransparency === null && s.warnings.some((w) => w.file === 'transparency'); }, 5000);
+  } finally { await h.close(); }
+});

@@ -167,6 +167,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   let wsList = []; let wsSig = ''; // [{ name, id }] from workspaces.json plus names seen on windows
   let fx = { effect: null, intensity: 50 }; // the background effect (null = none) and its intensity
   let transparency = DEFAULT_TRANSPARENCY;  // percent, 0 = opaque
+  let windowTransparency = null; // percent for windows never set one by one; null = they follow `transparency`
   let watcher = null; let pollTimer = null; let debounce = null; let closed = false;
 
   const warn = (file, message) => {
@@ -299,8 +300,8 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   function scanTransparency() {
     const t = readTransparency(dir);
     warn('transparency', t.problem || null);
-    if (t.percent === transparency) return;
-    transparency = t.percent; emit('transparency', { transparency });
+    if (t.percent === transparency && t.windows === windowTransparency) return;
+    transparency = t.percent; windowTransparency = t.windows; emit('transparency', { transparency, windowTransparency });
   }
 
   function scanFx() {
@@ -607,7 +608,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   return {
     plan,
     layout: l, start, close, rescan,
-    snapshot: () => ({ background, backgrounds: Object.fromEntries(backgrounds), workspaces: wsList, transparency, fx, panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
+    snapshot: () => ({ background, backgrounds: Object.fromEntries(backgrounds), workspaces: wsList, transparency, windowTransparency, fx, panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
     workspaces: () => wsList, backgroundOf: (name) => backgrounds.get(name) || null,
     listPanels: () => [...panels.values()], getPanel: (id) => panels.get(id),
     createPanel, patchPanel, convertPanel, deletePanel, listTrash, restoreTrash, emptyTrash,
