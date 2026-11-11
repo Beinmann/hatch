@@ -155,7 +155,13 @@ ctx.shortcut = (m) => {
   if (fold || leader.armed || chordMatches(leaderChord, key)) window.dispatchEvent(new KeyboardEvent('keydown', { ...key, cancelable: true }));
   return leader.armed;
 };
-$('dockbtn').addEventListener('click', () => { dockWanted = !dockWanted; store.set('dock-visible', dockWanted); wm.refresh(); });
+// Show or hide the dock column. Independent of Zen mode, which hides it with CSS only: dockWanted is untouched there, so the dock
+// comes back as it was (open or closed) when Zen ends.
+function toggleDock() {
+  dockWanted = !dockWanted; store.set('dock-visible', dockWanted); wm.refresh();
+  if (document.body.classList.contains('zen')) toast(`Dock ${dockWanted ? 'will show' : 'stays hidden'} when Zen mode ends`, 'info', 1800);
+}
+$('dockbtn').addEventListener('click', toggleDock);
 
 function paintWarnings() {
   const list = [...warnings];
@@ -375,7 +381,7 @@ function switchWs(n) { wm.setWorkspace(n); store.set('ws', n); paintWorkspaces()
 const origUpsert = wm.upsert; wm.upsert = (p) => { origUpsert(p); paintWorkspaces(); };
 
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, f maximize, a tile, p palette'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -395,7 +401,7 @@ function showLog() {
 }
 
 // ---- Zen mode (hide the header, hint and dock; VS Code zen idea) and workspace chords ----
-function toggleZen() { document.body.classList.toggle('zen'); term.fit(); term.focus(); if (document.body.classList.contains('zen')) toast('Zen mode: Ctrl+Shift+Z leaves it', 'info', 2500); }
+function toggleZen() { document.body.classList.toggle('zen'); term.fit(); wm.refit(); term.focus(); if (document.body.classList.contains('zen')) toast('Zen mode: Ctrl+Shift+Z leaves it', 'info', 2500); }
 addEventListener('keydown', (e) => {
   // Ctrl+P (also Ctrl+Shift+P) opens the palette from anywhere, the terminal included. Inside the palette Ctrl+P moves up.
   if (isPaletteKey(e) && !e.isComposing && !e.target.closest?.('#palette')) { e.preventDefault(); e.stopPropagation(); if (!isViewOnly()) palette.open(); return; }
@@ -417,7 +423,7 @@ function leaderDisarm() {
 function leaderArm() {
   leader.armed = true; leader.dock = null; clearTimeout(leader.timer);
   const name = store.get('leader', DEFAULT_LEADER);
-  leaderHint.textContent = `${name} ...  h j k l focus · 1-9 window · Tab next · t/Return terminal · q close · m minimize · d dock/release window · u dock · Shift+d show desktop · Shift+hjkl move · Ctrl+hjkl resize · o transparency · f maximize · a tile · p palette · Esc cancel`;
+  leaderHint.textContent = `${name} ...  h j k l focus · 1-9 window · Tab next · t/Return terminal · q close · m minimize · d dock/release window · u dock · s show/hide dock · Shift+d show desktop · Shift+hjkl move · Ctrl+hjkl resize · o transparency · f maximize · a tile · p palette · Esc cancel`;
   leaderHint.hidden = false; wm.showNumbers(true);
 }
 function leaderDock() {
@@ -450,6 +456,7 @@ function leaderKey(e) {
     case 'minimize': if (!ro) wm.dismiss(true); break;
     case 'desktop': if (!ro && wm.showDesktop() === 'none') toast('No windows to minimize', 'info', 1500); break;
     case 'dock': if (ro) break; return leaderDock();
+    case 'toggledock': toggleDock(); break;
     case 'place': if (!ro) toastPlace(wm.togglePlacement()); break;
     case 'move': if (!ro) wm.moveFocused(a.dir); break;
     case 'resize': if (!ro) wm.resizeFocused(a.dir); break;
@@ -579,7 +586,7 @@ const palette = createPalette({
     for (const u of ['/api/files', '/api/tasks', '/api/ports', '/api/runs', '/api/bookmarks', '/api/examples', '/api/commands']) get(u).catch(() => {});
     get('/api/files').then((r) => { fileCache = r; palette.refresh(); }).catch(() => { fileCache = null; });
     const add = (label, hint, run) => out.push({ label, hint, run });
-    add('Toggle dock', '', () => $('dockbtn').click());
+    add('Toggle dock', 'leader s', toggleDock);
     add('Reconnect terminal', '', () => term.connect());
     add('Larger terminal font', '', () => term.setFontSize(+1));
     add('Smaller terminal font', '', () => term.setFontSize(-1));

@@ -25,7 +25,7 @@ test('leaderAction maps every key of the table', () => {
   assert.deepEqual(k('KeyK', { shiftKey: true }), { action: 'move', dir: 'k', repeat: true });
   assert.deepEqual(k('ArrowLeft', { ctrlKey: true }), { action: 'resize', dir: 'h', repeat: true });
   assert.deepEqual(k('Digit3'), { action: 'number', n: 3, repeat: false });
-  for (const [code, action] of [['KeyT', 'terminal'], ['KeyQ', 'close'], ['KeyM', 'minimize'], ['KeyD', 'place'], ['KeyU', 'dock'], ['KeyF', 'maximize'], ['KeyA', 'tile'], ['KeyP', 'palette'], ['Tab', 'next']]) assert.equal(k(code).action, action);
+  for (const [code, action] of [['KeyT', 'terminal'], ['KeyQ', 'close'], ['KeyM', 'minimize'], ['KeyD', 'place'], ['KeyU', 'dock'], ['KeyS', 'toggledock'], ['KeyF', 'maximize'], ['KeyA', 'tile'], ['KeyP', 'palette'], ['Tab', 'next']]) assert.equal(k(code).action, action);
   assert.equal(k('KeyT').repeat, false, 'action keys are one-shot');
   assert.equal(k('Control', { key: 'Control', ctrlKey: true }).action, 'ignore', 'pressing Ctrl before h must not cancel');
   assert.equal(k('KeyZ'), null, 'unbound keys cancel');
@@ -68,4 +68,10 @@ test('isPaletteKey accepts Ctrl+P and Ctrl+Shift+P only', () => {
   assert.ok(!isPaletteKey({ code: 'KeyP', ctrlKey: true, altKey: true }));
   assert.ok(!isPaletteKey({ code: 'KeyP', metaKey: true }));
   assert.ok(!isPaletteKey({ code: 'KeyO', ctrlKey: true }));
+});
+
+test('leader s toggles the dock column; Shift+s and Ctrl+s stay unbound', () => {
+  assert.deepEqual(leaderAction({ code: 'KeyS', key: 's' }), { action: 'toggledock', repeat: false });
+  assert.equal(leaderAction({ code: 'KeyS', key: 'S', shiftKey: true }), null);
+  assert.equal(leaderAction({ code: 'KeyS', key: 's', ctrlKey: true }), null);
 });
