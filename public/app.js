@@ -4,6 +4,7 @@ import { initTerminal } from './terminal.js';
 import { createWindows } from './windows.js';
 import image from './panels/image.js';
 import iframe from './panels/iframe.js';
+import page from './panels/page.js';
 import note from './panels/note.js';
 import { createFx } from './fx.js';
 import progress, { progressSummary } from './panels/progress.js';
@@ -143,7 +144,7 @@ let dockWanted = store.get('dock-visible', false);
 const wm = createWindows({
   floats: $('floats'), dock: dockEl, split: splitEl, chips: $('chips'), el,
   patch: ctx.patch, close: (id) => api('DELETE', `/api/panels/${id}`).catch((e) => toast(e.message, 'bad')),
-  kinds: { image, iframe, note, progress, widget, files, editor, output, terminal: terminalPanel, git: gitPanel, trash: trashPanel }, ctx,
+  kinds: { image, iframe, page, note, progress, widget, files, editor, output, terminal: terminalPanel, git: gitPanel, trash: trashPanel }, ctx,
   dockOpen: () => dockWanted, openDock: () => { if (!dockWanted) { dockWanted = true; store.set('dock-visible', true); } },
   onDockChange: (any) => { $('dockbtn').hidden = !any; dockEl.hidden = splitEl.hidden = !(any && dockWanted); requestAnimationFrame(() => wm.refit()); }, // the floating area changed width: refit now, not only when the resize observer fires
 });
@@ -547,7 +548,7 @@ function setWorkspaceBackground() {
 }
 
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a docked window\'s title bar', 'Reorder the dock (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+` (backtick)', 'Focus the terminal from anywhere (windows, popups, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a docked window\'s title bar', 'Reorder the dock (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+Shift+Space', 'Focus the terminal from anywhere (windows, popups, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -568,7 +569,7 @@ function showLog() {
 
 // ---- Zen mode (hide the header, hint and dock; VS Code zen idea) and workspace chords ----
 function toggleZen() { document.body.classList.toggle('zen'); term.fit(); wm.refit(); term.focus(); if (document.body.classList.contains('zen')) toast('Zen mode: Ctrl+Shift+Z leaves it', 'info', 2500); }
-// Ctrl+` focuses the terminal from anywhere (closing the palette first). Ctrl+B with a window focused (not a text field)
+// Ctrl+Shift+Space focuses the terminal from anywhere (closing the palette first). Ctrl+B with a window focused (not a text field)
 // focuses the terminal and sends the tmux prefix; with the terminal focused it reaches tmux as before. Both work from widget frames via the SDK.
 addEventListener('keydown', (e) => {
   if (e.isComposing || leader.armed) return;

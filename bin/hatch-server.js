@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // hatch-server: serve | clear | update-widgets | start | stop | restart | status | url | doctor | service | agent (the page-driving commands are `hatch`)
-import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { createHatch } from '../src/server.js';
 import { DEFAULT_PORT, listenFromPort } from '../src/free-port.js';
 import { doctor, printChecks } from '../src/doctor.js';
-import { findStateDir, chooseStateDir, isValidStateDir, readConfig } from '../src/find.js';
+import { findStateDir, chooseStateDir, isValidStateDir, readConfig, lanAddress } from '../src/find.js';
 import { shortPath } from '../src/instance.js';
 
 const HELP = `hatch-server: run and administer the Hatch server. (To drive the page from the terminal use \`hatch\`.)
@@ -68,11 +67,6 @@ function localHatchHint({ dir, explicit }) {
   const local = path.resolve('.hatch');
   if (explicit || local === dir || !fs.existsSync(local)) return;
   console.error(`hatch-server: ignoring ${shortPath(local)} (instances live in ${shortPath(dir)} now); \`hatch migrate\` imports it as a workspace.`);
-}
-
-function lanAddress() {
-  for (const list of Object.values(os.networkInterfaces())) for (const i of list || []) if (i.family === 'IPv4' && !i.internal) return i.address;
-  return '127.0.0.1';
 }
 
 // `agent` lives in `hatch` (it needs no server); forward without reparsing its flags. Global options can precede the command.

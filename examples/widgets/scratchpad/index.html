@@ -1,0 +1,182 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { font: 12px/1.35 var(--mono, ui-monospace, monospace); color: var(--fg, #ddd); background: var(--bg, #1b1b1b); user-select: none; }
+  #bar { position: absolute; top: 0; left: 0; right: 0; height: 26px; display: flex; align-items: center; gap: 8px; padding: 0 8px;
+    border-bottom: 1px solid color-mix(in srgb, var(--muted, #888) 40%, transparent); box-sizing: border-box; z-index: 5; background: var(--bg, #1b1b1b); }
+  #bar .hint { color: var(--muted, #888); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  button { font: inherit; color: inherit; background: transparent; cursor: pointer; padding: 1px 8px; border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--muted, #888) 60%, transparent); }
+  button:hover { border-color: var(--accent, #6af); }
+  #stage { position: absolute; top: 26px; left: 0; right: 0; bottom: 0; overflow: hidden; cursor: grab; touch-action: none;
+    background-image: radial-gradient(color-mix(in srgb, var(--muted, #888) 35%, transparent) 1px, transparent 1px); }
+  #stage.panning { cursor: grabbing; }
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #lines { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+  #lines .hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; fill: none; }
+  #lines .ln { stroke: var(--muted, #888); stroke-width: 2; fill: none; pointer-events: none; }
+  #lines .sel .ln { stroke: var(--accent, #6af); stroke-width: 3; }
+  #lines .tmp { stroke: var(--accent, #6af); stroke-width: 2; stroke-dasharray: 5 4; fill: none; }
+  .card { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; border-radius: 6px; cursor: default;
+    background: color-mix(in srgb, var(--fg, #ddd) 8%, var(--bg, #1b1b1b)); border: 1px solid color-mix(in srgb, var(--muted, #888) 60%, transparent); }
+  .card.sel { border-color: var(--accent, #6af); box-shadow: 0 0 0 1px var(--accent, #6af); }
+  .card.target { border-color: var(--accent, #6af); border-style: dashed; }
+  .card .top { height: 14px; flex: none; cursor: move; border-radius: 5px 5px 0 0; background: color-mix(in srgb, var(--muted, #888) 25%, transparent); position: relative; }
+  .card .x { position: absolute; right: 2px; top: -1px; height: 16px; border: 0; padding: 0 4px; line-height: 14px; opacity: .6; }
+  .card .x:hover { opacity: 1; color: var(--accent, #6af); }
+  .card textarea { flex: 1; min-height: 0; resize: none; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; padding: 4px 6px; user-select: text; cursor: text; }
+  .card .out { position: absolute; right: -7px; top: 50%; margin-top: -7px; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%;
+    background: var(--bg, #1b1b1b); border: 2px solid var(--accent, #6af); cursor: crosshair; opacity: 0; }
+  .card:hover .out, .card.sel .out { opacity: 1; }
+  .card .rs { position: absolute; right: 0; bottom: 0; width: 12px; height: 12px; cursor: nwse-resize; opacity: .5;
+    background: linear-gradient(135deg, transparent 55%, var(--muted, #888) 55%, var(--muted, #888) 65%, transparent 65%, transparent 80%, var(--muted, #888) 80%); }
+</style>
+</head>
+<body>
+<div id="bar"><span class="hint">PROTOTYPE. Double-click: new card. Drag the card top: move. Drag the right dot to another card: arrow. Click + Delete: remove. Wheel: zoom.</span>
+  <span id="status" class="hint" style="flex:none"></span><button id="add">+ card</button><button id="reset">reset view</button></div>
+<div id="stage"><div id="world"><svg id="lines"><defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg></div></div>
+<script src="/sdk.js"></script>
+<script src="model.js"></script>
+<script>
+  // Visual scratchpad, PROTOTYPE. The board (cards, arrows, pan/zoom) lives in the widget's data/board.json. It is read with the
+  // "load" source and written in chunks through the "save" source (hatch.call arguments are short). model.js has the pure logic.
+  var M = window.ScratchModel, board = M.empty(), sel = null; // sel: {kind:'card'|'arrow', id}
+  var stage = document.getElementById('stage'), world = document.getElementById('world'), lines = document.getElementById('lines'),
+      statusEl = document.getElementById('status'), els = new Map(), loaded = false, saveTimer = null, saving = Promise.resolve(), dirty = false;
+  stage.style.pointerEvents = 'none'; // edits wait for the file to be read, or the late answer would replace them
+  var SVGNS = 'http://www.w3.org/2000/svg';
+
+  function mk(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+  function setStatus(t) { statusEl.textContent = t; }
+
+  // ---- saving: debounce, then send the chunks one after the other (a later save waits for the running one)
+  function changed() { dirty = true; setStatus('unsaved'); clearTimeout(saveTimer); saveTimer = setTimeout(save, 500); }
+  function save() {
+    if (!loaded) return; // never overwrite the file with an empty board before it was read
+    dirty = false; var parts = M.chunks(board);
+    saving = saving.then(function () {
+      var p = hatch.call('save', 'B ' + parts[0]);
+      parts.slice(1).forEach(function (c) { p = p.then(function () { return hatch.call('save', 'A ' + c); }); });
+      return p.then(function () { return hatch.call('save', 'C'); });
+    }).then(function (r) { if (r && r.error) throw new Error(r.error); setStatus(dirty ? 'unsaved' : 'saved'); })
+      .catch(function (e) { setStatus('save failed: ' + e.message); hatch.log('save failed: ' + e.message); });
+  }
+
+  // ---- drawing
+  function applyView() { var v = board.view; world.style.transform = 'translate(' + v.x + 'px,' + v.y + 'px) scale(' + v.zoom + ')';
+    stage.style.backgroundSize = (24 * v.zoom) + 'px ' + (24 * v.zoom) + 'px'; stage.style.backgroundPosition = v.x + 'px ' + v.y + 'px'; }
+  function place(el, c) { el.style.left = c.x + 'px'; el.style.top = c.y + 'px'; el.style.width = c.w + 'px'; el.style.height = c.h + 'px'; }
+  function cardEl(c) {
+    var el = mk('div', 'card'); el.dataset.id = c.id;
+    var top = mk('div', 'top'), x = mk('button', 'x', '×'), ta = mk('textarea'), out = mk('div', 'out'), rs = mk('div', 'rs');
+    x.title = 'delete card'; ta.value = c.text; ta.placeholder = 'text'; ta.spellcheck = false;
+    x.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    x.addEventListener('click', function () { board = M.removeCard(board, c.id); if (sel && sel.id === c.id) sel = null; render(); changed(); });
+    ta.addEventListener('input', function () { board = M.setText(board, c.id, ta.value); changed(); });
+    ta.addEventListener('focus', function () { select('card', c.id); });
+    ta.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    ta.addEventListener('dblclick', function (e) { e.stopPropagation(); });
+    top.addEventListener('pointerdown', function (e) { dragCard(e, c.id); });
+    out.addEventListener('pointerdown', function (e) { dragArrow(e, c.id); });
+    rs.addEventListener('pointerdown', function (e) { resizeCard(e, c.id); });
+    top.appendChild(x); el.append(top, ta, out, rs); return el;
+  }
+  function render() {
+    var live = new Set(board.cards.map(function (c) { return c.id; }));
+    els.forEach(function (el, id) { if (!live.has(id)) { el.remove(); els.delete(id); } });
+    board.cards.forEach(function (c, i) {
+      var el = els.get(c.id); if (!el) { el = cardEl(c); els.set(c.id, el); world.appendChild(el); }
+      place(el, c); el.style.zIndex = i + 1; el.classList.toggle('sel', !!sel && sel.kind === 'card' && sel.id === c.id);
+      var ta = el.querySelector('textarea'); if (ta.value !== c.text && document.activeElement !== ta) ta.value = c.text;
+    });
+    drawLines(); applyView();
+  }
+  function line(x1, y1, x2, y2, cls) { var l = document.createElementNS(SVGNS, 'line'); l.setAttribute('class', cls);
+    l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); return l; }
+  function drawLines(tmp) {
+    Array.prototype.slice.call(lines.querySelectorAll('g,.tmp')).forEach(function (n) { n.remove(); });
+    board.arrows.forEach(function (a) {
+      var p = M.arrowLine(board, a); if (!p) return;
+      var g = document.createElementNS(SVGNS, 'g'); if (sel && sel.kind === 'arrow' && sel.id === a.id) g.setAttribute('class', 'sel');
+      var ln = line(p.x1, p.y1, p.x2, p.y2, 'ln'); ln.setAttribute('marker-end', 'url(#head)');
+      var hit = line(p.x1, p.y1, p.x2, p.y2, 'hit');
+      hit.addEventListener('pointerdown', function (e) { e.stopPropagation(); select('arrow', a.id); stage.focus(); });
+      g.append(ln, hit); lines.appendChild(g);
+    });
+    if (tmp) { var t = line(tmp.x1, tmp.y1, tmp.x2, tmp.y2, 'tmp'); lines.appendChild(t); }
+  }
+  function select(kind, id) { sel = { kind: kind, id: id }; render(); }
+
+  // ---- pointer interaction. Screen -> world uses the stage's rectangle and the current view.
+  function worldPt(e) { var r = stage.getBoundingClientRect(); return M.toWorld(board.view, e.clientX - r.left, e.clientY - r.top); }
+  function track(e, move, done) {
+    var target = e.currentTarget; target.setPointerCapture(e.pointerId);
+    function up(ev) { target.removeEventListener('pointermove', move); target.removeEventListener('pointerup', up); target.removeEventListener('pointercancel', up); try { target.releasePointerCapture(ev.pointerId); } catch (x) {} done(ev); }
+    target.addEventListener('pointermove', move); target.addEventListener('pointerup', up); target.addEventListener('pointercancel', up);
+  }
+  function dragCard(e, id) {
+    if (e.button !== 0) return; e.stopPropagation(); e.preventDefault();
+    board = M.raise(board, id); select('card', id);
+    var c = board.cards.filter(function (k) { return k.id === id; })[0], start = worldPt(e), ox = c.x, oy = c.y, moved = false;
+    track(e, function (ev) { var p = worldPt(ev); moved = true; board = M.moveCard(board, id, ox + p.x - start.x, oy + p.y - start.y); render(); },
+      function () { if (moved) changed(); });
+  }
+  function resizeCard(e, id) {
+    if (e.button !== 0) return; e.stopPropagation(); e.preventDefault();
+    var c = board.cards.filter(function (k) { return k.id === id; })[0], start = worldPt(e), w0 = c.w, h0 = c.h, moved = false;
+    track(e, function (ev) { var p = worldPt(ev); moved = true; board = M.patchCard(board, id, { w: Math.max(80, Math.round(w0 + p.x - start.x)), h: Math.max(50, Math.round(h0 + p.y - start.y)) }); render(); },
+      function () { if (moved) changed(); });
+  }
+  function dragArrow(e, id) {
+    if (e.button !== 0) return; e.stopPropagation(); e.preventDefault();
+    var from = board.cards.filter(function (k) { return k.id === id; })[0], target = null;
+    function mark(t) { els.forEach(function (el, k) { el.classList.toggle('target', !!t && t.id === k); }); }
+    track(e, function (ev) { var p = worldPt(ev), q = M.edgePoint(from, p.x, p.y); target = M.cardAt(board, p.x, p.y); if (target && target.id === id) target = null;
+        mark(target); drawLines({ x1: q.x, y1: q.y, x2: p.x, y2: p.y }); },
+      function () { mark(null); if (target) { var r = M.addArrow(board, id, target.id); board = r.board; if (r.id) { sel = { kind: 'arrow', id: r.id }; changed(); } } render(); });
+  }
+  // pan with the background; a click on it deselects
+  stage.tabIndex = 0; stage.style.outline = 'none';
+  stage.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0 || e.target !== stage && e.target !== world && e.target !== lines) return;
+    sel = null; render(); stage.focus(); stage.classList.add('panning');
+    var sx = e.clientX, sy = e.clientY, v0 = board.view, moved = false;
+    track(e, function (ev) { moved = true; board = M.setView(board, { x: v0.x + ev.clientX - sx, y: v0.y + ev.clientY - sy, zoom: v0.zoom }); applyView(); },
+      function () { stage.classList.remove('panning'); if (moved) changed(); });
+  });
+  stage.addEventListener('dblclick', function (e) {
+    if (e.target !== stage && e.target !== world && e.target !== lines) return;
+    newCardAt(worldPt(e));
+  });
+  stage.addEventListener('wheel', function (e) {
+    e.preventDefault(); var r = stage.getBoundingClientRect();
+    board = M.setView(board, M.zoomAt(board.view, e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1)); applyView(); changed();
+  }, { passive: false });
+  function newCardAt(p) {
+    var r = M.addCard(board, p.x, p.y); board = r.board; sel = { kind: 'card', id: r.id }; render(); changed();
+    els.get(r.id).querySelector('textarea').focus();
+  }
+  addEventListener('keydown', function (e) {
+    if (e.target && e.target.tagName === 'TEXTAREA') { if (e.key === 'Escape') e.target.blur(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && sel) {
+      board = sel.kind === 'card' ? M.removeCard(board, sel.id) : M.removeArrow(board, sel.id); sel = null; render(); changed();
+    }
+  });
+  document.getElementById('add').addEventListener('click', function () { var r = stage.getBoundingClientRect(); newCardAt(M.toWorld(board.view, r.width / 2, r.height / 2)); });
+  document.getElementById('reset').addEventListener('click', function () { board = M.setView(board, { x: 0, y: 0, zoom: 1 }); applyView(); changed(); });
+
+  hatch.ready(function () {
+    setStatus('loading');
+    hatch.call('load').then(function (r) {
+      if (r && r.error) throw new Error(r.error);
+      board = M.sanitize(r && r.json); loaded = true; stage.style.pointerEvents = ''; setStatus(board.cards.length ? 'loaded' : 'empty board'); render();
+    }).catch(function (e) { setStatus('load failed: ' + e.message + ' (saving is off so the file is not overwritten)'); hatch.log('load failed: ' + e.message); });
+  });
+  render();
+</script>
+</body>
+</html>

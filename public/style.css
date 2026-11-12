@@ -94,6 +94,11 @@ html.has-fx #fx{display:block;position:absolute;inset:0;width:100%;height:100%;z
 .win .body{flex:1;min-height:0;overflow:auto;position:relative}
 .win .rz{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;touch-action:none;background:linear-gradient(135deg,transparent 55%,var(--muted) 55%,var(--muted) 62%,transparent 62%,transparent 75%,var(--muted) 75%,var(--muted) 82%,transparent 82%)}
 .win.docked .rz{left:0;width:auto;height:8px;cursor:ns-resize;background:none}
+/* edge zones: 4px strips inside the window border (the window clips overflow, so they cannot sit outside; 4px leaves nearly all of a scrollbar clickable), stopping short of the corner grip and below the title bar */
+.win .rz-edge{position:absolute;touch-action:none}
+.win .rz-r{right:0;top:28px;bottom:16px;width:4px;cursor:ew-resize}
+.win .rz-b{left:0;right:16px;bottom:0;height:4px;cursor:ns-resize}
+.win.docked .rz-r{display:none} .win.docked .rz-b{right:0}
 .win.dragging iframe,.win.resizing iframe{pointer-events:none}
 .win iframe{width:100%;height:100%;border:0;display:block;background:var(--surface)}
 .pad{padding:10px 12px}
@@ -253,7 +258,7 @@ body.zen #progress-strip{display:none}
 .image-error{padding:10px 12px;font-size:12px;overflow-wrap:anywhere}
 @media(max-width:500px){.image-dimensions{display:none}}
 
-body.viewonly .win .tb button,body.viewonly .win .rz{display:none}
+body.viewonly .win .tb button,body.viewonly .win .rz,body.viewonly .win .rz-edge{display:none}
 
 /* leader key: hint while armed, window numbers on the title bars, selected minimized chip */
 #leaderhint{position:fixed;left:8px;bottom:6px;z-index:60;max-width:calc(100vw - 16px);padding:3px 10px;border:1px solid var(--accent);border-radius:4px;background:var(--surface);color:var(--text,inherit);font:12px var(--mono);box-shadow:0 4px 16px #0005} #leaderhint[hidden]{display:none}

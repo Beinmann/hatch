@@ -15,6 +15,7 @@ import { saveUpload, sniff, MIME, MAX_BYTES, UploadError } from './uploads.js';
 import { createSources, checkSource, runOnce as runSourceOnce, ARG_RE, ANY_ARG_RE } from './sources.js';
 import { hostAllowed, readAllowedHostsFile, hostRefusedMessage } from './hosts.js';
 import * as fsapi from './files.js';
+import { resolvePageFile, PAGE_KEY_RE } from './pages.js'; // resolvePageFile also guards /host/ (hatch host)
 import { pickEditor, vimRequest, which } from './editor.js';
 import { createWatches, checkWatches } from './watches.js';
 import { createSchedules, checkSchedules } from './schedules.js';
@@ -33,10 +34,14 @@ import { createConfigGuard } from './config-guard.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.txt': 'text/plain; charset=utf-8', '.mmd': 'text/plain; charset=utf-8', '.LICENSE': 'text/plain; charset=utf-8' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.htm': 'text/html; charset=utf-8', '.jpeg': 'image/jpeg', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.txt': 'text/plain; charset=utf-8', '.mmd': 'text/plain; charset=utf-8', '.LICENSE': 'text/plain; charset=utf-8' };
 // The page itself: scripts only from our own files (no inline script, no eval), inline styles allowed (windows are positioned with
 // style attributes), connections only back to this server, frames of anything (iframe windows are a feature), never framed by others.
 const PAGE_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' http: https:; media-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'";
+// HTML page windows (hatch open FILE.html): scripts, forms and popups allowed, but the sandbox keeps the page in an opaque origin
+// (no cookie, no access to Hatch's API or page), also when someone opens the URL directly instead of in the iframe. Network access
+// is not restricted: it is the user's own page. Popups inherit the sandbox.
+const PAGE_WINDOW_CSP = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'";
 const WIDGET_CSP = "sandbox allow-scripts; default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src 'none'";
 
 const safeDecode = (s) => { try { return decodeURIComponent(s); } catch { throw new HttpError(404, 'not found'); } };
@@ -334,6 +339,31 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     return { opened };
   }
 
+  // ---- hosted pages: `hatch host FILE.html` registers a file's folder; /host/ID/... serves it read-only (GET, token or view token) ----
+  // In memory on purpose: a restart forgets them and `hatch host` is simply run again. The page runs in Hatch's own origin, so only host files you trust.
+  const hosted = new Map(); // id -> { dir (real path), entry (file name) }
+  function hostFile(file) {
+    if (typeof file !== 'string' || !path.isAbsolute(file)) throw new HttpError(400, 'file must be an absolute path');
+    try { fsapi.abs(file); } catch (e) { throw new HttpError(e.status || 403, e.message); }
+    let real; try { real = fs.realpathSync(file); } catch { throw new HttpError(404, `no such file: ${file}`); }
+    if (!fs.statSync(real).isFile()) throw new HttpError(400, `not a file: ${file}`);
+    const dir = path.dirname(real); const entry = path.basename(real);
+    if (entry.startsWith('.')) throw new HttpError(400, 'cannot host a dotfile');
+    let id = [...hosted].find(([, h]) => h.dir === dir && h.entry === entry)?.[0];
+    if (!id) { id = crypto.randomBytes(5).toString('hex'); hosted.set(id, { dir, entry }); }
+    return { id, path: `/host/${id}/${encodeURIComponent(entry)}` };
+  }
+  function serveHosted(req, res, p) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
+    const [id, ...rest] = p.split('/').slice(2); // ['', 'host', ID, ...path]
+    const h = hosted.get(id);
+    if (!h) throw new HttpError(404, 'not found: this page is not hosted (run `hatch host FILE.html` again; hosting is forgotten when the server restarts)');
+    const rel = rest.map(safeDecode).join('/') || h.entry;
+    const f = resolvePageFile(h.dir, rel);
+    if (!f) throw new HttpError(404, 'not found');
+    return serveFile(res, f, { 'referrer-policy': 'no-referrer' }, req);
+  }
+
   // ---- routing ----
   async function route(req, res, url) {
     const p = url.pathname; const m = req.method;
@@ -352,6 +382,19 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       // these files are served without the token, so a symlink inside a widget folder must not lead anywhere outside it
       try { const real = fs.realpathSync(target); const base = path.join(fs.realpathSync(l.widgets), name); if (fs.lstatSync(path.join(l.widgets, name)).isSymbolicLink()) throw new HttpError(404, 'not found'); if (real !== base && !real.startsWith(base + path.sep)) throw new HttpError(404, 'not found'); } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(404, 'not found'); }
       return serveFile(res, target, { 'content-security-policy': WIDGET_CSP }, req);
+    }
+
+    // HTML page windows: /page/KEY/relative/path, token-free like widgets (see pages.js); the KEY of an open page window is the authorisation
+    if (p.startsWith('/page/')) {
+      if (m !== 'GET' && m !== 'HEAD') throw new HttpError(405, 'method not allowed');
+      const rest = p.slice('/page/'.length); const key = rest.split('/')[0];
+      const win = PAGE_KEY_RE.test(key) ? state.listPanels().find((q) => q.type === 'page' && typeof q.props.key === 'string' && tokenOk(key, q.props.key)) : null;
+      if (!win) throw new HttpError(404, 'not found');
+      const dir = path.dirname(String(win.props.path));
+      if (fsapi.getRoot()) { try { fsapi.abs(dir); } catch (e) { throw new HttpError(e.status || 403, e.message); } } // --root still confines what files can be read
+      const f = resolvePageFile(dir, safeDecode(rest.slice(key.length + 1)) || path.basename(String(win.props.path)));
+      if (!f) throw new HttpError(404, 'not found');
+      return serveFile(res, f, { 'content-security-policy': PAGE_WINDOW_CSP, 'referrer-policy': 'no-referrer', 'access-control-allow-origin': '*', 'x-frame-options': 'SAMEORIGIN' }, req);
     }
 
     // ---- auth ----
@@ -379,6 +422,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     const extraWatch = viewing && /^\/api\/pterm\/([\w-]+)\/stream$/.exec(p);
     if (extraWatch && !extra.has(extraWatch[1]) && !state.listPanels().some((panel) => panel.type === 'terminal' && panel.props.name === extraWatch[1])) throw new HttpError(404, 'no existing terminal window with that name');
 
+    if (p.startsWith('/host/')) return serveHosted(req, res, p);
     const prox = parseProxyPath(p);
     if (prox) return proxyHttp(req, res, { ...prox, rest: prox.rest + url.search }, { selfPort: server.address()?.port });
 
@@ -434,6 +478,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         const r = saveUpload(l.uploads, buf);
         return json(res, 200, { path: r.path, name: r.name, url: `/files/uploads/${r.name}`, bytes: r.bytes });
       }
+      if (p === '/api/host' && m === 'POST') return json(res, 200, hostFile((await readJson(req)).file));
       if (p === '/api/file' && m === 'GET') return serveImage(res, url.searchParams.get('path') || '');
 
       if (p === '/api/fs/list' && m === 'GET') return json(res, 200, fsapi.list(url.searchParams.get('path') || cwd));

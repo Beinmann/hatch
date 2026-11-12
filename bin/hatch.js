@@ -11,8 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { stepSlug as slug } from '../src/progress.js';
 import { firstCommandIndex, SERVER_COMMANDS } from '../src/cli-options.js';
 import { COMMAND_HELP } from './ui-help.js';
-import { CliError, chooseStateDir, resolveStateDir, makeClient } from '../src/find.js';
+import { CliError, chooseStateDir, resolveStateDir, makeClient, lanAddress, readConfig } from '../src/find.js';
 import { doctor, printChecks } from '../src/doctor.js';
+import { openTypeFor } from '../src/pages.js';
 import { layout, NAME_RE, STEP_STATUS } from '../src/state.js';
 import * as background from '../src/background.js';
 import * as wsapi from '../src/workspaces.js';
@@ -62,9 +63,10 @@ panels
   term NAME [--cmd CMD]             another terminal in a window (its own tmux session; --cmd runs a command first)
   files [DIR]                       file browser (open images and text files, download, drop to upload)
   edit FILE[:LINE]                  small text editor window (Ctrl+S saves); LINE puts the cursor there
+  host FILE.html                    print a URL that opens the page full size in a browser tab (its folder is served read-only)
   serve-dir [DIR] [PORT]            serve a folder over HTTP (python3) and show it in a window, e.g. a generated HTML report
   image PATH [--title T]            show an image
-  open FILE|DIR|URL [--title T] [--direct]   detect image, text, directory or URL; http://localhost:PORT goes through Hatch's proxy to the box's own port
+  open FILE|DIR|URL [--title T] [--direct]   detect image, HTML page (.html/.htm: rendered in a sandboxed window; edit its source with: hatch edit FILE), text, directory or URL; http://localhost:PORT goes through Hatch's proxy to the box's own port
   note "markdown" [--title T]       small note panel
   panels                            list open panels
   close ID                          close a panel
@@ -492,6 +494,13 @@ async function main(argv) {
       const p = await api('POST', '/api/panels', { type: 'iframe', title: path.basename(dirp) || dirp, props: { url: `/proxy/${port}/` } });
       return console.log(`serving ${dirp} at /proxy/${port}/ (window ${p.id}); Stop it from its output window`);
     }
+    case 'host': {
+      need(sub, 'usage: host FILE.html'); const f = path.resolve(sub); need(fs.existsSync(f) && fs.statSync(f).isFile(), `no such file: ${f}`);
+      const h = await api('POST', '/api/host', { file: f }); const c = readConfig(dir);
+      console.log(`http://${lanAddress()}:${c.port}${h.path}?t=${c.token}`);
+      console.error('Opens the page full size in a normal browser tab (read-only; the folder it is in is served, dotfiles are not). Anyone with the link has full access to this Hatch: share it like the main URL.');
+      return;
+    }
     case 'files': {
       const dirp = path.resolve(sub || process.cwd()); need(fs.existsSync(dirp) && fs.statSync(dirp).isDirectory(), `not a directory: ${dirp}`);
       const p = await api('POST', '/api/panels', { type: 'files', title: o.title || 'Files', props: { path: dirp } });
@@ -508,7 +517,7 @@ async function main(argv) {
       if (!/^https?:\/\//i.test(sub)) {
         const f = path.resolve(sub);
         need(fs.existsSync(f), `no such file or directory: ${f}`);
-        const type = fs.statSync(f).isDirectory() ? 'files' : /\.(png|jpe?g|gif|webp|svg)$/i.test(f) ? 'image' : 'editor';
+        const type = openTypeFor(f, fs.statSync(f).isDirectory());
         const p = await api('POST', '/api/panels', { type, title: o.title || path.basename(f), props: type === 'image' ? { src: f } : { path: f } });
         return console.log(`${p.type} open as ${p.id}`);
       }

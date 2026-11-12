@@ -32,6 +32,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Output windows: run, grep, diff, log, man, tail | 030 036 043 | src/runs.js, panels/output.js | yes (run, grep, diff) | grep/diff/log/man/tail are tiny wrappers on run |
 | Clickable file:line and URLs in the terminal | 039 | public/terminal.js | yes | |
 | File management (new, rename, delete) | 056 | files.js, panels/files.js | yes | permanent deletes |
+| HTML page window (`hatch open FILE.html`) | - | src/pages.js, panels/page.js, server /page/ | yes | sandboxed iframe, per-window key, Chromium only |
 | Files browser + text editor | 020 | src/files.js, panels/files.js, editor.js | yes | any-path access unless --root |
 | Ask the user (dialog) | 029 | server /api/ask, app.js | yes | |
 | Terminal windows | 035 | /api/pterm, panels/terminal.js | yes | |
@@ -69,6 +70,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Git window (stage, commit, diffs) | 048 | src/git.js, panels/git.js | yes | no push/pull/discard |
 | exec placeholders in widget sources | 057 | sources.js, server.js | yes | |
 | Git status widget (sections, per-project instances via `hatch widget open git`) | - | examples/widgets/git, server openGitFor | parser and server, not seen in a browser | read-only |
+| Scratchpad widget (PROTOTYPE: pan/zoom canvas, text cards, arrows, saved to data/board.json via exec sources) | - | examples/widgets/scratchpad, test/scratchpad.test.js | headless Chromium only (layout and interaction; text glyphs not visible there) | model in model.js is node-tested; no undo, plain text only |
 | ports metric, ports and pomodoro widgets | 051 | sources.js, examples/widgets | yes | |
 | Task runner, listening ports | 047 | src/discover.js | tests only | |
 | Session report | 046 | server /api/report, ui.js | CLI only | |

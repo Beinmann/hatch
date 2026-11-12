@@ -6,7 +6,7 @@ This box runs Hatch. You can show things to the user in their browser with the `
 - `hatch image PATH` shows an image (screenshots, plots). Pasted images arrive as files; the user types the path.
 - `hatch widget new NAME --from cpu|git|top|sysinfo|log-tail` scaffolds a live widget, `hatch widget open NAME` shows it. See `hatch widget new --help` for the postMessage SDK and data sources (metric, exec, tail, file). Editing the files reloads the widget.
 - `hatch note "markdown"`, `hatch files DIR`, `hatch edit FILE` open a note, a file browser, a text editor.
-- `hatch open FILE|DIR|URL` opens images, text files, directories or a dev-server iframe. A localhost URL is proxied to this box.
+- `hatch open FILE|DIR|URL` opens images, text files, HTML pages (rendered in a sandboxed window; `hatch edit FILE` edits the source), directories or a dev-server iframe. A localhost URL is proxied to this box.
 - `hatch run "npm test" --wait` runs a command in its own output window and returns its exit code.
 - `hatch copy "text"` puts text on the user's browser clipboard.
 - `hatch notify "text" --level done|warn` when you are blocked or finished.

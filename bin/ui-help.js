@@ -36,7 +36,7 @@ Open PNG, JPEG, GIF, WebP or SVG in Hatch. Use the wheel or +/− to zoom,
 Default window size: imageSize in the project state config, e.g. "800x550".`,
   open: `hatch open FILE|DIR|URL [--title TITLE] [--size WIDTHxHEIGHT] [--full] [--no-focus]
 
-Images open in the viewer, directories in Files, and text files in vim in a terminal window (the built-in
+Images open in the viewer, directories in Files, .html/.htm files render in a sandboxed page window (scripts run, no access to Hatch; edit the source with: hatch edit FILE), and other text files in vim in a terminal window (the built-in
 editor when vim is not installed; config key editor: "auto" | "builtin" | a command such as "nvim").
 HTTP(S) URLs open in a popup; localhost URLs use the Hatch proxy unless --direct is supplied.`,
   agent: `hatch agent init [--target claude|codex|both] [--dir PROJECT]

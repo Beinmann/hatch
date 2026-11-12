@@ -25,7 +25,7 @@ Terminal windows: `POST /api/pterm/NAME {cmd?}` (create or attach), `GET .../str
 
 ## Panels, widgets, progress
 
-`GET|POST /api/panels`, `GET|PATCH|DELETE /api/panels/ID` (types: image iframe progress widget note files editor output terminal git trash;
+`GET|POST /api/panels`, `GET|PATCH|DELETE /api/panels/ID` (types: image iframe page progress widget note files editor output terminal git trash; `page` takes `props.path` of an HTML file, the server adds `props.key`, and the file with its sibling assets is served token-free from `GET /page/KEY/NAME` inside a sandbox, see README;
 extra fields `placement x y w h minimized ws sticky`). `GET|PUT /api/widgets`, `PUT|DELETE /api/widgets/NAME`,
 `POST /api/widgets/NAME/reload`, `GET /api/source/WIDGET/SOURCE` (SSE). Progress: `GET /api/progress`, `GET|PUT
 /api/progress/diagram` (text), `GET|PUT /api/progress/steps`, `POST /api/progress/steps {name,status?,title?,detail?,group?}`,
@@ -49,7 +49,7 @@ repair the file or use PUT to replace it. Removing the file clears the checklist
 
 ## Files and images
 
-`POST /api/upload` (raw image body), `GET /api/file?path=` (images only), `GET /api/fs/list|read|resolve|download`,
+`POST /api/host` `{file}` (absolute path; returns the `/host/ID/NAME` path that `hatch host` turns into a URL; `GET /host/ID/...` serves that file's folder read-only), `POST /api/upload` (raw image body), `GET /api/file?path=` (images only), `GET /api/fs/list|read|resolve|download`,
 `PUT /api/fs/write {path,text,mtime}`, `POST /api/fs/mkdir|newfile|rename|delete|upload` (upload: raw body, `?dir=&name=`).
 All confined by `hatch-server serve --root DIR` when given. File reads return a numeric `mtime`; pass it unchanged
 when saving to refuse changed or deleted files (409). Omit `mtime` for an unconditional write or explicit file creation.
