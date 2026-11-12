@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { resolveStateDir, findStateDir, makeClient } from '../src/find.js';
-import { instanceNotice, shortPath, readOwner } from '../src/instance.js';
+import { resolveStateDir, findStateDir, chooseStateDir, defaultStateDir, makeClient } from '../src/find.js';
+import { shortPath, readOwner } from '../src/instance.js';
 import { tmp } from './helpers.js';
 
 const CLI = fileURLToPath(new URL('../bin/hatch.js', import.meta.url));
@@ -14,73 +14,34 @@ const mkInstance = (dir, port = 7099) => { fs.mkdirSync(dir, { recursive: true }
 const tty = () => { const out = []; return { isTTY: true, write: (s) => out.push(s), out }; };
 const deadPid = () => { let p = 4000000; while (true) { try { process.kill(p, 0); p++; } catch { return p; } } };
 
-test('resolveStateDir reports how the instance was found', () => {
+test('state dir order: --state, then HATCH_STATE, then ~/.hatch; the cwd is never consulted', () => {
   const root = fs.realpathSync(tmp());
   const proj = path.join(root, 'proj'); const sub = path.join(proj, 'a', 'b'); fs.mkdirSync(sub, { recursive: true });
-  const inst = mkInstance(path.join(proj, '.hatch'));
-  const other = mkInstance(path.join(root, 'other'));
-  const noHome = { HOME: path.join(root, 'nohome') };
-  assert.deepEqual(resolveStateDir({ state: other, env: {}, cwd: sub }), { dir: other, how: 'flag', alternatives: [] });
-  assert.deepEqual(resolveStateDir({ env: { HATCH_STATE: other }, cwd: root }), { dir: other, how: 'env', alternatives: [] });
-  assert.deepEqual(resolveStateDir({ env: noHome, cwd: sub }), { dir: inst, how: 'walk', alternatives: [] });
-  assert.equal(findStateDir({ env: noHome, cwd: sub }), inst);
-  // conflict: HATCH_STATE wins but a nearer .hatch exists elsewhere
-  assert.deepEqual(resolveStateDir({ env: { HATCH_STATE: other }, cwd: sub }), { dir: other, how: 'env', alternatives: [{ dir: inst, how: 'walk' }] });
-  // an invalid HATCH_STATE falls through to the walk
-  assert.equal(resolveStateDir({ env: { HATCH_STATE: path.join(root, 'nope') }, cwd: sub }).how, 'walk');
+  mkInstance(path.join(proj, '.hatch')); // a project-local instance: must be ignored
+  const other = mkInstance(path.join(root, 'other')); const envDir = mkInstance(path.join(root, 'envdir'));
+  const homeDir = path.join(root, 'home'); const home = mkInstance(path.join(homeDir, '.hatch'));
+  const env = { HOME: homeDir };
+  assert.deepEqual(resolveStateDir({ state: other, env: { ...env, HATCH_STATE: envDir }, cwd: sub }), { dir: other, how: 'flag', explicit: true });
+  assert.deepEqual(resolveStateDir({ env: { ...env, HATCH_STATE: envDir }, cwd: sub }), { dir: envDir, how: 'env', explicit: true });
+  assert.deepEqual(resolveStateDir({ env, cwd: sub }), { dir: home, how: 'default', explicit: false }, 'the .hatch of the cwd chain is not used');
+  assert.equal(findStateDir({ env, cwd: sub }), home);
+  assert.equal(defaultStateDir(env), path.join(homeDir, '.hatch'));
+  assert.equal(chooseStateDir({ env: { HOME: homeDir, HATCH_STATE: '' }, cwd: sub }).how, 'default', 'an empty HATCH_STATE counts as unset');
+  assert.equal(chooseStateDir({ state: 'rel', env, cwd: sub }).dir, path.join(sub, 'rel'));
 });
 
-test('resolveStateDir finds ~/.hatch last', () => {
-  const home = fs.realpathSync(tmp()); const inst = mkInstance(path.join(home, '.hatch'));
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'hatch-nowalk-'));
-  const old = process.env.HOME; process.env.HOME = home;
-  try {
-    const r = resolveStateDir({ env: {}, cwd });
-    // a stray .hatch above the temp dir would win the walk; only check the home case when there is none
-    if (r.how === 'home') assert.equal(r.dir, inst); else assert.equal(r.how, 'walk');
-  } finally { process.env.HOME = old; }
-  assert.throws(() => resolveStateDir({ state: path.join(home, 'x') }), /no config.json/);
+test('no walk-up: without ~/.hatch the CLI errors even with a project .hatch above, and the message says how to start and migrate', () => {
+  const root = fs.realpathSync(tmp()); const sub = path.join(root, 'p', 'x'); fs.mkdirSync(sub, { recursive: true });
+  mkInstance(path.join(root, 'p', '.hatch'));
+  assert.throws(() => resolveStateDir({ env: { HOME: path.join(root, 'nohome') }, cwd: sub }), /no Hatch instance found.*hatch-server start.*hatch migrate/s);
+  assert.throws(() => resolveStateDir({ state: path.join(root, 'x'), env: {} }), /--state state dir.*hatch-server serve --state/s);
+  assert.throws(() => resolveStateDir({ env: { HATCH_STATE: path.join(root, 'x'), HOME: root } }), /HATCH_STATE/);
 });
 
-test('instance notice: once per shell, only when surprising, only on a TTY', () => {
-  const stamps = tmp(); const root = fs.realpathSync(tmp());
-  const a = mkInstance(path.join(root, 'a', '.hatch'), 7123); const b = mkInstance(path.join(root, 'b', '.hatch'), 7124);
-  const base = { stampDir: stamps, ppid: process.pid, user: 'tester', port: 7123 };
-  const walk = { dir: a, how: 'walk', alternatives: [] };
-  let e = tty(), o = tty();
-  assert.equal(instanceNotice({ ...base, resolved: walk, stderr: e, stdout: o }), true);
-  assert.equal(e.out.length, 1); assert.match(e.out[0], /^hatch: using the instance at .*\.hatch \(port 7123\)\. .*--state DIR.*HATCH_STATE=DIR\.\n$/);
-  assert.equal(instanceNotice({ ...base, resolved: walk, stderr: e, stdout: o }), false, 'same dir again is quiet');
-  const home = { dir: b, how: 'home', alternatives: [] };
-  assert.equal(instanceNotice({ ...base, resolved: home, stderr: e, stdout: o }), true, 'changed dir prints again');
-  assert.equal(e.out.length, 2);
-  // not surprising
-  for (const how of ['flag', 'env']) { e = tty(); assert.equal(instanceNotice({ ...base, ppid: 1, resolved: { dir: a, how, alternatives: [] }, stderr: e, stdout: o }), false); assert.equal(e.out.length, 0); }
-  // a conflict is surprising
-  e = tty(); assert.equal(instanceNotice({ ...base, ppid: 2, resolved: { dir: a, how: 'env', alternatives: [{ dir: b, how: 'walk' }] }, stderr: e, stdout: o }), true);
-  assert.match(e.out[0], /from HATCH_STATE; another one exists at/);
-  // not a TTY (either stream)
-  e = tty(); assert.equal(instanceNotice({ ...base, ppid: 3, resolved: walk, stderr: { ...e, isTTY: false }, stdout: o }), false);
-  assert.equal(instanceNotice({ ...base, ppid: 3, resolved: walk, stderr: e, stdout: { isTTY: false } }), false);
-  assert.equal(e.out.length, 0);
-});
-
-test('instance notice stamps: written per shell pid, stale ones of dead pids are removed', () => {
-  const stamps = tmp(); const dead = deadPid();
-  fs.writeFileSync(path.join(stamps, `hatch-notice-tester-${dead}`), 'x');
-  fs.writeFileSync(path.join(stamps, `hatch-notice-someone-${dead}`), 'x');
-  fs.writeFileSync(path.join(stamps, 'unrelated'), 'x');
-  const root = fs.realpathSync(tmp()); const a = mkInstance(path.join(root, '.hatch'));
-  instanceNotice({ resolved: { dir: a, how: 'walk', alternatives: [] }, stampDir: stamps, ppid: process.pid, user: 'tester', stderr: tty(), stdout: tty() });
-  const names = fs.readdirSync(stamps).sort();
-  assert.deepEqual(names, [`hatch-notice-someone-${dead}`, `hatch-notice-tester-${process.pid}`, 'unrelated']);
-  assert.equal(fs.readFileSync(path.join(stamps, `hatch-notice-tester-${process.pid}`), 'utf8'), a);
-});
-
-test('the CLI stays quiet when its streams are pipes', async () => {
-  const root = fs.realpathSync(tmp()); mkInstance(path.join(root, '.hatch'), 1); // port 1: nothing listens
+test('the CLI reports an unreachable default instance without extra notices', async () => {
+  const root = fs.realpathSync(tmp()); mkInstance(path.join(root, '.hatch'), 1); // port 1: nothing listens; HOME=root makes it the default instance
   const r = await new Promise((resolve) => {
-    const p = spawn('node', [CLI, 'panels'], { cwd: root, env: { PATH: process.env.PATH, HOME: path.join(root, 'nohome') } });
+    const p = spawn('node', [CLI, 'panels'], { cwd: root, env: { PATH: process.env.PATH, HOME: root } });
     let stderr = ''; p.stderr.on('data', (d) => { stderr += d; }); p.on('close', (status) => resolve({ status, stderr }));
   });
   assert.equal(r.status, 2);
@@ -115,7 +76,7 @@ test('unreachable errors say where the port came from and what to do', async () 
   e = await call(); assert.match(e.message, /is running but did not answer/);
   // owner gone
   fs.writeFileSync(path.join(dir, 'server.lock'), JSON.stringify({ pid: deadPid(), port: 1 }));
-  e = await call(); assert.match(e.message, /is not running: start it with `hatch-server serve --state /);
+  e = await call(); assert.match(e.message, /is not running: start it with `hatch-server start --state /);
   // garbage record behaves like none
   fs.writeFileSync(path.join(dir, 'server.lock'), '{{');
   e = await call(); assert.match(e.message, /--state DIR or set HATCH_STATE/);

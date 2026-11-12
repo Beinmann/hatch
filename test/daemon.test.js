@@ -5,49 +5,57 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { start, stop, restart, runningPid, mergeOptions } from '../src/daemon.js';
-import { findServerStateDir, isValidStateDir } from '../src/find.js';
+import { chooseStateDir, isValidStateDir } from '../src/find.js';
 import { tmp } from './helpers.js';
 
 const EXE = fileURLToPath(new URL('../bin/hatch-server.js', import.meta.url));
-test('server state is ./.hatch of the cwd only: parent projects are ignored, --state and HATCH_STATE choose explicitly', () => {
-  const project = tmp(); const state = path.join(project, '.hatch'); fs.mkdirSync(state); fs.writeFileSync(path.join(state, 'config.json'), '{}');
+test('server state: --state, then HATCH_STATE, then ~/.hatch; the cwd and its parents are never used', () => {
+  const home = tmp(); const project = tmp(); const state = path.join(project, '.hatch'); fs.mkdirSync(state); fs.writeFileSync(path.join(state, 'config.json'), '{}');
   const sub = path.join(project, 'src', 'nested'); fs.mkdirSync(sub, {recursive:true});
-  assert.equal(findServerStateDir({cwd:project,env:{}}), state);
-  assert.equal(findServerStateDir({cwd:sub,env:{}}), path.join(sub,'.hatch'), 'the parent .hatch is not used');
-  assert.equal(findServerStateDir({cwd:sub,env:{HATCH_STATE:state}}), state);
-  assert.equal(findServerStateDir({cwd:sub,env:{HATCH_STATE:state},state:'other'}), path.join(sub,'other'));
+  const env = { HOME: home };
+  assert.deepEqual(chooseStateDir({cwd:project,env}), { dir: path.join(home, '.hatch'), how: 'default', explicit: false }, 'a project .hatch in the cwd is ignored');
+  assert.equal(chooseStateDir({cwd:sub,env}).dir, path.join(home, '.hatch'), 'and so is one in a parent');
+  assert.deepEqual(chooseStateDir({cwd:sub,env:{...env,HATCH_STATE:state}}), { dir: state, how: 'env', explicit: true });
+  assert.equal(chooseStateDir({cwd:sub,env:{...env,HATCH_STATE:state},state:'other'}).dir, path.join(sub,'other'));
 });
 test('a state dir is valid only with a config.json holding port and token', () => {
   const d = tmp(); assert.equal(isValidStateDir(d), false);
   fs.writeFileSync(path.join(d, 'config.json'), '{}'); assert.equal(isValidStateDir(d), false);
   fs.writeFileSync(path.join(d, 'config.json'), '{"port":7070,"token":"abc"}'); assert.equal(isValidStateDir(d), true);
 });
-function serveIn(cwd, args, { input, env = {} } = {}) {
-  return spawnSync(process.execPath, [EXE, 'serve', '--port', '0', '--host', '127.0.0.1', ...args], { cwd, input, encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL', env: { ...process.env, HATCH_STATE: '', ...env } });
+const homeEnv = (home) => ({ HOME: home, HATCH_STATE: '', HATCH_WORKSPACE: '' });
+function serveIn(cwd, args, { input, env = {} } = {}) { // HOME is always a temp dir: never the real ~/.hatch
+  return spawnSync(process.execPath, [EXE, 'serve', '--port', '0', '--host', '127.0.0.1', ...args], { cwd, input, encoding: 'utf8', timeout: 2500, killSignal: 'SIGKILL', env: { ...process.env, ...homeEnv(tmp()), ...env } });
 }
-test('serve without a terminal and without --yes creates nothing and names --yes and --state', () => {
-  const d = tmp(); const r = serveIn(d, []);
-  assert.equal(r.status, 1); assert.match(r.stderr, /--yes/); assert.match(r.stderr, /--state DIR/); assert.ok(r.stderr.includes(path.join(d, '.hatch')));
-  assert.equal(fs.existsSync(path.join(d, '.hatch')), false);
-  const parent = tmp(); fs.mkdirSync(path.join(parent, '.hatch')); fs.writeFileSync(path.join(parent, '.hatch', 'config.json'), '{"port":7070,"token":"abc"}');
-  const sub = path.join(parent, 'sub'); fs.mkdirSync(sub);
-  assert.equal(serveIn(sub, []).status, 1, 'a valid parent state does not count'); assert.equal(fs.existsSync(path.join(sub, '.hatch')), false);
-  const e = serveIn(d, ['--state', path.join(d, 'explicit')]); assert.equal(e.status, 1); assert.equal(fs.existsSync(path.join(d, 'explicit')), false);
+test('a plain serve creates ~/.hatch silently (no prompt, no --yes, no terminal) and ignores ./.hatch with a one-line hint', () => {
+  const home = tmp(); const cwd = tmp();
+  const r = serveIn(cwd, [], { env: { HOME: home } });
+  assert.doesNotMatch(r.stderr, /--yes|Create it/); assert.ok(isValidStateDir(path.join(home, '.hatch')), '~/.hatch created');
+  assert.equal(fs.existsSync(path.join(cwd, '.hatch')), false); assert.doesNotMatch(r.stderr, /ignoring/, 'no hint without a local .hatch');
+  fs.mkdirSync(path.join(cwd, '.hatch'));
+  const again = serveIn(cwd, [], { env: { HOME: home } });
+  assert.match(again.stderr, /ignoring .*\.hatch .*hatch migrate/); assert.equal(again.stderr.trim().split('\n').filter((l) => /ignoring/.test(l)).length, 1);
+  const explicit = serveIn(cwd, ['--state', path.join(cwd, '.hatch'), '--yes'], { env: { HOME: home } });
+  assert.doesNotMatch(explicit.stderr, /ignoring/, 'no hint when the local dir is the chosen one');
 });
-test('serve --yes creates ./.hatch, --state DIR with --yes creates that dir; an existing valid dir needs no confirmation', () => {
-  const run = (cwd, args) => { // the server keeps running: let it print its line, then kill it
-    const r = spawnSync(process.execPath, [EXE, 'serve', '--port', '0', '--host', '127.0.0.1', ...args], { cwd, encoding: 'utf8', timeout: 2500, killSignal: 'SIGKILL', env: { ...process.env, HATCH_STATE: '' } });
-    return r;
-  };
-  const d = tmp(); run(d, ['--yes']); assert.ok(isValidStateDir(path.join(d, '.hatch')), './.hatch created with --yes');
-  const x = tmp(); const target = path.join(x, 'elsewhere'); run(x, ['--state', target, '--yes']); assert.ok(isValidStateDir(target));
-  const again = run(d, []); assert.doesNotMatch(again.stderr, /--yes/, 'valid dir: no confirmation needed');
+test('an explicit --state or HATCH_STATE that is missing or invalid is confirmed: without a terminal it fails and creates nothing', () => {
+  const d = tmp(); const target = path.join(d, 'explicit');
+  let r = serveIn(d, ['--state', target]);
+  assert.equal(r.status, 1); assert.match(r.stderr, /--yes/); assert.match(r.stderr, /--state DIR/); assert.ok(r.stderr.includes(target)); assert.equal(fs.existsSync(target), false);
+  r = serveIn(d, [], { env: { HATCH_STATE: target } });
+  assert.equal(r.status, 1); assert.match(r.stderr, /--yes/); assert.equal(fs.existsSync(target), false);
+  fs.mkdirSync(target); r = serveIn(d, ['--state', target]); assert.equal(r.status, 1, 'an existing dir without config.json is invalid'); assert.equal(fs.existsSync(path.join(target, 'config.json')), false);
+});
+test('--state DIR with --yes creates that dir; an existing valid dir needs no confirmation', () => {
+  const x = tmp(); const target = path.join(x, 'elsewhere'); serveIn(x, ['--state', target, '--yes']); assert.ok(isValidStateDir(target));
+  const again = serveIn(x, ['--state', target]); assert.doesNotMatch(again.stderr, /--yes/, 'valid dir: no confirmation needed');
 });
 test('serve asks on a terminal: no declines with a non-zero code and creates nothing, yes creates', { skip: spawnSync('script', ['--version']).status !== 0 }, () => {
   const d = tmp();
-  const ask = (answer) => spawnSync('script', ['-qec', `node ${EXE} serve --port 0 --host 127.0.0.1`, '/dev/null'], { cwd: d, input: `${answer}\n`, encoding: 'utf8', timeout: 2500, killSignal: 'SIGKILL', env: { ...process.env, HATCH_STATE: '' } });
-  const no = ask('n'); assert.match(no.stdout, /Create it\? \[y\/N\]/); assert.ok(no.stdout.includes(path.join(d, '.hatch'))); assert.equal(fs.existsSync(path.join(d, '.hatch')), false);
-  ask('y'); assert.ok(isValidStateDir(path.join(d, '.hatch')));
+  const target = path.join(d, 'chosen');
+  const ask = (answer) => spawnSync('script', ['-qec', `node ${EXE} serve --port 0 --host 127.0.0.1 --state ${target}`, '/dev/null'], { cwd: d, input: `${answer}\n`, encoding: 'utf8', timeout: 2500, killSignal: 'SIGKILL', env: { ...process.env, ...homeEnv(tmp()) } });
+  const no = ask('n'); assert.match(no.stdout, /Create it\? \[y\/N\]/); assert.ok(no.stdout.includes(target)); assert.equal(fs.existsSync(target), false);
+  ask('y'); assert.ok(isValidStateDir(target));
 });
 test('startup overrides retain unrelated saved options and handle equals flags', () => {
   assert.deepEqual(mergeOptions(['--root','/srv/project','--port','7070','--view-only'],['--port=7080','--view-only=false']),['--root','/srv/project','--port=7080','--view-only=false']);

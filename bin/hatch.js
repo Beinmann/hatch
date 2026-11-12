@@ -11,8 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { stepSlug as slug } from '../src/progress.js';
 import { firstCommandIndex, SERVER_COMMANDS } from '../src/cli-options.js';
 import { COMMAND_HELP } from './ui-help.js';
-import { CliError, resolveStateDir, makeClient, readConfig } from '../src/find.js';
-import { instanceNotice } from '../src/instance.js';
+import { CliError, resolveStateDir, makeClient } from '../src/find.js';
 import { doctor, printChecks } from '../src/doctor.js';
 import { layout, NAME_RE, STEP_STATUS } from '../src/state.js';
 import * as background from '../src/background.js';
@@ -129,7 +128,7 @@ other
   upload-dir                        where pasted images land
   doctor                            check tmux, python3, node, server
 window options: --size WIDTHxHEIGHT, --full (or --fullscreen), --no-focus
-options: --state DIR, --ws WORKSPACE (windows opened by this command go there), --json (listings), --help`;
+options: --state DIR, --ws WORKSPACE (windows opened by this command go there; default $HATCH_WORKSPACE, set in each workspace's terminals, else main), --json (listings), --help`;
 
 const WIDGET_HELP = `widget protocol (iframe sandbox, no network; data arrives by postMessage)
 
@@ -244,9 +243,7 @@ async function main(argv) {
 
   if (cmd === 'doctor') { if (!printChecks(await doctor({ state: o.state }))) process.exitCode = 1; return; }
 
-  const resolved = resolveStateDir({ state: o.state });
-  const dir = resolved.dir;
-  if (!o.json) { let port; try { port = readConfig(dir).port; } catch { /* makeClient reports it */ } instanceNotice({ resolved, port }); }
+  const dir = resolveStateDir({ state: o.state }).dir;
   const l = layout(dir);
   let geometry = {};
   if (o.size) {
@@ -255,9 +252,11 @@ async function main(argv) {
     geometry = { w: +m[1], h: +m[2] };
   }
   const rawApi = makeClient(dir);
-  // --ws NAME puts every window this command opens into that workspace
+  // The workspace of this command: --ws NAME, else $HATCH_WORKSPACE (Hatch sets it in each workspace's terminals), else main
+  const ws = o.ws || process.env.HATCH_WORKSPACE || undefined;
+  // it puts every window this command opens into that workspace
   const api = (m, r, b, x) => {
-    if (m === 'POST' && (r === '/api/panels' || /^\/api\/examples\/[\w-]+\/open$/.test(r)) && b) b = { ...b, ...geometry, ...(o.ws && { ws: o.ws }), ...(o['no-focus'] && { autoFocus: false }), ...((o.full || o.fullscreen) && { maximized: true }) };
+    if (m === 'POST' && (r === '/api/panels' || /^\/api\/examples\/[\w-]+\/open$/.test(r)) && b) b = { ...b, ...geometry, ...(ws && { ws }), ...(o['no-focus'] && { autoFocus: false }), ...((o.full || o.fullscreen) && { maximized: true }) };
     return rawApi(m, r, b, x);
   };
 
@@ -732,8 +731,8 @@ async function main(argv) {
     case 'set': {
       // --ws NAME: the background (and its fit mode) of that workspace instead of main
       let bgDir = dir;
-      if (o.ws && (sub === 'background' || sub === 'background-mode')) {
-        try { bgDir = wsapi.workspaceDir(dir, wsapi.findWorkspace(dir, o.ws, [])); } catch (e) { if (e instanceof wsapi.WorkspaceError) throw new CliError(e.message); throw e; }
+      if (ws && ws !== 'main' && (sub === 'background' || sub === 'background-mode')) {
+        try { bgDir = wsapi.workspaceDir(dir, wsapi.findWorkspace(dir, ws, [])); } catch (e) { if (e instanceof wsapi.WorkspaceError) throw new CliError(e.message); throw e; }
       }
       const usage = 'usage: set background IMAGE|none, set background-mode fill|fit|stretch|center|tile, set transparency 0..100, set window-transparency 0..100|default|follow';
       if (sub === 'transparency') {

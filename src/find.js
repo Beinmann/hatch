@@ -1,5 +1,5 @@
-// Finds a running Hatch from the CLI: --state / HATCH_STATE, then a `.hatch/config.json` found by walking up from
-// the cwd, then ~/.hatch/. Reads port and token from config.json and talks to 127.0.0.1.
+// Finds the per-user Hatch instance for the CLI and the server: --state, then HATCH_STATE, then ~/.hatch (never the cwd).
+// Reads port and token from config.json and talks to 127.0.0.1.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,22 +7,25 @@ import { unreachableHelp } from './instance.js';
 
 export class CliError extends Error { constructor(message, code = 1) { super(message); this.code = code; } }
 
-/** Where the CLI finds its instance and how: { dir, how: 'flag'|'env'|'walk'|'home', alternatives: [{dir, how}] }.
- * `alternatives` lists other instances that would have matched had the winner not been there (used for notices). */
-export function resolveStateDir({ state, env = process.env, cwd = process.cwd() } = {}) {
-  const tryDir = (d) => (d && fs.existsSync(path.join(d, 'config.json')) ? path.resolve(d) : null);
-  if (state) { const d = tryDir(state); if (!d) throw new CliError(`no config.json in ${state} (--state): start the server with \`hatch-server serve --state ${state}\``, 2); return { dir: d, how: 'flag', alternatives: [] }; }
-  let walk = null;
-  for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
-    walk = tryDir(path.join(dir, '.hatch'));
-    if (walk || path.dirname(dir) === dir) break;
-  }
-  const fromEnv = tryDir(env.HATCH_STATE);
-  if (fromEnv) return { dir: fromEnv, how: 'env', alternatives: walk && walk !== fromEnv ? [{ dir: walk, how: 'walk' }] : [] };
-  if (walk) return { dir: walk, how: 'walk', alternatives: [] };
-  const home = tryDir(path.join(os.homedir(), '.hatch'));
-  if (home) return { dir: home, how: 'home', alternatives: [] };
-  throw new CliError('cannot find a Hatch state dir (.hatch/config.json). Start the server with `hatch-server serve` in your project, or pass --state DIR.', 2);
+/** The per-user default state dir. HOME is read at call time so tests can point it at a temp dir. */
+export const defaultStateDir = (env = process.env) => path.join(env.HOME || os.homedir(), '.hatch');
+
+/** Which state dir to use, for the server and for clients alike: --state DIR, then HATCH_STATE, then ~/.hatch.
+ * Deliberately no cwd lookup and no walking up: one instance per user. Returns { dir, how: 'flag'|'env'|'default', explicit }.
+ * A relative path is taken relative to `cwd`. */
+export function chooseStateDir({ state, env = process.env, cwd = process.cwd() } = {}) {
+  if (state) return { dir: path.resolve(cwd, state), how: 'flag', explicit: true };
+  if (env.HATCH_STATE) return { dir: path.resolve(cwd, env.HATCH_STATE), how: 'env', explicit: true };
+  return { dir: defaultStateDir(env), how: 'default', explicit: false };
+}
+
+/** The CLI's instance: the chosen dir must already hold a config.json (a server created it), else an error that says how to start one. */
+export function resolveStateDir(opts = {}) {
+  const c = chooseStateDir(opts);
+  if (fs.existsSync(path.join(c.dir, 'config.json'))) return c;
+  const src = c.how === 'flag' ? '--state' : c.how === 'env' ? 'HATCH_STATE' : 'default';
+  const start = c.how === 'default' ? '`hatch-server start`' : `\`hatch-server serve --state ${c.dir}\``;
+  throw new CliError(`no Hatch instance found: ${path.join(c.dir, 'config.json')} does not exist (${src} state dir). Start the server with ${start}${c.how === 'default' ? ' (it creates ~/.hatch the first time)' : ''}, or pass --state DIR. Project-local .hatch dirs are not searched; \`hatch migrate\` moves one into ~/.hatch.`, 2);
 }
 
 export const findStateDir = (opts) => resolveStateDir(opts).dir;
@@ -54,14 +57,6 @@ export function makeClient(stateDir) {
     if (raw) return text;
     try { return JSON.parse(text); } catch { return text; }
   };
-}
-
-/** The server's state dir: --state, HATCH_STATE, else `.hatch/` of the current directory only. It never walks up
- * (a server started in an unrelated folder must not attach to another project's state) and never uses ~/.hatch.
- * Clients (`findStateDir`) still walk up, because they only look for an instance that already runs. */
-export function findServerStateDir({ state, env = process.env, cwd = process.cwd() } = {}) {
-  if (state || env.HATCH_STATE) return path.resolve(cwd, state || env.HATCH_STATE);
-  return path.join(path.resolve(cwd), '.hatch');
 }
 
 /** Valid = config.json parses to an object with a usable port and token (the same checks as readConfig). */

@@ -9,7 +9,8 @@ import { spawnSync } from 'node:child_process';
 import { createHatch } from '../src/server.js';
 import { DEFAULT_PORT, listenFromPort } from '../src/free-port.js';
 import { doctor, printChecks } from '../src/doctor.js';
-import { findStateDir, findServerStateDir, isValidStateDir, readConfig } from '../src/find.js';
+import { findStateDir, chooseStateDir, isValidStateDir, readConfig } from '../src/find.js';
+import { shortPath } from '../src/instance.js';
 
 const HELP = `hatch-server: run and administer the Hatch server. (To drive the page from the terminal use \`hatch\`.)
 
@@ -24,11 +25,13 @@ usage:
   hatch-server doctor [--state DIR]    check node, python3, tmux, state dir, server
   hatch-server service [--state DIR] [--port N] [--host H]   print a systemd user unit that starts hatch-server serve (nothing is installed)
   hatch-server --help | --version
+  (hatch migrate [DIR] imports a project's .hatch into the per-user instance; run it with hatch)
 
-serve defaults: host 0.0.0.0 (reachable from your LAN), port 7070 (the next free port when that is taken and no --port is given; it is saved in config.json), state ./.hatch of the current directory (parent directories are not searched), session derived from the project.
-If the state dir has no valid config.json, serve|start|restart ask before creating it; --yes creates it without asking. Without a terminal to ask on they fail unless --yes is given, so
-background and service setups should pass --yes or an existing --state DIR.
-Put .hatch/ in your .gitignore. The token is a convenience, not security: use only on isolated networks.`;
+serve defaults: host 0.0.0.0 (reachable from your LAN), port 7070 (the next free port when that is taken and no --port is given; it is saved in config.json), session derived from the state dir.
+state dir: --state DIR, else HATCH_STATE, else ~/.hatch (one instance per user, one token, workspaces for projects). The current directory is never searched: a project-local .hatch is ignored (hatch migrate imports it).
+A plain serve|start creates ~/.hatch silently the first time. An explicit --state DIR / HATCH_STATE that points at a missing or invalid dir is confirmed first (--yes creates it without asking; with no terminal to ask on it fails unless --yes is given).
+A second instance needs its own --state DIR and --port N.
+Put .hatch/ in your .gitignore if you keep one in a project. The token is a convenience, not security: use only on isolated networks.`;
 
 function parse(argv) {
   const o = { _: [] };
@@ -49,14 +52,22 @@ function parse(argv) {
 }
 function fail(m, code = 1) { console.error(`hatch-server: ${m}`); process.exit(code); }
 
-// Creating a state dir is a decision: ask (naming the full path) unless --yes; never hang or create silently without a terminal.
-async function confirmStateDir(dir) {
-  if (isValidStateDir(dir) || o.yes === 'true') return;
+// Creating a state dir the user named is a decision: ask (naming the full path) unless --yes; never hang or create silently without a terminal.
+// The default ~/.hatch is not asked about: it is where an instance lives, and creating it the first time is the expected thing.
+async function confirmStateDir({ dir, explicit }) {
+  if (!explicit || isValidStateDir(dir) || o.yes === 'true') return;
   const how = `Pass --yes to create it without asking, or --state DIR to use an existing Hatch state dir.`;
   if (!process.stdin.isTTY || !process.stderr.isTTY) fail(`no valid Hatch state dir at ${dir} (no usable config.json) and no terminal to ask on. ${how}`);
   const rl = (await import('node:readline/promises')).createInterface({ input: process.stdin, output: process.stderr });
   const answer = (await rl.question(`No Hatch state dir at ${dir}. Create it? [y/N] `)).trim().toLowerCase(); rl.close();
   if (answer !== 'y' && answer !== 'yes') fail(`not creating ${dir}. ${how}`);
+}
+
+// A project-local .hatch used to be the instance; now it is ignored. One line, only when the default state dir is in use.
+function localHatchHint({ dir, explicit }) {
+  const local = path.resolve('.hatch');
+  if (explicit || local === dir || !fs.existsSync(local)) return;
+  console.error(`hatch-server: ignoring ${shortPath(local)} (instances live in ${shortPath(dir)} now); \`hatch migrate\` imports it as a workspace.`);
 }
 
 function lanAddress() {
@@ -77,8 +88,9 @@ if (o.help || !cmd) { console.log(HELP); process.exit(cmd || o.help ? 0 : 1); }
 
 if (['start', 'stop', 'restart', 'status'].includes(cmd)) {
   const d = await import('../src/daemon.js');
-  const state = findServerStateDir({ state: o.state });
-  if ((cmd === 'start' || cmd === 'restart') && !d.runningPid(state)) await confirmStateDir(state);
+  const choice = chooseStateDir({ state: o.state }); const state = choice.dir;
+  if (cmd === 'start' || cmd === 'restart') localHatchHint(choice);
+  if ((cmd === 'start' || cmd === 'restart') && !d.runningPid(state)) await confirmStateDir(choice);
   const rest = withoutOption(withoutOption(argv.filter((_, i) => i !== commandPosition), 'state'), 'yes');
   try {
     if (cmd === 'status') { const pid = d.runningPid(state); console.log(pid ? `running (pid ${pid}); URL: hatch-server url` : 'not running'); process.exit(pid ? 0 : 1); }
@@ -91,7 +103,7 @@ if (['start', 'stop', 'restart', 'status'].includes(cmd)) {
   process.exit(0);
 }
 if (cmd === 'clear') {
-  const dir = path.resolve(o.state || process.env.HATCH_STATE || '.hatch');
+  const dir = chooseStateDir({ state: o.state }).dir;
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) fail(`no state dir at ${dir}; nothing to clear. Pass --state DIR to choose another.`);
   const d = await import('../src/daemon.js');
   const stop = `Stop it first (\`hatch-server stop --state ${dir}\` or Ctrl+C in its terminal), then run clear again.`;
@@ -115,7 +127,7 @@ if (cmd === 'clear') {
   process.exit(0);
 }
 if (cmd === 'update-widgets') {
-  const dir = path.resolve(o.state || process.env.HATCH_STATE || '.hatch');
+  const dir = chooseStateDir({ state: o.state }).dir;
   if (!isValidStateDir(dir)) fail(`no Hatch state dir at ${dir}. Pass --state DIR to choose another.`);
   const names = o._.slice(1);
   if (!names.length && o.all !== 'true') fail('name the widgets to update (e.g. background-roulette) or pass --all');
@@ -138,10 +150,10 @@ if (cmd === 'url') {
   console.log(`http://${lanAddress()}:${c.port}/?t=${c.token}`); process.exit(0);
 }
 if (cmd === 'service') {
-  const exe = path.resolve(process.argv[1]); const state = findServerStateDir({ state: o.state }); const wd = path.dirname(state);
+  const exe = path.resolve(process.argv[1]); const choice = chooseStateDir({ state: o.state }); const state = choice.dir; const wd = path.dirname(state);
   // systemd: % and $ are special even inside quotes (written %% and $$); quotes and backslashes are escaped with a backslash
   const q = (x) => { const e = x.replace(/%/g, '%%').replace(/\$/g, '$$$$'); return /^[\w@+=:,./%$-]+$/.test(e) ? e : `"${e.replace(/(["\\])/g, '\\$1')}"`; };
-  const args = ['serve', '--state', state, ...(o.port ? ['--port', String(o.port)] : []), ...(o.host ? ['--host', o.host] : [])];
+  const args = ['serve', ...(choice.explicit ? ['--state', state] : []), ...(o.port ? ['--port', String(o.port)] : []), ...(o.host ? ['--host', o.host] : [])];
   console.log(`# ~/.config/systemd/user/hatch.service
 [Unit]
 Description=Hatch: browser terminal and panels
@@ -170,12 +182,13 @@ const host = o.host || '0.0.0.0';
 const explicitPort = o.port !== undefined;
 const port = explicitPort ? Number(o.port) : DEFAULT_PORT;
 if (!Number.isInteger(port) || port < 0 || port > 65535) fail('--port must be a number between 0 and 65535');
-const stateDir = findServerStateDir({ state: o.state });
+const choice = chooseStateDir({ state: o.state }); const stateDir = choice.dir;
+localHatchHint(choice);
 { // before anything is created or written: a live server owns this state dir
   const { liveOwner, OwnerError } = await import('../src/instance-guard.js');
   const owner = liveOwner(stateDir); if (owner) fail(new OwnerError(stateDir, owner).message);
 }
-await confirmStateDir(stateDir);
+await confirmStateDir(choice);
 let hatch;
 try { hatch = createHatch({ tmuxStatus: o['tmux-status'] === 'true', viewOnly: o['view-only'] === 'true' || process.argv.includes('--view-only'), root: o.root, stateDir, host, port, session: o.session, cwd: path.resolve(o.cwd || process.cwd()) }); }
 catch (e) { fail(['EACCES', 'EROFS', 'EPERM', 'ENOENT'].includes(e.code) ? `cannot create the state dir ${stateDir} (${e.code}). Run hatch-server in a writable directory or pass --state DIR.` : e.message); }

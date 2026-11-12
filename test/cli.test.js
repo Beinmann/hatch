@@ -8,8 +8,9 @@ import { startHatch, tmp, PNG, waitFor, pendingAsks } from './helpers.js';
 
 const UI = fileURLToPath(new URL('../bin/hatch.js', import.meta.url));
 // async spawn: the server runs in this same process, so a sync spawn would deadlock it
+const FAKE_HOME = tmp(); // never the real ~: the default state dir is ~/.hatch
 const ui = (args, { state, input, cwd, env } = {}) => new Promise((resolve) => {
-  const p = spawn('node', [UI, ...(state ? ['--state', state] : []), ...args], { cwd, env: { ...process.env, HATCH_STATE: '', ...env } });
+  const p = spawn('node', [UI, ...(state ? ['--state', state] : []), ...args], { cwd, env: { ...process.env, HOME: FAKE_HOME, HATCH_STATE: '', HATCH_WORKSPACE: '', ...env } });
   let stdout = ''; let stderr = '';
   p.stdout.on('data', (d) => { stdout += d; }); p.stderr.on('data', (d) => { stderr += d; });
   p.on('close', (status) => resolve({ status, stdout, stderr }));
@@ -58,13 +59,27 @@ test('ui CLI end to end against a real server', async () => {
   } finally { await h.close(); }
 });
 
-test('ui finds the state dir by walking up from the cwd, and exits 2 when the server is down', async () => {
-  const h = await startHatch();
+test('ui does not walk up to a project .hatch; it uses HATCH_STATE, else ~/.hatch, and exits 2 when the server is down', async () => {
+  const h = await startHatch(); // its state dir is <dir>/.hatch: a project-local one
   const sub = path.join(h.dir, 'a', 'b'); fs.mkdirSync(sub, { recursive: true });
-  let r = await ui(['panels'], { cwd: sub }); assert.equal(r.status, 0, r.stderr);
+  let r = await ui(['panels'], { cwd: sub }); assert.equal(r.status, 2, 'the project .hatch above the cwd is ignored'); assert.match(r.stderr, /no Hatch instance found/); assert.match(r.stderr, /hatch migrate/);
+  r = await ui(['panels'], { cwd: sub, env: { HATCH_STATE: h.stateDir } }); assert.equal(r.status, 0, r.stderr);
+  const home = tmp(); fs.cpSync(h.stateDir, path.join(home, '.hatch'), { recursive: true }); // the default location
+  r = await ui(['panels'], { cwd: sub, env: { HOME: home } }); assert.equal(r.status, 0, r.stderr);
   await h.close();
-  r = await ui(['panels'], { cwd: sub }); assert.equal(r.status, 2); assert.match(r.stderr, /hatch-server serve/);
-  r = await ui(['panels'], { cwd: tmp() }); assert.equal(r.status, 2); assert.match(r.stderr, /state dir/);
+  r = await ui(['panels'], { cwd: sub, env: { HATCH_STATE: h.stateDir } }); assert.equal(r.status, 2); assert.match(r.stderr, /hatch-server start/);
+});
+
+test('HATCH_WORKSPACE: windows go to that workspace; --ws wins; main when unset', async () => {
+  const h = await startHatch();
+  try {
+    await ui(['workspace', 'new', 'proj'], { state: h.stateDir });
+    await ui(['workspace', 'new', 'other'], { state: h.stateDir });
+    const wsOf = async (id) => (JSON.parse((await ui(['panels', '--json'], { state: h.stateDir })).stdout).find((p) => p.id === id) || {}).ws;
+    let r = await ui(['note', 'a'], { state: h.stateDir }); assert.equal(await wsOf(r.stdout.match(/p\d+/)[0]) || 'main', 'main');
+    r = await ui(['note', 'b'], { state: h.stateDir, env: { HATCH_WORKSPACE: 'proj' } }); assert.equal(await wsOf(r.stdout.match(/p\d+/)[0]), 'proj');
+    r = await ui(['note', 'c', '--ws', 'other'], { state: h.stateDir, env: { HATCH_WORKSPACE: 'proj' } }); assert.equal(await wsOf(r.stdout.match(/p\d+/)[0]), 'other');
+  } finally { await h.close(); }
 });
 
 test('saved commands: add, list, replace, remove; bad file gives a warning not a crash', async () => {
@@ -298,7 +313,7 @@ test('hatch serve in an unwritable place explains itself instead of printing a s
   if (process.getuid?.() === 0) return; // root can write anywhere
   const { spawnSync } = await import('node:child_process'); const HATCH = fileURLToPath(new URL('../bin/hatch-server.js', import.meta.url));
   const d = tmp(); fs.chmodSync(d, 0o555);
-  try { const r = spawnSync('node', [HATCH, 'serve', '--port', '0', '--yes'], { cwd: d, encoding: 'utf8', timeout: 8000, env: { PATH: process.env.PATH } }); assert.equal(r.status, 1); assert.match(r.stderr, /cannot create the state dir .*(EACCES|EPERM|EROFS).*--state/); assert.doesNotMatch(r.stderr, /at .*node:fs/); }
+  try { const r = spawnSync('node', [HATCH, 'serve', '--port', '0', '--yes', '--state', path.join(d, '.hatch')], { cwd: d, encoding: 'utf8', timeout: 8000, env: { PATH: process.env.PATH, HOME: tmp() } }); assert.equal(r.status, 1); assert.match(r.stderr, /cannot create the state dir .*(EACCES|EPERM|EROFS).*--state/); assert.doesNotMatch(r.stderr, /at .*node:fs/); }
   finally { fs.chmodSync(d, 0o755); }
 });
 

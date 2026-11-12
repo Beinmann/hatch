@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Hatch as an MCP server (stdio, newline-delimited JSON-RPC 2.0): the same actions as `hatch`, as typed tools.
-// Register with:  claude mcp add hatch -- node /path/to/hatch/bin/mcp.js     (set HATCH_STATE if the project has no .hatch above the cwd)
+// Register with:  claude mcp add hatch -- node /path/to/hatch/bin/mcp.js     (uses HATCH_STATE, else ~/.hatch)
 // Zero dependencies; it only speaks to the local Hatch HTTP API with the token from the state dir.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -77,7 +77,12 @@ const fail = (id, code, message) => process.stdout.write(`${JSON.stringify({ jso
 
 let api = null;
 function client() {
-  if (!api) api = makeClient(findStateDir({}));
+  if (!api) {
+    const raw = makeClient(findStateDir({}));
+    // windows opened from a workspace's terminal belong to that workspace ($HATCH_WORKSPACE, as for the hatch CLI)
+    const ws = process.env.HATCH_WORKSPACE;
+    api = (m, r, b, x) => raw(m, r, ws && m === 'POST' && r === '/api/panels' && b ? { ...b, ws } : b, x);
+  }
   return api;
 }
 

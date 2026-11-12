@@ -20,7 +20,7 @@ export async function doctor({ state } = {}) {
   const mn0 = tool('man', ['--version']); const mn = mn0 && /man-db|mandoc|\d+\.\d+/.test(mn0) ? mn0 : null; // minimal images ship a stub that only prints a notice
   add('man (hatch man)', !!mn, mn || 'not found or a stub', 'optional: apt install man-db', true);
   let dir = null;
-  try { dir = findStateDir({ state }); add('state dir', true, dir); } catch (e) { add('state dir', false, e.message, 'run `hatch-server serve` once in your project'); }
+  try { dir = findStateDir({ state }); add('state dir', true, dir); } catch (e) { add('state dir', false, e.message, 'run `hatch-server start` once (it creates ~/.hatch), or pass --state DIR'); }
   if (dir) {
     try { const f = path.join(dir, '.doctor'); fs.writeFileSync(f, 'x'); fs.rmSync(f); add('state dir writable', true, dir); } catch (e) { add('state dir writable', false, e.message, `fix permissions on ${dir}`); }
     try { const api = makeClient(dir); await api('GET', '/api/health'); add('server reachable', true, 'GET /api/health ok'); } catch (e) { add('server reachable', false, e.message, 'start it with `hatch-server serve`'); }
