@@ -2,6 +2,7 @@
 // The registry is workspaces.json in the state dir: { "version": 1, "workspaces": [{ "name": "main", "id": "main" }, ...] }.
 // A window belongs to a workspace through its `ws` field (absent = main), so the panel files stay the source of truth for
 // layout; the registry only adds what a window list cannot hold: empty workspaces, order, and a stable id per workspace.
+// A workspace may carry `cwd`: the directory its terminals start in (set by `hatch migrate`).
 // The id (not the name) names the workspace's tmux session and background folder, so renaming never moves anything.
 // `main` keeps using the state dir itself for its background, which is what makes the migration a wrap, not a copy.
 import fs from 'node:fs';
@@ -28,7 +29,7 @@ export function readRegistry(dir) {
       if (typeof name !== 'string' || !WS_RE.test(name)) { problem = `${REGISTRY}: skipped an entry with an unusable name; names are letters, digits, - and _`; continue; }
       if (list.some((x) => x.name.toLowerCase() === name.toLowerCase())) continue;
       const id = typeof w?.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(w.id) ? w.id : name;
-      list.push({ name, id });
+      list.push({ name, id, ...(typeof w?.cwd === 'string' && w.cwd && { cwd: w.cwd }) });
     }
   } catch (e) { if (e.code !== 'ENOENT') problem = `${REGISTRY} is not valid JSON (${e.message}); fix it or delete it (a window list is rebuilt from the panels)`; }
   list = [{ name: MAIN, id: MAIN }, ...list.filter((w) => w.name !== MAIN)];
@@ -36,7 +37,7 @@ export function readRegistry(dir) {
 }
 
 export function writeRegistry(dir, list) {
-  atomicWrite(path.join(dir, REGISTRY), `${JSON.stringify({ version: 1, workspaces: list.map(({ name, id }) => ({ name, id })) }, null, 2)}\n`);
+  atomicWrite(path.join(dir, REGISTRY), `${JSON.stringify({ version: 1, workspaces: list.map(({ name, id, cwd }) => ({ name, id, ...(cwd && { cwd }) })) }, null, 2)}\n`);
 }
 
 /** Registry plus any workspace name only seen on a window (hand edit, `--ws`): { name, id } in registry order, extras sorted after. */

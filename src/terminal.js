@@ -113,5 +113,8 @@ export function createTerminal({ session = 'hatch', cwd = process.cwd(), env = {
   /** Ends the pty only; the tmux session keeps running. */
   function stop() { if (t && t.state === 'running') t.proc.kill('SIGTERM'); for (const writer of [...watchers]) writer.destroy(); }
 
-  return { ensure, info, alive, watch, input, resize, stop, kill, tmux: tm, setEnv: (e) => Object.assign(env, e), replay: () => (t ? Buffer.concat(t.chunks) : Buffer.alloc(0)) };
+  return { ensure, info, alive, watch, input, resize, stop, kill, tmux: tm, setEnv: (e) => { // also reaches a session that is already running: new tmux windows (not running shells) see the change
+      const changed = Object.entries(e).filter(([k, v]) => env[k] !== v); Object.assign(env, e);
+      if (!attach && !direct && t?.state === 'running') for (const [k, v] of changed) { try { tm(['set-environment', '-t', session, k, v]); } catch { /* best effort */ } }
+    }, replay: () => (t ? Buffer.concat(t.chunks) : Buffer.alloc(0)) };
 }

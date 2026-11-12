@@ -111,10 +111,24 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     if (a.bytes >= 512 && Date.now() - a.at > 2000) { a.bytes = 0; a.at = Date.now(); bus.emit('activity', { terminal: name }); }
   };
   const closedTerms = new Set(); // main terminals of closed workspaces: a browser stream that reconnects must not start their tmux session again
+  // Which workspace a terminal belongs to, and where its shell starts: a workspace's main terminal is `ws-<id>`; a terminal window
+  // belongs to the workspace of its window (its own props.cwd, else the workspace's cwd, else the server's).
+  const workspaceByTerminal = (name) => state.workspaces().find((w) => w.name !== 'main' && wsapi.terminalName(w) === name);
+  const windowOfTerminal = (name) => state.listPanels().find((x) => x.type === 'terminal' && x.props?.name === name);
+  const workspaceOfTerminal = (name) => workspaceByTerminal(name)?.name || windowOfTerminal(name)?.ws || 'main';
+  const cwdOfTerminal = (name) => {
+    const own = windowOfTerminal(name)?.props?.cwd; if (typeof own === 'string' && fs.existsSync(own)) return own;
+    const w = state.workspaces().find((x) => x.name === workspaceOfTerminal(name));
+    return typeof w?.cwd === 'string' && fs.existsSync(w.cwd) ? w.cwd : cwd;
+  };
   const termFor = (name, cmd) => {
     if (closedTerms.has(name)) throw new HttpError(404, 'that workspace was closed');
     if (!NAME_RE.test(name)) throw new HttpError(400, 'terminal names are letters, digits, - and _');
-    if (!extra.has(name)) extra.set(name, createTerminal({ session: `${cfg.session}-${name}`, cwd, attach, tmuxBin, env: { HATCH_URL: `http://127.0.0.1:${cfg.port}`, HATCH_STATE: stateDir }, command: cmd, onOutput: cmd ? undefined : noteActivity(name) }));
+    // HATCH_WORKSPACE tells `hatch` in that terminal which workspace it belongs to. It is refreshed on every call, and tmux
+    // applies it to NEW windows of the session only (shells that are already running keep the value they started with).
+    const env = { HATCH_URL: `http://127.0.0.1:${cfg.port}`, HATCH_STATE: stateDir, HATCH_WORKSPACE: workspaceOfTerminal(name) };
+    if (!extra.has(name)) extra.set(name, createTerminal({ session: `${cfg.session}-${name}`, cwd: cwdOfTerminal(name), attach, tmuxBin, env, command: cmd, onOutput: cmd ? undefined : noteActivity(name) }));
+    else extra.get(name).setEnv?.(env);
     return extra.get(name);
   };
   const term = createTerminal({ session: cfg.session, cwd, attach, tmuxBin, env: {}, onOutput: (b) => { watches.feed(b); noteActivity('@main')(b); } });
@@ -745,7 +759,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       cfg.port = actual;
       state.start();
       log(`hatch ${VERSION} listening on ${host}:${actual} (tmux session ${cfg.session}, state ${stateDir})`); // also makes sure the log exists for the log-tail widget
-      term.setEnv?.({ HATCH_URL: `http://127.0.0.1:${actual}`, HATCH_STATE: stateDir });
+      term.setEnv?.({ HATCH_URL: `http://127.0.0.1:${actual}`, HATCH_STATE: stateDir, HATCH_WORKSPACE: 'main' });
       configGuard.start();
       return actual;
     },
