@@ -44,7 +44,7 @@
       for (const f of handlers[m.source] || []) { try { f(m.value, m.ts); } catch (err) { hatch.log(`handler for ${m.source} failed: ${err.message}`); } }
     }
   });
-  // Keyboard events do not bubble out of an iframe, so forward Hatch's reserved keys: Ctrl+Shift+G and P, Ctrl+` and Ctrl+B, the leader chord
+  // Keyboard events do not bubble out of an iframe, so forward Hatch's reserved keys: Ctrl+Shift+G and P, Ctrl+Shift+Space and Ctrl+B, the leader chord
   // (sent in init) and, while the host says the leader is armed, every key after it. The host decides what they mean.
   let leader = null; let armed = false;
   const fields = (e) => ({ type: 'hatch-shortcut', code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey });
@@ -53,7 +53,7 @@
   const editable = (t) => !!t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(String(t.tagName).toUpperCase()) || !!t.isContentEditable);
   addEventListener('keydown', (e) => {
     const fold = (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyG') || (e.code === 'KeyP' && e.ctrlKey && !e.altKey && !e.metaKey)
-      || (e.code === 'Backquote' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) || (e.code === 'KeyB' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && !editable(e.target));
+      || (e.code === 'Space' && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) || (e.code === 'KeyB' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && !editable(e.target));
     if (!fold && !armed && !isLeader(e)) return;
     e.preventDefault(); e.stopPropagation();
     if (!fold && !armed) armed = true; // optimistic; the host answers with the real state

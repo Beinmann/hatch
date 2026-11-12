@@ -110,7 +110,7 @@ Going back: the project `.hatch` is as it was. Stop the per-user instance and st
 
 - **Terminal.** tmux in the page. Reload re-attaches; if the pty dies the page reconnects with backoff. Input queued for an old connection is discarded during reconnect so commands are not replayed accidentally. Select with
   Shift+drag and copy with Ctrl+C (without a selection Ctrl+C interrupts). The leader key (Ctrl+Space, then t) returns focus to the
-  terminal. Ctrl+` (backtick) does it in one chord from anywhere, widget frames and the palette included. Ctrl+B with a window focused (not a text field) returns to the terminal and sends the tmux prefix. Ctrl+Shift+F searches the scrollback (Enter next, Shift+Enter previous, Esc closes). Mouse mode, `allow-passthrough` and the tmux prefix are your own tmux config; Hatch never touches `~/.tmux.conf`.
+  terminal. Ctrl+Shift+Space does it in one chord from anywhere, widget frames and the palette included. Ctrl+B with a window focused (not a text field) returns to the terminal and sends the tmux prefix. Ctrl+Shift+F searches the scrollback (Enter next, Shift+Enter previous, Esc closes). Mouse mode, `allow-passthrough` and the tmux prefix are your own tmux config; Hatch never touches `~/.tmux.conf`.
 - **Image paste and drop.** Paste a screenshot (or drop an image) anywhere on the page: it is saved to
   `uploads/N.ext` on the box, the absolute path is typed into the terminal (as a bracketed paste when the program asks
   for it, as Claude Code does). An image window only opens if you tick "Show pasted images in a window" in the settings (off by default). Claude Code can then read the file. No resizing happens.
