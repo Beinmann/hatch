@@ -8,24 +8,26 @@ const smooth = (p) => { const t = clamp(p, 0, 1); return t * t * (3 - 2 * t); };
 
 // ---- Tuning knobs ----
 export const CFG = {
-  DENSITY: 26000,          // canvas px^2 per drip at the default intensity (smaller = more drips)
-  MIN: 3, MAX: 28,         // bounds on the number of drips at the default intensity (scaled by the intensity factor)
-  SPAWN_RATE: 1.6,         // new drips per second while below the cap
+  DENSITY: 9000,           // canvas px^2 per drip at the default intensity (smaller = more drips)
+  MIN: 8, MAX: 90,         // bounds on the number of drips at the default intensity (scaled by the intensity factor)
+  SPAWN_RATE: 5,           // new drips per second while below the cap
   BASELINE: 0.86,          // where in a cell (0 top .. 1 bottom) the strand starts: about the foot of a glyph
-  LEN: [26, 130],          // strand length range in px (skewed toward short)
-  RUN_P: 0.05,             // chance of a drip that runs the full height of the canvas
-  HANG_P: 0.5,             // chance of a drip that hangs for a long time, like a title card, instead of dripping soon
-  HOLD_HANG: [9, 26], HOLD_SHORT: [0.4, 3.5], // seconds a drip hangs fully grown
-  LET_GO_P: 0.55,          // chance that a drip lets go at the end of its hold (else it recedes)
-  GROW_BASE: 3.0, GROW_PER_PX: 1 / 22, // seconds to grow: base plus per px of length
-  WIDTH: [1.5, 3.0],       // strand width at the root; the tip is thinner
-  TAPER: 0.55,             // how much thinner the strand is at the tip (0 none .. 1 to a point)
-  BEAD: [2.2, 4.4],        // bead radius when fully grown
+  LEN: [45, 250],          // strand length range in px, a hard cap: no drip grows beyond it (skewed toward short)
+  HANG_P: 0.55,            // chance of a drip that hangs for a long time, like a title card, instead of pinching off soon
+  HOLD_HANG: [8, 24], HOLD_SHORT: [0.5, 4], // seconds a drip hangs fully grown
+  LET_GO_P: 0.6,           // chance that a drip pinches off at the end of its hold (else it recedes back into the text)
+  PINCH: [2, 4.5],         // seconds the neck at the root takes to thin out; the strand separates only when it is gone
+  GROW_BASE: 3.0, GROW_PER_PX: 1 / 30, // seconds to grow: base plus per px of length
+  WIDTH: [1.6, 3.0],       // strand width at the root; the tip is thinner
+  TAPER: 0.45,             // how much thinner the strand is at the tip (0 none .. 1 to a point)
+  BEAD: [1.4, 2.6],        // end drop radius: small next to the strand, and it only forms at the very end of growth
+  BEAD_LATE: 0.82,         // fraction of the growth after which the end drop starts to form
   SWAY_AMP: [1.2, 3.4], SWAY_FREQ: [0.5, 1.1], // sideways wavering in px and rad/s (slow)
-  GRAVITY: 520,            // px/s^2 for a falling bead
-  RETRACT: 9,              // how fast the strand snaps up after the bead lets go (1/s)
+  GRAVITY: 520,            // px/s^2 for a falling drop
+  RETRACT: 9,              // how fast the stub left at the text snaps up after separation (1/s)
+  SETTLE: 3.2,             // how fast a separated strand pulls itself together into a round drop (1/s)
   RECEDE: [2.5, 5],        // seconds a drip takes to shrink back when it does not let go
-  FALL_LIMIT: [40, 220],   // px a bead falls before it fades out (some run on to the bottom)
+  FALL_LIMIT: [60, 260],   // px a drop falls before it fades out (some run on to the bottom)
   FALL_FADE: 2.2,          // 1/s fade rate once past the limit
   MAX_FADE_IN: 0.6,        // seconds for a new drip to fade in
 };
@@ -78,32 +80,34 @@ export const fallbackOrigin = (W, H, rand) => ({ x: rand() * Math.max(1, num(W, 
 export function newDrip(ox, oy, H, rand, anchor = null) {
   const r = (a, b) => lerp(a, b, rand());
   const room = Math.max(0, num(H) - num(oy)); // how far down there is canvas
-  const runner = rand() < CFG.RUN_P;
-  const maxLen = Math.max(4, runner ? room : Math.min(room, lerp(CFG.LEN[0], CFG.LEN[1], Math.pow(rand(), 1.6))));
-  const hang = !runner && rand() < CFG.HANG_P;
+  const maxLen = Math.max(4, Math.min(room, lerp(CFG.LEN[0], CFG.LEN[1], Math.pow(rand(), 1.4))));
+  const hang = rand() < CFG.HANG_P;
   return {
     ox: num(ox), oy: num(oy), anchor, phase: 'grow', t: 0, age: 0, len: 0, maxLen,
-    growT: CFG.GROW_BASE + maxLen * CFG.GROW_PER_PX * (runner ? 0.5 : 1),
+    growT: CFG.GROW_BASE + maxLen * CFG.GROW_PER_PX,
     hold: hang ? r(...CFG.HOLD_HANG) : r(...CFG.HOLD_SHORT),
-    lets: runner || rand() < CFG.LET_GO_P,
-    width: r(...CFG.WIDTH), beadMax: r(...CFG.BEAD), beadR: 0.6,
+    lets: rand() < CFG.LET_GO_P, pinchT: r(...CFG.PINCH), neck: 1, // neck: 1 = full width at the root .. 0 = pinched off
+    width: r(...CFG.WIDTH), beadMax: r(...CFG.BEAD), beadR: 0,
     swayAmp: r(...CFG.SWAY_AMP), swayFreq: r(...CFG.SWAY_FREQ), swayPhase: rand() * Math.PI * 2,
     fade: 0, // 0..1, multiplies the alpha
-    fallLimit: runner || rand() < 0.12 ? Infinity : r(...CFG.FALL_LIMIT), recedeT: r(...CFG.RECEDE),
-    startLen: 0, bx: 0, by: 0, bv: 0, travelled: 0, beadFade: 1, done: false,
+    fallLimit: rand() < 0.15 ? Infinity : r(...CFG.FALL_LIMIT), recedeT: r(...CFG.RECEDE),
+    startLen: 0, bx: 0, by: 0, bv: 0, travelled: 0, beadFade: 1, stub: 0, done: false,
   };
 }
 
-/** The bead lets go: it starts to fall from the tip while the strand snaps back toward its root. */
-export function startFall(d) {
+/** The strand separates from the text: its lower part becomes a free body that falls and pulls itself into a drop, a short stub stays
+ *  at the text and snaps back. Only called when the neck has pinched off or the text under the drip is gone. */
+export function detach(d) {
   if (d.phase === 'fall' || d.done) return;
   const tip = tipOf(d);
+  d.stub = Math.min(d.len * 0.2, 9); d.stubLen = d.stub;
+  d.len = Math.max(0, d.len - d.stub);
   d.phase = 'fall'; d.t = 0; d.bx = tip.x; d.by = tip.y; d.bv = 0; d.travelled = 0; d.beadFade = 1;
-  if (d.len < 1.5) d.done = true; // nothing worth showing
+  if (d.len < 1.5 && d.beadR < 0.5) d.beadFade = 0; // nothing worth showing falls
 }
 
-/** The anchor is gone (scrolled away, character erased): hold the last position and let go. */
-export function release(d) { if (d.anchor) { d.anchor = null; } startFall(d); }
+/** The anchor is gone (scrolled away, character erased): the drip is disconnected from the text, so it separates at once. */
+export function release(d) { if (d.anchor) { d.anchor = null; } detach(d); }
 
 /** Horizontal sway at fraction u (0 root .. 1 tip) of the strand: nothing at the root, most at the tip, slow, a travelling wave. */
 export const swayAt = (d, u) => num(d.swayAmp) * Math.sin(num(d.swayFreq) * num(d.age) + num(d.swayPhase) - 2.4 * u) * u * u * clamp(num(d.len) / 70, 0.25, 1);
@@ -118,31 +122,46 @@ export function stepDrip(d, dt, H) {
   if (d.phase !== 'fall') d.fade = Math.min(1, d.fade + dt / CFG.MAX_FADE_IN);
   if (d.phase === 'grow') {
     d.t += dt; const p = clamp(d.t / d.growT, 0, 1);
-    d.len = d.maxLen * smooth(p); d.beadR = lerp(0.6, d.beadMax, Math.pow(p, 0.7)); // the bead swells while the strand lengthens
+    d.len = d.maxLen * smooth(p); // the strand never grows past maxLen
+    d.beadR = d.beadMax * smooth((p - CFG.BEAD_LATE) / (1 - CFG.BEAD_LATE)); // the end drop forms only at the very end
     if (p >= 1) { d.phase = 'hang'; d.t = 0; }
   } else if (d.phase === 'hang') {
-    d.t += dt; d.len = d.maxLen * (1 + 0.025 * Math.min(1, d.t / Math.max(0.1, d.hold))); // a very slow creep while it hangs
-    d.beadR = d.beadMax * (1 + 0.04 * Math.sin(d.age * 1.7));
-    if (d.t >= d.hold) { if (d.lets) startFall(d); else { d.phase = 'recede'; d.t = 0; d.startLen = d.len; } }
+    d.t += dt; d.len = d.maxLen; d.beadR = d.beadMax * (1 + 0.05 * Math.sin(d.age * 1.7));
+    if (d.t >= d.hold) { if (d.lets) { d.phase = 'pinch'; d.t = 0; } else { d.phase = 'recede'; d.t = 0; d.startLen = d.len; } }
+  } else if (d.phase === 'pinch') {
+    // The neck at the text thins out and the end drop gathers a little of the liquid; the strand falls only once the neck is gone.
+    d.t += dt; const q = clamp(d.t / d.pinchT, 0, 1);
+    d.neck = 1 - smooth(q); d.beadR = d.beadMax * (1 + 0.35 * q);
+    if (d.neck <= 0.02) detach(d);
   } else if (d.phase === 'recede') {
     d.t += dt; const q = clamp(d.t / d.recedeT, 0, 1);
-    d.len = d.startLen * (1 - smooth(q)); d.fade = 1 - q;
+    d.len = d.startLen * (1 - smooth(q)); d.beadR = d.beadMax * Math.min(1, d.len / 12); d.fade = 1 - q;
     if (q >= 1) d.done = true;
   } else if (d.phase === 'fall') {
     d.bv += CFG.GRAVITY * dt; const dy = d.bv * dt; d.by += dy; d.travelled += dy;
-    d.len *= Math.exp(-CFG.RETRACT * dt); d.fade = Math.max(0, d.fade - dt * 1.2 * (d.len < 8 ? 2 : 0.6)); // the strand fades as it snaps back
+    d.len *= Math.exp(-CFG.SETTLE * dt); // the strand pulls itself together into a round drop
+    d.stub *= Math.exp(-CFG.RETRACT * dt); d.fade = Math.max(0, d.fade - dt * 1.5); // the stub left at the text snaps back and fades
     if (d.travelled > d.fallLimit) d.beadFade = Math.max(0, d.beadFade - dt * CFG.FALL_FADE);
-    if (d.by - d.beadMax > num(H) || d.beadFade <= 0) d.beadFade = 0;
-    if (d.beadFade <= 0 && (d.len < 0.5 || d.fade <= 0)) d.done = true;
+    if (d.by - d.beadMax > num(H)) d.beadFade = 0;
+    if (d.beadFade <= 0 && (d.stub < 0.5 || d.fade <= 0)) d.done = true;
   }
   return d;
 }
 
-/** Points along the strand from root to tip for drawing: [{ x, y, w }] (w = width there, tapering). At least 2 points; empty when there is no strand. */
+/** The short piece left hanging at the text after a separation, as a drawable drip (null when there is none). */
+export const stubOf = (d) => (d.phase === 'fall' && d.stub >= 0.5 ? { ...d, phase: 'hang', len: d.stub, neck: 0.35, age: d.age } : null);
+
+/** Points along the strand from root to tip for drawing: [{ x, y, w }] (w = width there, tapering). At least 2 points; empty when there is no strand.
+ *  The neck (0..1) thins the strand near the root; a separated strand hangs from its drop (d.bx, d.by) with no sway. */
 export function strandPoints(d) {
   const len = num(d.len); if (len < 0.5) return [];
-  const n = clamp(Math.ceil(len / 6), 2, 40), out = [];
-  for (let i = 0; i <= n; i++) { const u = i / n; out.push({ x: d.ox + swayAt(d, u), y: d.oy + len * u, w: Math.max(0.4, d.width * (1 - CFG.TAPER * u)) }); }
+  const n = clamp(Math.ceil(len / 8), 2, 36), out = [], free = d.phase === 'fall';
+  const neck = d.neck === undefined ? 1 : clamp(num(d.neck, 1), 0, 1);
+  for (let i = 0; i <= n; i++) {
+    const u = i / n, pinch = neck + (1 - neck) * smooth(u * 3); // thin only in the upper third
+    out.push(free ? { x: d.bx, y: d.by - len * (1 - u), w: Math.max(0.4, d.width * (1 - CFG.TAPER * u)) }
+      : { x: d.ox + swayAt(d, u), y: d.oy + len * u, w: Math.max(0.3, d.width * (1 - CFG.TAPER * u) * pinch) });
+  }
   return out;
 }
 

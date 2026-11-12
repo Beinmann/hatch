@@ -1,11 +1,12 @@
 // Black goo dripping from the terminal text, after the thin dark strands of a certain game's title card: each strand hangs from a letter
-// on screen, wavers slightly and ends in a heavier bead; some hang for a long time, some let go (the bead falls, the strand snaps back).
+// on screen, wavers slightly and ends in a small drop that only forms at the very end; some hang for a long time. A strand falls only when it
+// has separated from the text: its neck thins out and pinches off (or the letter above it is gone); then it pulls itself into a drop.
 // Drips are anchored to cells of the terminal screen (the `terminal` view from public/fx-terminal.js): they follow their line when the
 // buffer scrolls and are released when the character under them goes. Without a terminal they hang from random points near the top.
 // Drawn on the canvas UNDER the text, in low alpha: the look is dark oil with a faint lighter rim and a soft highlight, so it still
 // shows on a dark terminal. Effect interface (public/fx.js): start(canvas, { animate, intensity, terminal }), setIntensity(n), stop(), resize().
 // Behaviour numbers (lengths, timings, counts) are in the CFG table of goo-physics.js; the colours are here.
-import { CFG, gooLevel, maxDrips, pickAnchor, cellOrigin, fallbackOrigin, newDrip, stepDrip, strandPoints, tipOf, scrollDrips, checkAnchors, placeDrips, release } from './goo-physics.js';
+import { CFG, gooLevel, maxDrips, pickAnchor, cellOrigin, fallbackOrigin, newDrip, stepDrip, strandPoints, stubOf, tipOf, scrollDrips, checkAnchors, placeDrips, release } from './goo-physics.js';
 
 // ---- Colours (rgb triplets; alpha is applied per drip) ----
 export const COLORS = {
@@ -91,8 +92,9 @@ function draw() {
   for (const d of drips) {
     const a = d.fade * level.alpha;
     if (d.phase === 'fall') {
-      drawStrand(d, a);
-      drawBead(d.bx, d.by, d.beadMax, 1 + Math.min(0.9, d.bv / 380), d.beadFade * level.alpha); // a falling drop stretches
+      const stub = stubOf(d); if (stub) drawStrand(stub, a); // what stays at the text
+      const fa = d.beadFade * level.alpha; drawStrand(d, fa); // the separated strand, pulling itself into a drop
+      drawBead(d.bx, d.by, d.beadR, 1 + Math.min(0.9, d.bv / 380), fa); // a falling drop stretches
     } else { drawStrand(d, a); const t = tipOf(d); drawBead(t.x, t.y, d.beadR, 1, a); }
   }
 }
