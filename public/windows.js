@@ -77,7 +77,9 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       mkBtn('×', 'Close', () => requestClose(w.panel.id).catch((e) => ctx.toast(e.message, 'bad'))));
     w.body = el('div', { class: 'body' });
     w.rz = el('div', { class: 'rz', title: 'Resize' });
-    w.node.append(w.tb, w.body, w.rz);
+    // thin edge zones: the right edge resizes the width, the bottom edge the height (the corner grip does both)
+    w.rzr = el('div', { class: 'rz-edge rz-r' }); w.rzb = el('div', { class: 'rz-edge rz-b' });
+    w.node.append(w.tb, w.body, w.rzr, w.rzb, w.rz);
     w.view = kind.create(panel, ctx);
     w.body.append(w.view.el);
     // double-click the title bar: maximize over the terminal and back (in the page only, geometry is not saved)
@@ -157,29 +159,32 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     });
   }
 
+  // Resize by a handle: the corner grip (both axes) or an edge zone (one axis). Docked windows only ever change height.
   function resize(w) {
-    w.rz.addEventListener('pointerdown', (e) => {
+    const bind = (handle, axes) => handle.addEventListener('pointerdown', (e) => {
       if (isViewOnly()) return;
       e.preventDefault(); e.stopPropagation();
-      w.rz.setPointerCapture(e.pointerId);
+      handle.setPointerCapture(e.pointerId);
       const sx = e.clientX; const sy = e.clientY; const ow = w.node.offsetWidth; const oh = w.node.offsetHeight;
       const docked = w.panel.placement === 'dock';
       w.node.classList.add('resizing');
       const move = (m) => {
-        const want = { w: ow + m.clientX - sx, h: oh + m.clientY - sy };
-        if (docked) { w.node.style.height = `${Math.max(MIN_H, want.h)}px`; return; }
+        const want = { w: axes.w ? ow + m.clientX - sx : ow, h: axes.h ? oh + m.clientY - sy : oh };
+        if (docked) { if (axes.h) w.node.style.height = `${Math.max(MIN_H, want.h)}px`; return; }
         const g = clampResize({ x: w.node.offsetLeft, y: w.node.offsetTop }, want, area(), { minW: MIN_W, minH: MIN_H });
-        w.node.style.width = `${g.w}px`; w.node.style.height = `${g.h}px`;
+        if (axes.w) w.node.style.width = `${g.w}px`;
+        if (axes.h) w.node.style.height = `${g.h}px`;
       };
       const up = () => {
-        w.rz.removeEventListener('pointermove', move); w.rz.removeEventListener('pointerup', up); w.rz.removeEventListener('pointercancel', up);
+        handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up);
         w.node.classList.remove('resizing');
         const f = { h: w.node.offsetHeight, ...(!docked && { w: w.node.offsetWidth }) };
         w.panel = { ...w.panel, ...f };
         save(w.panel.id, { ...f, remember: true });
       };
-      w.rz.addEventListener('pointermove', move); w.rz.addEventListener('pointerup', up); w.rz.addEventListener('pointercancel', up);
+      handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up); handle.addEventListener('pointercancel', up);
     });
+    bind(w.rz, { w: true, h: true }); bind(w.rzr, { w: true, h: false }); bind(w.rzb, { w: false, h: true });
   }
 
   // On screen right now: shown, and (when docked) the dock column is open. Minimized, folded-dock and other-workspace

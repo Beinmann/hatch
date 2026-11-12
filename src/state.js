@@ -8,13 +8,14 @@ import { findBackground, readMode } from './background.js';
 import { listWorkspaces, workspaceDir } from './workspaces.js';
 import { readFx } from './fx.js';
 import { readTransparency, DEFAULT_TRANSPARENCY } from './transparency.js';
+import { newPageKey } from './pages.js';
 import { sizeKey, sizeFor, readSizes, rememberSize } from './sizes.js';
 import { createPlans } from './plans.js';
 import { normalizeSteps, STEP_STATUS, findStep, unusedStepId } from './progress.js';
 import { normalizeTarget, checkConversion, checklistToSteps, stepsToMarkdown, widgetHtml, freeWidgetName } from './convert.js';
 export { STEP_STATUS } from './progress.js';
 
-export const PANEL_TYPES = ['image', 'iframe', 'progress', 'widget', 'note', 'files', 'editor', 'output', 'terminal', 'git', 'trash'];
+export const PANEL_TYPES = ['image', 'iframe', 'progress', 'widget', 'note', 'files', 'editor', 'output', 'terminal', 'git', 'trash', 'page'];
 export const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const DEBOUNCE_MS = 80;
 const POLL_MS = 1000;
@@ -135,6 +136,7 @@ export function checkPanel(p, id) {
   if (p.type === 'terminal' && !NAME_RE.test(String(props.name))) return { error: 'terminal panels need props.name (letters, digits, - and _)' };
   if (p.type === 'output' && typeof props.cmd !== 'string') return { error: 'output panels need props.cmd' };
   if (p.type === 'editor' && typeof props.path !== 'string') return { error: 'editor panels need props.path' };
+  if (p.type === 'page' && typeof props.path !== 'string') return { error: 'page panels need props.path (an HTML file)' };
   if (p.type === 'files' && props.path !== undefined && typeof props.path !== 'string') return { error: 'files panels take an optional props.path' };
   const num = (v) => (Number.isFinite(v) ? Math.round(v) : undefined);
   const out = {
@@ -381,6 +383,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
       const mem = readSizes(dir).sizes[sizeKey(type, input.props, input.id)] || {};
       for (const k of ['w', 'h', 'placement']) if (input[k] === undefined && meta[k] !== undefined && !(k !== 'placement' && mem[k] !== undefined)) draft[k] = meta[k];
     }
+    if (type === 'page' && isObj(draft.props)) draft.props = { ...draft.props, key: newPageKey() }; // the id that authorises serving this window's files; never taken from the caller
     const c = checkPanel(draft, id);
     if (c.error) throw Object.assign(new Error(c.error), { status: 400 });
     writePanel(c.panel);
@@ -400,6 +403,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     const merged = { ...cur };
     for (const k of ['title', 'placement', 'x', 'y', 'w', 'h', 'minimized', 'ws', 'sticky', 'autoFocus', 'maximized', 'activation', 'opacity', 'dockOrder']) if (isObj(patch) && patch[k] !== undefined) merged[k] = patch[k];
     if (isObj(patch?.props)) merged.props = { ...cur.props, ...patch.props };
+    if (cur.type === 'page' && cur.props.key) merged.props.key = cur.props.key; // the key is made by the server when the window opens
     const c = checkPanel(merged, id);
     if (c.error) throw Object.assign(new Error(c.error), { status: 400 });
     if (!c.panel.minimized) delete c.panel.minimized;

@@ -15,6 +15,7 @@ import { saveUpload, sniff, MIME, MAX_BYTES, UploadError } from './uploads.js';
 import { createSources, checkSource, runOnce as runSourceOnce, ARG_RE, ANY_ARG_RE } from './sources.js';
 import { hostAllowed, readAllowedHostsFile, hostRefusedMessage } from './hosts.js';
 import * as fsapi from './files.js';
+import { resolvePageFile, PAGE_KEY_RE } from './pages.js';
 import { pickEditor, vimRequest, which } from './editor.js';
 import { createWatches, checkWatches } from './watches.js';
 import { createSchedules, checkSchedules } from './schedules.js';
@@ -33,10 +34,14 @@ import { createConfigGuard } from './config-guard.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.txt': 'text/plain; charset=utf-8', '.mmd': 'text/plain; charset=utf-8', '.LICENSE': 'text/plain; charset=utf-8' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.htm': 'text/html; charset=utf-8', '.jpeg': 'image/jpeg', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.txt': 'text/plain; charset=utf-8', '.mmd': 'text/plain; charset=utf-8', '.LICENSE': 'text/plain; charset=utf-8' };
 // The page itself: scripts only from our own files (no inline script, no eval), inline styles allowed (windows are positioned with
 // style attributes), connections only back to this server, frames of anything (iframe windows are a feature), never framed by others.
 const PAGE_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' http: https:; media-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'";
+// HTML page windows (hatch open FILE.html): scripts, forms and popups allowed, but the sandbox keeps the page in an opaque origin
+// (no cookie, no access to Hatch's API or page), also when someone opens the URL directly instead of in the iframe. Network access
+// is not restricted: it is the user's own page. Popups inherit the sandbox.
+const PAGE_WINDOW_CSP = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'";
 const WIDGET_CSP = "sandbox allow-scripts; default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src 'none'";
 
 const safeDecode = (s) => { try { return decodeURIComponent(s); } catch { throw new HttpError(404, 'not found'); } };
@@ -352,6 +357,19 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       // these files are served without the token, so a symlink inside a widget folder must not lead anywhere outside it
       try { const real = fs.realpathSync(target); const base = path.join(fs.realpathSync(l.widgets), name); if (fs.lstatSync(path.join(l.widgets, name)).isSymbolicLink()) throw new HttpError(404, 'not found'); if (real !== base && !real.startsWith(base + path.sep)) throw new HttpError(404, 'not found'); } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(404, 'not found'); }
       return serveFile(res, target, { 'content-security-policy': WIDGET_CSP }, req);
+    }
+
+    // HTML page windows: /page/KEY/relative/path, token-free like widgets (see pages.js); the KEY of an open page window is the authorisation
+    if (p.startsWith('/page/')) {
+      if (m !== 'GET' && m !== 'HEAD') throw new HttpError(405, 'method not allowed');
+      const rest = p.slice('/page/'.length); const key = rest.split('/')[0];
+      const win = PAGE_KEY_RE.test(key) ? state.listPanels().find((q) => q.type === 'page' && typeof q.props.key === 'string' && tokenOk(key, q.props.key)) : null;
+      if (!win) throw new HttpError(404, 'not found');
+      const dir = path.dirname(String(win.props.path));
+      if (fsapi.getRoot()) { try { fsapi.abs(dir); } catch (e) { throw new HttpError(e.status || 403, e.message); } } // --root still confines what files can be read
+      const f = resolvePageFile(dir, safeDecode(rest.slice(key.length + 1)) || path.basename(String(win.props.path)));
+      if (!f) throw new HttpError(404, 'not found');
+      return serveFile(res, f, { 'content-security-policy': PAGE_WINDOW_CSP, 'referrer-policy': 'no-referrer', 'access-control-allow-origin': '*', 'x-frame-options': 'SAMEORIGIN' }, req);
     }
 
     // ---- auth ----
