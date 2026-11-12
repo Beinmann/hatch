@@ -6,7 +6,7 @@ import path from 'node:path';
 import { atomicWrite } from './state.js';
 
 const FILE = 'fx.json';
-export const EFFECTS = ['matrix', 'rain', 'goo']; // each one is public/fx/NAME.js
+export const EFFECTS = ['matrix', 'rain', 'goo', 'snow', 'starfield', 'aurora', 'fireflies', 'embers', 'waves']; // each one is public/fx/NAME.js
 export const DEFAULT_INTENSITY = 50;
 export class FxError extends Error { constructor(message) { super(message); this.name = 'FxError'; } }
 

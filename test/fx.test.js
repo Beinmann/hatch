@@ -22,10 +22,10 @@ test('fx.json: missing is off, set and clear round trip, unknown names are refus
   assert.deepEqual(readFx(dir), fx0());
   assert.equal(setFx(dir, 'Matrix').effect, 'matrix'); assert.deepEqual(readFx(dir), fx0({ effect: 'matrix' }));
   assert.equal(setFx(dir, 'rain').effect, 'rain'); assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'fx.json'), 'utf8')).effect, 'rain');
-  assert.throws(() => setFx(dir, 'snow'), FxError); assert.equal(readFx(dir).effect, 'rain', 'a refused name changes nothing');
+  assert.throws(() => setFx(dir, 'sparkles'), FxError); assert.equal(readFx(dir).effect, 'rain', 'a refused name changes nothing');
   assert.equal(setFx(dir, 'off').effect, null); assert.equal(fs.existsSync(path.join(dir, 'fx.json')), false);
   fs.writeFileSync(path.join(dir, 'fx.json'), '{oops'); assert.match(readFx(dir).problem, /not valid JSON/); assert.equal(readFx(dir).effect, null);
-  fs.writeFileSync(path.join(dir, 'fx.json'), '{"effect":"snow"}'); assert.match(readFx(dir).problem, new RegExp(`unknown.*${names()}`));
+  fs.writeFileSync(path.join(dir, 'fx.json'), '{"effect":"sparkles"}'); assert.match(readFx(dir).problem, new RegExp(`unknown.*${names()}`));
   fs.writeFileSync(path.join(dir, 'fx.json'), '{"effect":"off"}'); assert.deepEqual(readFx(dir), fx0());
   assert.throws(() => setFx(dir), FxError, 'nothing to set');
 });
@@ -43,8 +43,8 @@ test('fx.json intensity: per effect, plain files still work, hand edits and bad 
   assert.throws(() => setFx(dir, undefined, 10), /no effect is active/);
   for (const bad of [-1, 101, 'abc', NaN, {}, true]) { assert.throws(() => setFx(dir, 'rain', bad), FxError, String(bad)); }
   assert.equal(readFx(dir).intensities.rain, 70, 'a refused value changes nothing');
-  put({ effect: 'rain', intensity: { rain: 'loud', matrix: 20, snow: 5 } });
-  const r = readFx(dir); assert.equal(r.intensity, 50); assert.deepEqual(r.intensities, { matrix: 20 }); assert.match(r.problem, /intensity of rain.*0 to 100/); assert.match(r.problem, /snow/);
+  put({ effect: 'rain', intensity: { rain: 'loud', matrix: 20, sparkles: 5 } });
+  const r = readFx(dir); assert.equal(r.intensity, 50); assert.deepEqual(r.intensities, { matrix: 20 }); assert.match(r.problem, /intensity of rain.*0 to 100/); assert.match(r.problem, /sparkles/);
   put({ effect: 'rain', intensity: 33 }); assert.equal(readFx(dir).intensity, 33, 'a bare number means the active effect');
   put({ effect: 'rain', intensity: [1] }); assert.equal(readFx(dir).intensity, 50); assert.ok(readFx(dir).problem);
   put({ effect: 'rain', intensity: 500 }); assert.equal(readFx(dir).intensity, 50); assert.ok(readFx(dir).problem);
@@ -65,7 +65,7 @@ test('server: fx is in the snapshot, POST /api/fx saves it and emits an event, a
     r = await h.call('POST', '/api/fx', { effect: 'matrix', intensity: 90 }); assert.deepEqual([r.data.effect, r.data.intensity], ['matrix', 90]);
     r = await h.call('POST', '/api/fx', { effect: 'rain' }); assert.equal(r.data.intensity, 30, 'each effect keeps its own');
     assert.equal((await h.call('GET', '/api/fx')).data.intensity, 30);
-    assert.equal((await h.call('POST', '/api/fx', { effect: 'snow' })).status, 400);
+    assert.equal((await h.call('POST', '/api/fx', { effect: 'sparkles' })).status, 400);
     assert.equal((await h.call('POST', '/api/fx', { intensity: 101 })).status, 400);
     assert.equal((await h.call('POST', '/api/fx', {})).status, 400);
     fs.writeFileSync(path.join(h.stateDir, 'fx.json'), '{"effect":"matrix"}'); h.hatch.state.rescan(); assert.equal(h.hatch.state.snapshot().fx.effect, 'matrix');
@@ -86,8 +86,12 @@ test('CLI: hatch fx shows, switches, sets the intensity and rejects unknown effe
     r = await ui(['fx', '--intensity=70'], h.stateDir); assert.equal(r.status, 0, r.stderr); assert.equal(readFx(h.stateDir).intensity, 70); assert.equal(readFx(h.stateDir).effect, 'rain');
     r = await ui(['fx'], h.stateDir); assert.match(r.stdout, /active: rain \(intensity 70/);
     r = await ui(['fx', '--intensity', '150'], h.stateDir); assert.equal(r.status, 1); assert.match(r.stderr, /0 to 100/); assert.equal(readFx(h.stateDir).intensity, 70);
-    r = await ui(['fx', 'snow'], h.stateDir); assert.equal(r.status, 1); assert.match(r.stderr, /unknown effect/); assert.equal(readFx(h.stateDir).effect, 'rain');
+    r = await ui(['fx', 'sparkles'], h.stateDir); assert.equal(r.status, 1); assert.match(r.stderr, /unknown effect/); assert.equal(readFx(h.stateDir).effect, 'rain');
+    r = await ui(['fx', 'list'], h.stateDir); assert.equal(r.status, 0, r.stderr); const rows = r.stdout.replace(/\n$/, '').split('\n');
+    assert.deepEqual(rows.map((l) => l.slice(2)), [...EFFECTS, 'off']); assert.deepEqual(rows.filter((l) => l.startsWith('*')), ['* rain'], 'the active effect is marked');
+    r = await ui(['fx', 'list', '--json'], h.stateDir); assert.deepEqual(JSON.parse(r.stdout).effects.map((e) => e.name), EFFECTS); assert.deepEqual(JSON.parse(r.stdout).effects.filter((e) => e.active).map((e) => e.name), ['rain']);
     r = await ui(['fx', 'off'], h.stateDir); assert.equal(r.status, 0); assert.equal(readFx(h.stateDir).effect, null);
+    r = await ui(['fx', 'list'], h.stateDir); assert.match(r.stdout, /^\* off$/m, 'off is marked when nothing is active');
     r = await ui(['fx', '--intensity', '10'], h.stateDir); assert.equal(r.status, 1); assert.match(r.stderr, /no effect is active/);
   } finally { await h.close(); }
 });
@@ -337,4 +341,41 @@ test('rain glass: a running drop gets smaller on its way down and ends small', a
     if (d?.run.phase === 'go') { if (!r0) { r0 = d.r; y0 = d.y; } rEnd = d.r; seen = true; }
   }
   assert.ok(seen && r0 > 0, 'a drop ran'); assert.ok(rEnd < r0 * 0.5, `it ended much smaller (${r0.toFixed(1)} -> ${rEnd.toFixed(1)})`);
+});
+
+test('every listed effect has a loader in public/fx.js and a module in public/fx/ with the effect interface', async () => {
+  const src = fs.readFileSync(fileURLToPath(new URL('../public/fx.js', import.meta.url)), 'utf8');
+  for (const name of EFFECTS) {
+    assert.match(src, new RegExp(`\\b${name}: \\(\\) => import\\('./fx/${name}.js'\\)`), `${name} has a loader`);
+    const mod = (await import(`../public/fx/${name}.js`)).default; assert.equal(mod.name, name);
+    for (const fn of ['start', 'stop', 'resize', 'setIntensity']) assert.equal(typeof mod[fn], 'function', `${name}.${fn}`);
+  }
+});
+
+test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, waves) run on a stub canvas: still frame, animation, odd sizes and intensities, hidden tab, stop', async () => {
+  const calls = {}, bad = []; let queued = null, rafs = 0; const saved = { document: globalThis.document, raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame };
+  const ctx2d = () => new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...a) => { calls[k] = (calls[k] || 0) + 1; if (a.some((v) => typeof v === 'number' && !Number.isFinite(v))) bad.push([k, a]); return String(k).startsWith('create') ? { addColorStop() {} } : undefined; }), set: (t, k, v) => { t[k] = v; return true; } });
+  const canvas = (w, h) => { const c = ctx2d(); return { clientWidth: w, clientHeight: h, width: 0, height: 0, getContext: () => c, c }; };
+  globalThis.document = { hidden: false }; globalThis.requestAnimationFrame = (f) => { queued = f; rafs++; return 1; }; globalThis.cancelAnimationFrame = () => {};
+  try {
+    const { levelOf, countFor } = await import('../public/fx/loop.js');
+    assert.deepEqual(levelOf(50), { count: 1, alpha: 1 }); assert.equal(levelOf(0).count, 0); assert.deepEqual(levelOf(NaN), levelOf(50));
+    assert.equal(countFor(0, 0, 5000, levelOf(50)), 0); assert.equal(countFor(1000, 800, 5000, levelOf(0)), 0); assert.equal(countFor(1e7, 1e7, 5000, levelOf(100), 500), 500, 'capped');
+    assert.ok(countFor(1000, 800, 5000, levelOf(100)) > countFor(1000, 800, 5000, levelOf(50)));
+    for (const name of ['snow', 'starfield', 'aurora', 'fireflies', 'embers', 'waves']) {
+      const mod = (await import(`../public/fx/${name}.js`)).default;
+      for (const [w, h] of [[0, 0], [1, 1], [900, 500]]) {
+        for (const intensity of [0, 50, 100, undefined]) {
+          const c = canvas(w, h); mod.start(c, { animate: false, intensity }); assert.ok(c.width >= 1 && c.height >= 1); mod.resize(); mod.setIntensity(100); mod.stop();
+          mod.start(c, { animate: true, intensity }); for (let t = 100; t < 2500; t += 33) queued(performance.now() + t); mod.setIntensity(20); mod.resize(); queued(performance.now() + 3000); mod.stop();
+        }
+      }
+      const c = canvas(900, 500); mod.start(c, { animate: false, intensity: 50 }); assert.ok(c.c.clearRect !== undefined && calls.clearRect > 0, `${name} drew a still frame`);
+      const before = rafs; mod.stop(); mod.start(c, { animate: false, intensity: 50 }); assert.equal(rafs, before, `${name}: reduced motion schedules no animation`); mod.stop();
+      mod.start(c, { animate: true, intensity: 50 }); calls.clearRect = 0; globalThis.document.hidden = true; for (let t = 100; t < 1000; t += 33) queued(performance.now() + t); assert.equal(calls.clearRect || 0, 0, `${name}: nothing is drawn in a hidden tab`);
+      globalThis.document.hidden = false; for (let t = 1000; t < 1200; t += 33) queued(performance.now() + t); assert.ok(calls.clearRect > 0); mod.stop();
+    }
+    assert.deepEqual(bad, [], 'no NaN or Infinity reached the canvas');
+    assert.ok(calls.fillRect > 0 && calls.arc > 0 && calls.fill > 0 && calls.stroke > 0 && calls.createLinearGradient > 0, 'the effects drew rects, arcs, paths and gradients');
+  } finally { Object.assign(globalThis, { document: saved.document, requestAnimationFrame: saved.raf, cancelAnimationFrame: saved.caf }); if (!saved.document) delete globalThis.document; }
 });

@@ -109,7 +109,8 @@ workspaces (named sets of windows with their own terminal and background, in thi
   open a page directly in one with  http://HOST:PORT/#NAME
 background effects (behind the terminal text, visible at any transparency)
   fx                                show the active effect, its intensity and the list
-  fx matrix | rain | goo | off      switch the effect (saved in fx.json; open pages update by themselves)
+  fx list                           all effects, the active one marked with *
+  fx NAME | off                     switch the effect (matrix rain goo snow starfield aurora fireflies embers waves; saved in fx.json; open pages update by themselves)
   fx [NAME] --intensity 0-100       how strong the effect is (default 50, kept per effect; no NAME = the active one)
 desktop
   windows transparency 0..100       set the transparency of every window that is open right now (each kept per window, like leader o)
@@ -732,6 +733,7 @@ async function main(argv) {
       return console.log(`sent ${r.bytes} bytes to the browser clipboard`);
     }
     case 'fx': {
+      if (sub === 'list') { const f = readFx(dir); return say(o, { effect: f.effect, effects: EFFECTS.map((name) => ({ name, active: name === f.effect, intensity: f.intensities[name] ?? 50 })) }, [...EFFECTS, 'off'].map((n) => `${n === (f.effect || 'off') ? '*' : ' '} ${n}`).join('\n')); }
       if (!sub && o.intensity === undefined) { const f = readFx(dir); return say(o, { effect: f.effect, intensity: f.intensity, intensities: f.intensities, effects: EFFECTS }, `active: ${f.effect || 'none'}${f.effect ? ` (intensity ${f.intensity}, 0-100)` : ''}${f.problem ? ` (${f.problem})` : ''}\neffects: ${EFFECTS.join(', ')}, off`); }
       try { const f = setFx(dir, sub, o.intensity); return console.log(f.effect ? `fx ${f.effect} on, intensity ${f.intensity}; \`hatch fx off\` turns it off. Open pages update by themselves.` : 'fx off'); }
       catch (e) { if (e instanceof FxError) throw new CliError(e.message); throw e; }
