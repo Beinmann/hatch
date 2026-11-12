@@ -15,7 +15,7 @@ import { saveUpload, sniff, MIME, MAX_BYTES, UploadError } from './uploads.js';
 import { createSources, checkSource, runOnce as runSourceOnce, ARG_RE, ANY_ARG_RE } from './sources.js';
 import { hostAllowed, readAllowedHostsFile, hostRefusedMessage } from './hosts.js';
 import * as fsapi from './files.js';
-import { resolvePageFile, PAGE_KEY_RE } from './pages.js';
+import { resolvePageFile, PAGE_KEY_RE } from './pages.js'; // resolvePageFile also guards /host/ (hatch host)
 import { pickEditor, vimRequest, which } from './editor.js';
 import { createWatches, checkWatches } from './watches.js';
 import { createSchedules, checkSchedules } from './schedules.js';
@@ -31,7 +31,6 @@ import { createLimits } from './limits.js';
 import { parseProxyPath, proxyHttp, proxyUpgrade } from './proxy.js';
 import { acquireLock } from './instance-guard.js';
 import { createConfigGuard } from './config-guard.js';
-import { realDir, resolveInside } from './safe-serve.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -348,8 +347,8 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     try { fsapi.abs(file); } catch (e) { throw new HttpError(e.status || 403, e.message); }
     let real; try { real = fs.realpathSync(file); } catch { throw new HttpError(404, `no such file: ${file}`); }
     if (!fs.statSync(real).isFile()) throw new HttpError(400, `not a file: ${file}`);
-    const dir = realDir(path.dirname(real)); const entry = path.basename(real);
-    if (!dir || entry.startsWith('.')) throw new HttpError(400, 'cannot host a dotfile');
+    const dir = path.dirname(real); const entry = path.basename(real);
+    if (entry.startsWith('.')) throw new HttpError(400, 'cannot host a dotfile');
     let id = [...hosted].find(([, h]) => h.dir === dir && h.entry === entry)?.[0];
     if (!id) { id = crypto.randomBytes(5).toString('hex'); hosted.set(id, { dir, entry }); }
     return { id, path: `/host/${id}/${encodeURIComponent(entry)}` };
@@ -360,7 +359,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     const h = hosted.get(id);
     if (!h) throw new HttpError(404, 'not found: this page is not hosted (run `hatch host FILE.html` again; hosting is forgotten when the server restarts)');
     const rel = rest.map(safeDecode).join('/') || h.entry;
-    const f = resolveInside(h.dir, rel);
+    const f = resolvePageFile(h.dir, rel);
     if (!f) throw new HttpError(404, 'not found');
     return serveFile(res, f, { 'referrer-policy': 'no-referrer' }, req);
   }

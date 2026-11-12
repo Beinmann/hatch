@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { startHatch, tmp } from './helpers.js';
-import { realDir, resolveInside } from '../src/safe-serve.js';
+import { resolvePageFile } from '../src/pages.js';
 
 function site() {
   const d = tmp(); const site = path.join(d, 'site'); fs.mkdirSync(path.join(site, 'sub'), { recursive: true });
@@ -19,13 +19,12 @@ function site() {
 }
 const get = (base, route, headers = {}) => fetch(base + route, { headers, redirect: 'manual' });
 
-test('safe-serve resolves only regular files inside the folder', () => {
-  const { site: s } = site(); const root = realDir(s);
-  assert.ok(resolveInside(root, 'page.html'));
-  assert.ok(resolveInside(root, 'sub/a.txt'));
-  assert.ok(resolveInside(root, 'alias.css'), 'a link that stays inside is fine');
-  for (const bad of ['../outside.txt', 'sub/../../outside.txt', 'leak.txt', 'up/outside.txt', '.secret', 'sub', '', 'missing.txt', '%2e%2e/x']) assert.equal(resolveInside(root, bad), null, bad);
-  assert.equal(realDir(path.join(s, 'page.html')), null);
+test('the shared path resolver resolves only regular files inside the folder', () => {
+  const { site: s } = site(); const root = s;
+  assert.ok(resolvePageFile(root, 'page.html'));
+  assert.ok(resolvePageFile(root, 'sub/a.txt'));
+  assert.ok(resolvePageFile(root, 'alias.css'), 'a link that stays inside is fine');
+  for (const bad of ['../outside.txt', 'sub/../../outside.txt', 'leak.txt', 'up/outside.txt', '.secret', 'sub', '', 'missing.txt', '%2e%2e/x']) assert.equal(resolvePageFile(root, bad), null, bad);
 });
 
 test('hatch host: POST /api/host, then the page and its assets are served; nothing else', async () => {
