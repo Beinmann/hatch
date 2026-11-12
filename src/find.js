@@ -5,6 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { unreachableHelp } from './instance.js';
 
+/** First non-loopback IPv4 address: the host other devices on the LAN reach this box at. */
+export function lanAddress() {
+  for (const list of Object.values(os.networkInterfaces())) for (const i of list || []) if (i.family === 'IPv4' && !i.internal) return i.address;
+  return '127.0.0.1';
+}
+
 export class CliError extends Error { constructor(message, code = 1) { super(message); this.code = code; } }
 
 /** The per-user default state dir. HOME is read at call time so tests can point it at a temp dir. */
