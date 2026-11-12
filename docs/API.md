@@ -49,7 +49,7 @@ repair the file or use PUT to replace it. Removing the file clears the checklist
 
 ## Files and images
 
-`POST /api/host` `{file}` (absolute path; returns the `/host/ID/NAME` path that `hatch host` turns into a URL; `GET /host/ID/...` serves that file's folder read-only), `POST /api/upload` (raw image body), `GET /api/file?path=` (images only), `GET /api/fs/list|read|resolve|download`,
+`POST /api/host` `{file}` (absolute path; returns the `/host/ID/NAME` path that `hatch host` turns into a URL after its confirmation prompt (the API itself does not ask; hosted pages are not sandboxed); `GET /host/ID/...` serves that file's folder read-only), `POST /api/upload` (raw image body), `GET /api/file?path=` (images only), `GET /api/fs/list|read|resolve|download`,
 `PUT /api/fs/write {path,text,mtime}`, `POST /api/fs/mkdir|newfile|rename|delete|upload` (upload: raw body, `?dir=&name=`).
 All confined by `hatch-server serve --root DIR` when given. File reads return a numeric `mtime`; pass it unchanged
 when saving to refuse changed or deleted files (409). Omit `mtime` for an unconditional write or explicit file creation.

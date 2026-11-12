@@ -71,3 +71,24 @@ test('POST /api/host validates the file', async () => {
     assert.equal((await h.call('POST', '/api/host', { file: path.join(s, '.secret') })).status, 400);
   } finally { await h.close(); }
 });
+
+test('hatch host CLI: refuses without a terminal or --yes, registers nothing; --yes works', async () => {
+  const { spawn } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const BIN = fileURLToPath(new URL('../bin/hatch.js', import.meta.url));
+  const home = tmp();
+  const run = (state, args) => new Promise((resolve) => {
+    const p = spawn('node', [BIN, '--state', state, ...args], { env: { ...process.env, HOME: home, HATCH_STATE: '', HATCH_URL: '', HATCH_WORKSPACE: '' } });
+    let stdout = ''; let stderr = '';
+    p.stdout.on('data', (d) => { stdout += d; }); p.stderr.on('data', (d) => { stderr += d; });
+    p.on('close', (status) => resolve({ status, stdout, stderr })); p.stdin.end('y\n');
+  });
+  const h = await startHatch();
+  try {
+    const { site: s } = site(); const page = path.join(s, 'page.html');
+    let r = await run(h.stateDir, ['host', page]);
+    assert.notEqual(r.status, 0); assert.match(r.stderr, /not sandboxed/); assert.match(r.stderr, /--yes/); assert.equal(r.stdout, '');
+    r = await run(h.stateDir, ['host', page, '--yes']);
+    assert.equal(r.status, 0, r.stderr); assert.match(r.stderr, /not sandboxed/); assert.match(r.stdout, /\/host\//);
+  } finally { await h.close(); }
+});

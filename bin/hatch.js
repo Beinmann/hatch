@@ -63,7 +63,7 @@ panels
   term NAME [--cmd CMD]             another terminal in a window (its own tmux session; --cmd runs a command first)
   files [DIR]                       file browser (open images and text files, download, drop to upload)
   edit FILE[:LINE]                  small text editor window (Ctrl+S saves); LINE puts the cursor there
-  host FILE.html                    print a URL that opens the page full size in a browser tab (its folder is served read-only)
+  host FILE.html [--yes]            print a URL that opens the page full size in a browser tab (its folder is served read-only; the page is NOT sandboxed, so this warns and asks to confirm; --yes skips the question)
   serve-dir [DIR] [PORT]            serve a folder over HTTP (python3) and show it in a window, e.g. a generated HTML report
   image PATH [--title T]            show an image
   open FILE|DIR|URL [--title T] [--direct]   detect image, HTML page (.html/.htm: rendered in a sandboxed window; edit its source with: hatch edit FILE), text, directory or URL; http://localhost:PORT goes through Hatch's proxy to the box's own port
@@ -496,6 +496,15 @@ async function main(argv) {
     }
     case 'host': {
       need(sub, 'usage: host FILE.html'); const f = path.resolve(sub); need(fs.existsSync(f) && fs.statSync(f).isFile(), `no such file: ${f}`);
+      const folder = path.dirname(f);
+      if (o.yes) console.error(`Warning: ${f} is not sandboxed and gets full access to this Hatch; everything in ${folder} becomes readable to anyone with the link.`);
+      else {
+        console.error(`Warning: hosting ${f}\n  - The page is not sandboxed: it runs with full access to this Hatch instance.\n  - The whole folder ${folder} becomes readable to anyone with the link.\n  - Host only files you trust.`);
+        if (!process.stdin.isTTY || !process.stderr.isTTY) throw new CliError('there is no terminal to ask on; pass --yes to host this page anyway');
+        const rl = (await import('node:readline/promises')).createInterface({ input: process.stdin, output: process.stderr });
+        const answer = (await rl.question('Continue? [y/N] ')).trim().toLowerCase(); rl.close();
+        if (answer !== 'y' && answer !== 'yes') throw new CliError('nothing hosted');
+      }
       const h = await api('POST', '/api/host', { file: f }); const c = readConfig(dir);
       console.log(`http://${lanAddress()}:${c.port}${h.path}?t=${c.token}`);
       console.error('Opens the page full size in a normal browser tab (read-only; the folder it is in is served, dotfiles are not). Anyone with the link has full access to this Hatch: share it like the main URL.');
