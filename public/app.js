@@ -4,6 +4,7 @@ import { initTerminal } from './terminal.js';
 import { createWindows } from './windows.js';
 import image from './panels/image.js';
 import iframe from './panels/iframe.js';
+import page from './panels/page.js';
 import note from './panels/note.js';
 import { createFx } from './fx.js';
 import progress, { progressSummary } from './panels/progress.js';
@@ -143,7 +144,7 @@ let dockWanted = store.get('dock-visible', false);
 const wm = createWindows({
   floats: $('floats'), dock: dockEl, split: splitEl, chips: $('chips'), el,
   patch: ctx.patch, close: (id) => api('DELETE', `/api/panels/${id}`).catch((e) => toast(e.message, 'bad')),
-  kinds: { image, iframe, note, progress, widget, files, editor, output, terminal: terminalPanel, git: gitPanel, trash: trashPanel }, ctx,
+  kinds: { image, iframe, page, note, progress, widget, files, editor, output, terminal: terminalPanel, git: gitPanel, trash: trashPanel }, ctx,
   dockOpen: () => dockWanted, openDock: () => { if (!dockWanted) { dockWanted = true; store.set('dock-visible', true); } },
   onDockChange: (any) => { $('dockbtn').hidden = !any; dockEl.hidden = splitEl.hidden = !(any && dockWanted); requestAnimationFrame(() => wm.refit()); }, // the floating area changed width: refit now, not only when the resize observer fires
 });

@@ -132,6 +132,7 @@ Going back: the project `.hatch` is as it was. Stop the per-user instance and st
 - **Home screen.** The page has a web app manifest and icon, so "Add to Home screen" on a phone opens it full-screen like an app (no offline mode).
 - **Phone.** Under 700 px wide the page stacks and windows go full width; on touch devices (or Settings) an extra keys bar offers Esc, Tab, a sticky Ctrl, arrows, Home/End, PgUp/PgDn and `| ~ / -`.
 - **Desktop.** `hatch desktop` (or the palette) opens a set of live gadgets: CPU/memory graph, system, clock, top (an interactive terminal running `htop`, or `top` if htop is missing), git and log tail, plus the progress panel. Use Tile floating windows to refit them to your screen.
+- **HTML pages.** `hatch open FILE.html` (or `.htm`) renders the page in a window instead of opening an editor; `hatch edit FILE.html` or the window's Edit source button opens the source. See "HTML page windows: how safe is this?" below.
 - **Output windows.** `hatch run "npm test"` runs a command in its own window with live output, exit status, Stop, Rerun, Copy and a line filter. `path:line` references open the file in an editor window; `--wait` blocks and returns the exact command exit code, including failures and signal exits. Stop allows two seconds for cleanup, then kills the process group if needed. A finished run notifies you. Long-running output keeps a bounded tail in the browser and shows a notice when earlier text is discarded; Copy copies the retained output.
 - **Terminal links.** `path:line` references and URLs in the output are clickable: a file opens in an editor window on that line (relative paths are tried against the server dir and the tmux pane's directory), a URL opens in a new tab. References broken across a wrapped line are not joined.
 - **Runnable notes.** Shell code blocks (```bash, ```sh, ```shell, ```zsh, ```console) in a note get a Run button that executes the block in an output window, so a note can be a runbook; nothing runs without a click.
@@ -162,7 +163,7 @@ Use `hatch` for everyday interaction with the page. `hatch-ui` still works as a 
 
 ```sh
 hatch image screenshot.png --size 800x550
-hatch open README.md                 # images, text files, directories or http(s) URLs
+hatch open README.md                 # images, text files, HTML pages, directories or http(s) URLs
 hatch widget examples              # bundled example widgets (hatch widget open NAME installs and opens one)
 hatch popup open progress
 hatch popup create my-clock --from clock
@@ -266,6 +267,18 @@ Editing any file in the widget directory (except `data/`) reloads it in the page
 
 Opening an example copies it into the state dir once; after upgrading Hatch an instance keeps its old copy. `hatch-server update-widgets NAME...` (or `--all`) refreshes the widgets that instance already uses from the shipped copies. It works while the server runs, never touches a widget's `data/` folder, and saves any locally changed file as `<file>.bak` first. Hatch remembers which shipped version an example was copied from (`shipped-widgets.json` in the state dir); when the shipped copy has changed since, `hatch widget open NAME` and the palette's example entry say so and name the command. Copies made before this was recorded are flagged only when their files look untouched; nothing is said when it cannot tell.
 
+## HTML page windows: how safe is this?
+
+`hatch open FILE.html` shows the file in an iframe with `sandbox="allow-scripts allow-forms allow-popups"`, the same opaque-origin isolation widgets use, and the server repeats it as a `Content-Security-Policy: sandbox ...` header on every file it serves, so the page stays isolated even if its URL is opened directly in a tab.
+
+What the page can do: run JavaScript, load the files next to it (the whole folder of the file, including sub folders), submit forms and open popups (which stay sandboxed), and make network requests like any web page (external CDNs work; so can requests to other ports the browser can reach, e.g. other local dev servers, and fetches of its own files since the server answers them with CORS open).
+
+What it cannot do: read Hatch's cookie or token (no `allow-same-origin`), call the Hatch API or touch the Hatch page (`parent.document` is blocked), navigate the Hatch page, or read files outside the file's folder. `..`, symlinks that lead out of the folder, and hidden files or folders (`.git`, `.env`) are refused with 404.
+
+How it is authorised: files are served at `/page/KEY/...` without the token (a sandboxed frame cannot send the cookie). KEY is a random 128-bit id made by the server when the window opens and kept in the window's panel file; closing the window revokes it, and the key is not part of any file the page can see except its own URL. Anyone who can see the panel list (including a view-only link) can see the key, and so can read that folder. With `--root DIR`, the folder must be inside DIR.
+
+What to keep in mind: the page is code you chose to run in your browser, with the usual web-page powers. Do not open pages you do not trust from a folder that contains secrets (everything not hidden in that folder, sub folders included, is readable by the page), and prefer a folder of its own. Checked in Chromium only.
+
 ## Tests
 
 `node --test "test/*.test.js"` starts real servers on ephemeral ports with `cat` instead of tmux; one test uses real
@@ -277,7 +290,7 @@ tmux when it is installed. Browser-only behaviour (paste, drag, windows, Mermaid
 - One pty serves all browsers; its size follows the most recent resize.
 - Plain http is not a secure context: no `navigator.clipboard.read` (paste uses the paste event, copy has a textarea fallback), notifications may be blocked.
 - If the screen looks garbled after a reconnect, `tmux refresh-client` (or Ctrl+B r with a binding) repaints it.
-- Widget files and `/sdk.js` are served without the token (a sandboxed iframe cannot send the cookie). They contain only what was written into the widget dir.
+- Widget files and `/sdk.js` are served without the token (a sandboxed iframe cannot send the cookie). They contain only what was written into the widget dir. HTML page windows are served the same way under a per-window random key (see above).
 
 ## License
 

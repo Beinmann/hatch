@@ -11,7 +11,7 @@ const MIN = { w: 180, h: 90 }; const MAX = 8192;
 const DEFAULTS = {
   image: [420, 300], iframe: [640, 420], note: [360, 240], files: [420, 380], editor: [560, 380],
   output: [560, 300], 'output:diff': [680, 360], terminal: [640, 360], vim: [700, 440], git: [420, 420],
-  trash: [380, 320], progress: [620, 480], widget: [420, 300],
+  trash: [380, 320], page: [640, 460], progress: [620, 480], widget: [420, 300],
 };
 
 /** Kind key: the type, refined where one type holds very different content (widget name, output kind, vim). */
