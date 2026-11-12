@@ -144,46 +144,59 @@ export function migrate(dir) {
 /**
  * Folds another instance's state dir into a workspace: its windows (new ids; terminal names that clash get a suffix),
  * its background and the widgets and uploads they use are copied. Running terminals cannot move between instances, so a
- * terminal window starts a fresh shell. Progress plans, saved commands and settings are not imported.
- * Returns { workspace, created, windows, skipped: [..] }.
+ * terminal window starts a fresh shell. Progress plans, saved commands and settings are not imported (`hatch migrate`
+ * does those; see migrate.js).
+ * Options (used by migrate): `select(panel)` picks which windows go to this workspace, `cwd` becomes the workspace's
+ * terminal start directory (and a terminal window's own props.cwd), `bgFrom` is where the background is read from,
+ * `prefixClash` renames a clashing terminal `<workspace>-<name>` instead of `<name>-2`, `ctx` carries the id counter and
+ * the taken terminal names across several calls, `dry` changes nothing and only fills `plan`.
+ * Returns { workspace, created, windows, skipped: [..], plan: [..] }.
  */
-export function importState(dir, srcDir, name) {
+export function importState(dir, srcDir, name, { select = null, cwd = null, bgFrom = null, prefixClash = false, ctx = {}, dry = false } = {}) {
   srcDir = path.resolve(srcDir);
   if (!fs.existsSync(path.join(srcDir, 'panels')) && !fs.existsSync(path.join(srcDir, 'config.json'))) throw new WorkspaceError(`${srcDir} does not look like a Hatch state dir (no panels/ or config.json); pass the .hatch folder of the instance`);
   if (path.resolve(dir) === srcDir) throw new WorkspaceError('that is this instance\'s own state dir; pass another instance\'s');
   const mine = readPanelFiles(dir).map((p) => p.data);
   let { list } = listWorkspaces(dir, mine);
   let w = list.find((x) => x.name === name); let created = false;
-  if (!w) { w = createWorkspace(dir, name, mine); created = true; }
-  const taken = new Set(mine.filter((p) => p?.type === 'terminal').map((p) => p.props?.name));
-  let max = 0; for (const f of fs.existsSync(path.join(dir, 'panels')) ? fs.readdirSync(path.join(dir, 'panels')) : []) { const m = /^p(\d+)\.json$/.exec(f); if (m) max = Math.max(max, Number(m[1])); }
-  const skipped = []; let windows = 0;
-  fs.mkdirSync(path.join(dir, 'panels'), { recursive: true });
+  if (!w) { created = true; w = dry ? { name, id: '(new)' } : createWorkspace(dir, name, mine); }
+  if (cwd && !dry && w.name !== MAIN) writeRegistry(dir, listWorkspaces(dir, readPanelFiles(dir).map((p) => p.data)).list.map((x) => (x.name === w.name ? { ...x, cwd } : x)));
+  const taken = ctx.taken ||= new Set(mine.filter((p) => p?.type === 'terminal').map((p) => p.props?.name));
+  if (ctx.max === undefined) { ctx.max = 0; for (const f of fs.existsSync(path.join(dir, 'panels')) ? fs.readdirSync(path.join(dir, 'panels')) : []) { const m = /^p(\d+)\.json$/.exec(f); if (m) ctx.max = Math.max(ctx.max, Number(m[1])); } }
+  const skipped = []; const plan = []; let windows = 0;
+  if (!dry) fs.mkdirSync(path.join(dir, 'panels'), { recursive: true });
   for (const { file, data } of readPanelFiles(srcDir)) {
     if (!data || typeof data !== 'object') continue;
+    if (select && !select(data)) continue;
     const p = { ...data };
     if (p.type === 'progress') { skipped.push(`${file}: progress windows are not imported`); continue; }
+    let note = '';
     if (p.type === 'terminal') {
-      let n = String(p.props?.name || 'shell'); const base = n; let i = 2;
-      while (taken.has(n)) n = `${base}-${i++}`.slice(0, 64);
-      taken.add(n); p.props = { ...p.props, name: n };
+      const orig = String(p.props?.name || 'shell'); let n = orig; let i = 2;
+      if (prefixClash && taken.has(n)) n = `${w.name}-${orig}`.slice(0, 64);
+      while (taken.has(n)) n = `${prefixClash ? `${w.name}-${orig}` : orig}-${i++}`.slice(0, 64);
+      taken.add(n); p.props = { ...p.props, name: n, ...(cwd && !p.props?.cwd && { cwd }) };
+      if (n !== orig) note = ` (terminal renamed ${orig} -> ${n}: that name is taken)`;
     }
     if (p.type === 'widget' && p.props?.name) {
       const from = path.join(srcDir, 'widgets', p.props.name); const to = path.join(dir, 'widgets', p.props.name);
-      if (fs.existsSync(from) && !fs.existsSync(to)) fs.cpSync(from, to, { recursive: true });
+      if (fs.existsSync(from) && !fs.existsSync(to)) { if (!dry) fs.cpSync(from, to, { recursive: true }); }
       else if (fs.existsSync(to) && fs.existsSync(from)) skipped.push(`widget ${p.props.name} already exists here; kept this instance's copy`);
     }
     if (p.type === 'image' && typeof p.props?.src === 'string' && p.props.src.startsWith('/files/uploads/')) {
       const f = path.basename(p.props.src); const from = path.join(srcDir, 'uploads', f); const to = path.join(dir, 'uploads', f);
-      if (fs.existsSync(from) && !fs.existsSync(to)) { fs.mkdirSync(path.join(dir, 'uploads'), { recursive: true }); fs.copyFileSync(from, to); }
+      if (fs.existsSync(from) && !fs.existsSync(to) && !dry) { fs.mkdirSync(path.join(dir, 'uploads'), { recursive: true }); fs.copyFileSync(from, to); }
     }
-    max += 1; const id = `p${max}`; delete p.id; delete p.activation;
+    ctx.max += 1; const id = `p${ctx.max}`; delete p.id; delete p.activation;
     if (w.name === MAIN) delete p.ws; else p.ws = w.name;
-    atomicWrite(path.join(dir, 'panels', `${id}.json`), `${JSON.stringify({ ...p, id }, null, 2)}\n`);
+    if (!dry) atomicWrite(path.join(dir, 'panels', `${id}.json`), `${JSON.stringify({ ...p, id }, null, 2)}\n`);
+    plan.push(`window ${data.id || file} (${p.type}${p.title ? ` "${p.title}"` : ''}) -> ${id} in ${w.name}${note}`);
     windows += 1;
   }
-  const bgDir = workspaceDir(dir, w);
+  const bgDir = workspaceDir(dir, w); const from = bgFrom || srcDir;
   const hadBg = fs.existsSync(bgDir) && fs.readdirSync(bgDir).some((f) => /^background\.(png|jpg|gif|webp)$/.test(f));
-  if (!hadBg) copyBackground(srcDir, bgDir); else skipped.push('background: the workspace already has one; kept it');
-  return { workspace: w.name, created, windows, skipped };
+  const srcHasBg = fs.existsSync(from) && fs.readdirSync(from).some((f) => /^background\.(png|jpg|gif|webp)$/.test(f));
+  if (hadBg) skipped.push('background: the workspace already has one; kept it');
+  else if (srcHasBg) { if (!dry) copyBackground(from, bgDir); plan.push(`background of ${path.basename(path.dirname(path.resolve(from)))}/${path.basename(from)} -> workspace ${w.name}`); }
+  return { workspace: w.name, created, windows, skipped, plan };
 }

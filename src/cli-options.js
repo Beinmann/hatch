@@ -1,5 +1,5 @@
 // Shared routing knowledge keeps global options before a command consistent across both entrypoints.
-export const BOOLEAN_OPTIONS = new Set(['help', 'version', 'json', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus', 'view-only', 'tmux-status', 'view', 'revoke-view', 'yes']);
+export const BOOLEAN_OPTIONS = new Set(['help', 'version', 'json', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus', 'view-only', 'tmux-status', 'view', 'revoke-view', 'yes', 'dry-run']);
 // Commands that moved from `hatch` to `hatch-server`; `hatch` still forwards them with a notice.
 export const SERVER_COMMANDS = new Set(['serve', 'start', 'stop', 'restart', 'status', 'url', 'service']);
 

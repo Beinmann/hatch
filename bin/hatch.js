@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { stepSlug as slug } from '../src/progress.js';
 import { firstCommandIndex, SERVER_COMMANDS } from '../src/cli-options.js';
 import { COMMAND_HELP } from './ui-help.js';
-import { CliError, resolveStateDir, makeClient } from '../src/find.js';
+import { CliError, chooseStateDir, resolveStateDir, makeClient } from '../src/find.js';
 import { doctor, printChecks } from '../src/doctor.js';
 import { layout, NAME_RE, STEP_STATUS } from '../src/state.js';
 import * as background from '../src/background.js';
@@ -103,6 +103,9 @@ workspaces (named sets of windows with their own terminal and background, in thi
   workspace rename OLD NEW          windows, terminal and background stay with it
   workspace close NAME --confirm NAME   closes its windows and terminals for good; the name must be typed out
   workspace import STATE-DIR [NAME]     fold another instance's windows and background into a workspace (terminals start fresh)
+  migrate [DIR] [--name NAME] [--dry-run] [--yes]   import a project's .hatch (DIR, or the nearest one above here) into this per-user instance as a workspace:
+                                    windows, layout, background, terminal start directory, commands, widgets, schedules, bookmarks, custom css/js, settings.
+                                    The source is never changed; existing settings win (conflicts are listed). Works with the server stopped (--state TARGET for another target)
   open a page directly in one with  http://HOST:PORT/#NAME
 background effects (behind the terminal text, visible at any transparency)
   fx                                show the active effect, its intensity and the list
@@ -144,7 +147,7 @@ Editing any file in the widget directory reloads the widget in the page.`;
 
 function parse(argv) {
   const o = { _: [] };
-  const flags = new Set(['json', 'help', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus']);
+  const flags = new Set(['json', 'help', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus', 'dry-run', 'yes']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--') { o._.push(...argv.slice(i + 1)); break; }
@@ -218,6 +221,37 @@ ${WIDGET_HELP}
 Style with hatch.theme colours (or CSS variables) so it fits light and dark pages.`;
 }
 
+// `migrate` works on files, so it needs neither a running server nor an existing target.
+async function migrateCommand(o, dirArg) {
+  const mg = await import('../src/migrate.js');
+  const { liveOwner } = await import('../src/instance-guard.js');
+  const { shortPath } = await import('../src/instance.js');
+  const target = chooseStateDir({ state: o.state }).dir;
+  let src; let name; let r;
+  try {
+    src = mg.findSource(dirArg);
+    name = o.name || mg.workspaceNameFor(src.project);
+    need(name, `could not derive a workspace name from ${src.project}; pass --name NAME`);
+    const dry = !!o['dry-run'];
+    if (!dry && !fs.existsSync(target) && !o.yes) {
+      if (!process.stdin.isTTY || !process.stderr.isTTY) throw new CliError(`${target} does not exist yet and there is no terminal to ask on; pass --yes to create it`);
+      const rl = (await import('node:readline/promises')).createInterface({ input: process.stdin, output: process.stderr });
+      const answer = (await rl.question(`${target} does not exist. Create it and import ${shortPath(src.srcDir)} as workspace ${name}? [y/N] `)).trim().toLowerCase(); rl.close();
+      if (answer !== 'y' && answer !== 'yes') throw new CliError('nothing changed');
+    }
+    r = mg.migrateProject({ srcDir: src.srcDir, target, name, dry });
+  } catch (e) { if (e instanceof mg.MigrateError || e instanceof wsapi.WorkspaceError) throw new CliError(e.message); throw e; }
+  console.log(`${o['dry-run'] ? 'DRY RUN, nothing was changed. Would migrate' : 'Migrated'} ${r.source} into ${r.target}`);
+  for (const l of r.steps) console.log(`  ${l}`);
+  if (r.conflicts.length) { console.log('conflicts (the existing setting was kept):'); for (const l of r.conflicts) console.log(`  ${l}`); }
+  for (const l of r.notes) console.log(`note: ${l}`);
+  const run = liveOwner(target); const old = liveOwner(r.source);
+  if (run) console.log(`note: a server (pid ${run.pid}) runs on ${r.target}; it picks the changes up by itself.`);
+  if (old) console.log(`note: the old instance (pid ${old.pid}) still runs; stop it before starting the per-user one (both default to port 7070).`);
+  if (o['dry-run']) console.log('Run again without --dry-run to do it.');
+  else console.log(`\n${mg.nextSteps({ target: r.target, source: r.source }).join('\n')}`);
+}
+
 async function main(argv) {
   // `diff` hands everything after it to git untouched (flags like --stat or --cached are not ours to parse)
   const firstPos = firstCommandIndex(argv);
@@ -242,6 +276,8 @@ async function main(argv) {
   }
 
   if (cmd === 'doctor') { if (!printChecks(await doctor({ state: o.state }))) process.exitCode = 1; return; }
+
+  if (cmd === 'migrate') return migrateCommand(o, rawSub);
 
   const dir = resolveStateDir({ state: o.state }).dir;
   const l = layout(dir);
