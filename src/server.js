@@ -31,6 +31,7 @@ import { createLimits } from './limits.js';
 import { parseProxyPath, proxyHttp, proxyUpgrade } from './proxy.js';
 import { acquireLock } from './instance-guard.js';
 import { createConfigGuard } from './config-guard.js';
+import { realDir, resolveInside } from './safe-serve.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -339,6 +340,31 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     return { opened };
   }
 
+  // ---- hosted pages: `hatch host FILE.html` registers a file's folder; /host/ID/... serves it read-only (GET, token or view token) ----
+  // In memory on purpose: a restart forgets them and `hatch host` is simply run again. The page runs in Hatch's own origin, so only host files you trust.
+  const hosted = new Map(); // id -> { dir (real path), entry (file name) }
+  function hostFile(file) {
+    if (typeof file !== 'string' || !path.isAbsolute(file)) throw new HttpError(400, 'file must be an absolute path');
+    try { fsapi.abs(file); } catch (e) { throw new HttpError(e.status || 403, e.message); }
+    let real; try { real = fs.realpathSync(file); } catch { throw new HttpError(404, `no such file: ${file}`); }
+    if (!fs.statSync(real).isFile()) throw new HttpError(400, `not a file: ${file}`);
+    const dir = realDir(path.dirname(real)); const entry = path.basename(real);
+    if (!dir || entry.startsWith('.')) throw new HttpError(400, 'cannot host a dotfile');
+    let id = [...hosted].find(([, h]) => h.dir === dir && h.entry === entry)?.[0];
+    if (!id) { id = crypto.randomBytes(5).toString('hex'); hosted.set(id, { dir, entry }); }
+    return { id, path: `/host/${id}/${encodeURIComponent(entry)}` };
+  }
+  function serveHosted(req, res, p) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
+    const [id, ...rest] = p.split('/').slice(2); // ['', 'host', ID, ...path]
+    const h = hosted.get(id);
+    if (!h) throw new HttpError(404, 'not found: this page is not hosted (run `hatch host FILE.html` again; hosting is forgotten when the server restarts)');
+    const rel = rest.map(safeDecode).join('/') || h.entry;
+    const f = resolveInside(h.dir, rel);
+    if (!f) throw new HttpError(404, 'not found');
+    return serveFile(res, f, { 'referrer-policy': 'no-referrer' }, req);
+  }
+
   // ---- routing ----
   async function route(req, res, url) {
     const p = url.pathname; const m = req.method;
@@ -397,6 +423,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     const extraWatch = viewing && /^\/api\/pterm\/([\w-]+)\/stream$/.exec(p);
     if (extraWatch && !extra.has(extraWatch[1]) && !state.listPanels().some((panel) => panel.type === 'terminal' && panel.props.name === extraWatch[1])) throw new HttpError(404, 'no existing terminal window with that name');
 
+    if (p.startsWith('/host/')) return serveHosted(req, res, p);
     const prox = parseProxyPath(p);
     if (prox) return proxyHttp(req, res, { ...prox, rest: prox.rest + url.search }, { selfPort: server.address()?.port });
 
@@ -452,6 +479,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         const r = saveUpload(l.uploads, buf);
         return json(res, 200, { path: r.path, name: r.name, url: `/files/uploads/${r.name}`, bytes: r.bytes });
       }
+      if (p === '/api/host' && m === 'POST') return json(res, 200, hostFile((await readJson(req)).file));
       if (p === '/api/file' && m === 'GET') return serveImage(res, url.searchParams.get('path') || '');
 
       if (p === '/api/fs/list' && m === 'GET') return json(res, 200, fsapi.list(url.searchParams.get('path') || cwd));
