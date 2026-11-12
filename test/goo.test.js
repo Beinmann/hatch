@@ -37,7 +37,7 @@ test('goo drip: grows with an eased, accelerating-then-slowing length and an end
   const n = lens.length, v = (a, b) => lens[b] - lens[a];
   assert.ok(v(Math.floor(n * 0.4), Math.floor(n * 0.5)) > v(1, Math.floor(n * 0.1)) && v(Math.floor(n * 0.4), Math.floor(n * 0.5)) > v(Math.floor(n * 0.9), n - 1), 'quicker in the middle than at the start or the end');
   assert.equal(d.phase, 'hang'); assert.ok(Math.abs(d.len - d.maxLen) < 1e-6); assert.ok(d.fade > 0.99, 'faded in');
-  assert.ok(d.width >= 1.4 && d.width <= 2.6 && d.beadMax >= 1.3 && d.beadMax <= 2.4); assert.ok(d.beadMax < d.width * 1.5, 'the end drop is small next to the strand');
+  assert.ok(d.width >= 1.6 && d.width <= 3 && d.beadMax >= 1.4 && d.beadMax <= 2.6); assert.ok(d.beadMax < d.width * 1.5, 'the end drop is small next to the strand');
 });
 
 test('goo drip: one that does not let go recedes and ends; one that lets go thins its neck first and falls only once the neck is gone', () => {

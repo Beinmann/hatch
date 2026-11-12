@@ -18,9 +18,9 @@ export const CFG = {
   LET_GO_P: 0.6,           // chance that a drip pinches off at the end of its hold (else it recedes back into the text)
   PINCH: [2, 4.5],         // seconds the neck at the root takes to thin out; the strand separates only when it is gone
   GROW_BASE: 3.0, GROW_PER_PX: 1 / 30, // seconds to grow: base plus per px of length
-  WIDTH: [1.4, 2.6],       // strand width at the root; the tip is thinner
+  WIDTH: [1.6, 3.0],       // strand width at the root; the tip is thinner
   TAPER: 0.45,             // how much thinner the strand is at the tip (0 none .. 1 to a point)
-  BEAD: [1.3, 2.4],        // end drop radius: small next to the strand, and it only forms at the very end of growth
+  BEAD: [1.4, 2.6],        // end drop radius: small next to the strand, and it only forms at the very end of growth
   BEAD_LATE: 0.82,         // fraction of the growth after which the end drop starts to form
   SWAY_AMP: [1.2, 3.4], SWAY_FREQ: [0.5, 1.1], // sideways wavering in px and rad/s (slow)
   GRAVITY: 520,            // px/s^2 for a falling drop
