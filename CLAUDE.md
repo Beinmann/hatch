@@ -8,9 +8,10 @@ This repo is published on GitHub (MIT). Everything in it, including git history 
 
 ## Rules
 - Zero npm dependencies. Node 20+ standard library, python3 standard library (pty helper only), vendored xterm and mermaid in `public/`.
-- Files in the state dir (`.hatch/`) are the source of truth; the UI is a live projection. Hand edits must work. Malformed files give a warning, never a crash.
+- Files in the state dir (`~/.hatch/`) are the source of truth; the UI is a live projection. Hand edits must work. Malformed files give a warning, never a crash.
 - Keep the repo clean: no hostnames, usernames, absolute home paths or private project names in code, tests, docs or fixtures (use `~` and placeholders). No ticket numbers or references to private workspace files in code, docs or commit messages.
-- The server's state dir is `--state`/`HATCH_STATE` or `./.hatch` of the cwd only (no walking up); creating one needs confirmation or `--yes`. Clients (`hatch`, `hatch-mcp`) still walk up.
+- One instance per user. The state dir (server and clients alike) is `--state`, then `HATCH_STATE`, then `~/.hatch`; never the cwd, never walking up. A plain `serve|start` creates `~/.hatch` silently; an explicit `--state`/`HATCH_STATE` to a missing or invalid dir needs confirmation or `--yes`. `hatch migrate` imports an old project `.hatch` as a workspace. `hatch` picks the workspace from `--ws`, `HATCH_WORKSPACE`, then `main`.
+- Tests and manual runs: `HOME` must be a temp dir (the default state dir is `~/.hatch`) and `HATCH_STATE`/`HATCH_URL`/`HATCH_WORKSPACE` of the developer's shell must not leak in.
 - Small files, comments that say why, errors that say what went wrong and how to fix it.
 - Test: `node --test "test/*.test.js"` (real server on an ephemeral port, `cat` instead of tmux; one gated test uses real tmux).
 - Do not claim browser behaviour works unless it was seen in a browser. A headless Chromium (Playwright) may be used OUTSIDE the repo; it is not a dependency.

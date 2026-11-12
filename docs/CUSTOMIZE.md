@@ -1,6 +1,6 @@
 # Customising Hatch (init.el style)
 
-Two optional files in the state dir (`.hatch/`) are loaded by the page when they exist. They are yours: Hatch never writes them.
+Two optional files in the state dir (`~/.hatch/` by default) are loaded by the page when they exist. They are yours: Hatch never writes them.
 
 ## Background image
 
@@ -8,15 +8,15 @@ Two optional files in the state dir (`.hatch/`) are loaded by the page when they
 `background.<ext>`, replacing an earlier one. Open pages show it without a reload and it stays after a restart. The type is
 checked from the file header; anything else (missing file, text, SVG, BMP) is refused with a message and the current background
 is kept. Convert other formats first, e.g. `convert in.bmp out.png`. The file is the source of truth: copy a new image over
-`.hatch/background.png` by hand and the page follows; delete it to go back to the plain theme; a broken file shows a warning
+`~/.hatch/background.png` by hand and the page follows; delete it to go back to the plain theme; a broken file shows a warning
 and no background. The terminal and dock turn translucent while a background is set.
 
 `hatch set background none` removes the image. `hatch set background-mode MODE` chooses the fit: `fill` (cover, the
-default), `fit` (contain), `stretch`, `center` or `tile`. It is kept in `.hatch/background.json` as `{"mode":"fill"}`; edit it
+default), `fit` (contain), `stretch`, `center` or `tile`. It is kept in `~/.hatch/background.json` as `{"mode":"fill"}`; edit it
 by hand if you like. An unknown mode or broken file shows a warning and uses `fill`.
 
 `hatch set transparency N` (0 to 100, default 30, so a background image shows through; 0 = fully opaque, which hides the image behind the terminal) makes the terminal and the panels translucent so the page
-background shows through; `set transparency 0` gives the opaque look. It is kept in `.hatch/transparency.json` as
+background shows through; `set transparency 0` gives the opaque look. It is kept in `~/.hatch/transparency.json` as
 `{"percent":30}`; edit it by hand if you like. An invalid value is refused and the saved one stays; a broken file shows a
 warning and uses 30.
 
@@ -39,7 +39,7 @@ keyboard input, pauses in a hidden tab, is capped at 30 frames per second and sh
 `goo` anchors its drips to the text cells the terminal currently shows: they follow the text when it scrolls and let go when their letter is gone.
 `hatch fx rain --intensity 30` sets how strong the effect is, 0 to 100 (default 50); it is remembered per effect, `hatch fx NAME` keeps the stored value, and
 `hatch fx --intensity N` without a name changes the active effect. Open pages apply a new intensity live.
-The choice lives in `.hatch/fx.json` (`{"effect":"rain","intensity":{"rain":30}}`; the `intensity` part is optional; delete the file or write `"off"` to clear the effect; a bad file or value warns and means off or the default of 50) and open
+The choice lives in `~/.hatch/fx.json` (`{"effect":"rain","intensity":{"rain":30}}`; the `intensity` part is optional; delete the file or write `"off"` to clear the effect; a bad file or value warns and means off or the default of 50) and open
 pages follow it by themselves. While an effect is on the header shows a small `fx: hatch fx off` button that turns it off; the palette has one entry per effect plus "stronger" and "weaker" (steps of 20). To add an effect, drop a module with `start(canvas, {animate, intensity, terminal})`, `setIntensity(n)`, `stop()` and `resize()` into `public/fx/`, register it in `public/fx.js` and add its name to `src/fx.js`. `terminal` is a read-only view of the xterm screen (`cols`, `rows`, `cellSize()`, `cellsWithText()`, `charAt()`, `viewportY()`, `onChange(cb)`; see `public/fx-terminal.js`) or `null`; effects that do not need it ignore it. The rain timings are in `P` in `public/fx/rain-sim.js` (`LIFE` = how long a drop lives and shrinks, `DENSITY`, `RUN_EVERY` = seconds between running drops, `RUN_SHRINK`) the shrink and fade shape in `dropLook` in `public/fx/rain-physics.js`, which also holds the `STREAKS` table of the background rain (`angleDeg`, per-lane `width` and `weight`, overall `max`; its strength is `RAIN` in `public/fx/rain.js`). The goo colours are at the top of `public/fx/goo.js`, its timings and sizes in the `CFG` table of `public/fx/goo-physics.js`.
 
 ## `custom.css`
@@ -66,7 +66,7 @@ A plain ES module, run once when the page loads. `window.hatchUI` is the API:
 | `hatchUI.wm`, `hatchUI.ctx`, `hatchUI.store` | the window manager, panel context and per-browser storage |
 
 ```js
-// .hatch/custom.js
+// ~/.hatch/custom.js
 hatchUI.addCommand('Deploy staging', () => hatchUI.api('POST', '/api/runs', { cmd: './deploy.sh staging' })
   .then((r) => hatchUI.api('POST', '/api/panels', { type: 'output', title: 'deploy', props: { cmd: './deploy.sh staging', runId: r.id }, w: 600, h: 320 })), 'runs ./deploy.sh');
 

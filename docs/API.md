@@ -1,7 +1,7 @@
 # HTTP API
 
 Everything the page and `hatch` do goes through this API, so scripts and Claude can call it directly.
-Authenticate with the token from `.hatch/config.json`: header `x-token: TOKEN` (the page uses a cookie). JSON in, JSON out
+Authenticate with the token from `~/.hatch/config.json` (the state dir: `--state`, `HATCH_STATE`, else `~/.hatch`): header `x-token: TOKEN` (the page uses a cookie). JSON in, JSON out
 unless noted. Errors are `{ "error": "message" }` with a meaningful status (400 bad input, 401 token, 403 Host or --root,
 404, 409 conflict, 413/415 size/type, 502 proxy). Source of truth: `src/server.js`; tests show every route in use.
 
@@ -81,7 +81,7 @@ Discovery: `GET /api/tasks`, `GET /api/ports`, `GET /api/report` (markdown).
 
 ## Workspaces
 
-A workspace is a name plus its windows (their `ws` field; absent = `main`), its own main terminal and its own background. The registry is `workspaces.json` in the state dir (hand edits work; a name seen only on a window is listed too).
+A workspace is a name plus its windows (their `ws` field; absent = `main`), its own main terminal and its own background. The registry is `workspaces.json` in the state dir (hand edits work; a name seen only on a window is listed too). An entry may carry `cwd`: the directory the workspace's terminals start in. Terminals export `HATCH_WORKSPACE` with the workspace name; `hatch` uses it when `--ws` is not given.
 `GET /api/workspaces` (name, id, window count, whether it has a background), `POST /api/workspaces` (`{name}`),
 `POST /api/workspaces/NAME/rename` (`{to}`), `DELETE /api/workspaces/NAME` (`{confirm: "NAME"}`, the exact name is required; closes its windows, ends its terminals; `main` cannot be closed),
 `PUT /api/workspaces/NAME/background` (image bytes), `DELETE` the same path (remove), `POST` the same path (`{mode}`).

@@ -50,4 +50,4 @@ for pair in $links; do
   ln -sf "$target" "$link" && echo "linked $link"
 done
 case ":$PATH:" in *":$bindir:"*) ;; *) echo "note: $bindir is not on your PATH" >&2 ;; esac
-echo "done. Start with: hatch-server serve   (in your project dir; add .hatch/ to .gitignore)"
+echo "done. Start with: hatch-server start   (one instance per user, state in ~/.hatch; coming from per-project .hatch dirs: hatch migrate)"

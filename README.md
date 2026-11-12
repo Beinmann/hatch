@@ -25,14 +25,15 @@ Zero npm dependencies: Node 20+, python3 (standard library, for the pty), tmux, 
 
 ```
 ./install.sh                 # links hatch, hatch-server, hatch-mcp (and the deprecated hatch-ui) into ~/.local/bin
-cd your-project
-hatch-server serve                  # prints  http://<box-ip>:7070/?t=<token>  (7070 taken: the next free port, saved in config.json)
+hatch-server start                  # one instance per user, state in ~/.hatch (created silently the first time); prints  http://<box-ip>:7070/?t=<token>
 ```
+
+(`hatch-server serve` does the same in the foreground. 7070 taken: the next free port, saved in config.json.)
 
 Open the URL in your browser. New projects receive a stable tmux session name derived from the project and state path (shown at startup); existing configured session names are retained. Closing the tab or restarting the server
 does not end it. `hatch-server doctor` checks node, python3, tmux, the state dir and the server.
 
-Background control: `hatch-server start`, `hatch-server stop`, `hatch-server restart`, `hatch-server status` (same options as `serve`; pid in `.hatch/hatch.pid`, output in `.hatch/log/daemon.log`). Lifecycle commands find the enclosing project from nested directories and respect `HATCH_STATE`. Concurrent starts reuse one daemon. Startup options and the working directory are saved in `.hatch/daemon.json`; restart preserves them, with supplied flags overriding the matching saved flags. Restart after pulling changes in `src/`.
+Background control: `hatch-server start`, `hatch-server stop`, `hatch-server restart`, `hatch-server status` (same options as `serve`; pid in `~/.hatch/hatch.pid`, output in `~/.hatch/log/daemon.log`). Lifecycle commands use the same state dir as everything else (`--state`, `HATCH_STATE`, `~/.hatch`; the current directory plays no role). Concurrent starts reuse one daemon. Startup options and the working directory are saved in `daemon.json` in the state dir; restart preserves them, with supplied flags overriding the matching saved flags. Restart after pulling changes in `src/`.
 
 `hatch-server service` prints a systemd user unit for starting it at login or boot (it installs nothing).
 
@@ -61,32 +62,49 @@ The page itself carries a Content-Security-Policy (own scripts only, no inline s
 - Failed logins show up in `.hatch/log/server.log` as `auth failed: ...` (address, path; at most 10 a minute).
 - Never put Hatch on the open internet: the token is a convenience, not real security (see the warning above).
 
-## The state dir (`.hatch/`)
+## The state dir (`~/.hatch/`)
 
 Files are the source of truth and the page is a live projection of them. Add `.hatch/` to your `.gitignore`
 (Hatch also writes a `.gitignore` containing `*` into it). Editing files by hand works; malformed files show a
 warning chip in the page and the last good state stays.
 
 ```
-.hatch/config.json          token, port, session name
-.hatch/uploads/17.png       pasted images
-.hatch/panels/<id>.json     one open panel: {type,title,placement,x,y,w,h,props}
-.hatch/progress/diagram.mmd the Mermaid source, steps.json the checklist, history/ older diagrams,
+~/.hatch/config.json          token, port, session name
+~/.hatch/uploads/17.png       pasted images
+~/.hatch/panels/<id>.json     one open panel: {type,title,placement,x,y,w,h,props}
+~/.hatch/progress/diagram.mmd the Mermaid source, steps.json the checklist, history/ older diagrams,
                               plans/NAME.json  named plans ({"diagram", "steps"}), one window each
-.hatch/widgets/<name>/      index.html (+ assets) and widget.json
-.hatch/commands.json        saved palette commands; watches.json output watches
-.hatch/log/server.log
+~/.hatch/widgets/<name>/      index.html (+ assets) and widget.json
+~/.hatch/commands.json        saved palette commands; watches.json output watches
+~/.hatch/log/server.log
 ```
 
 The running server re-checks `config.json` every few seconds and restores its own `port` and `host` if something else overwrote them (other keys are never touched; see `docs/TROUBLESHOOTING.md`).
 
 Everything the CLI does is also possible by writing these files directly or by calling the HTTP API with the token
-(header `x-token`). The server itself uses `--state DIR`, `HATCH_STATE`, or else `./.hatch` of the current directory only
-(parent directories are not searched, so a second instance never attaches to another project). If that dir has no valid
-`config.json`, `hatch-server serve|start|restart` asks before creating it; `--yes` creates it without asking. Without a
-terminal (background, systemd, pipes) it fails instead, so pass `--yes` or an existing `--state DIR`. The CLI finds the server through `--state`, `HATCH_STATE`, a `.hatch/` found by walking up from
-the current directory, or `~/.hatch/`. When that choice may surprise you (an instance found by walking up or in `~/.hatch/`, or `HATCH_STATE` overriding a nearer `.hatch/`), `hatch` prints one line on stderr naming the state dir and port, once per shell and only in a terminal (never with `--json`, pipes or `--state`). If a server cannot be reached, the error names the `config.json` the port came from and what to do next. Environment variables `HATCH_URL` and `HATCH_STATE` are set for the tmux
+(header `x-token`).
+
+**One instance per user.** The state dir, for the server and for every client (`hatch`, `hatch-mcp`, `hatch-server url|doctor|...`), is `--state DIR`, else `HATCH_STATE`, else `~/.hatch`. Nothing else is consulted: not the current directory, and no `.hatch` of a parent or project is ever picked up. Projects are workspaces inside that one instance (one URL, one token, one port 7070); a second, separate instance needs its own `--state DIR` and `--port N`. A plain `hatch-server serve|start` creates `~/.hatch` silently the first time. An explicit `--state DIR` or `HATCH_STATE` that points at a missing or invalid dir is confirmed first (`--yes` creates it without asking; without a terminal to ask on it fails instead, so background and service setups pass `--yes` or an existing dir). When a `./.hatch` exists in the directory you start the server from, it prints one line saying it is ignored and pointing to `hatch migrate`. If a server cannot be reached, the error names the `config.json` the port came from and what to do next.
+
+**The workspace of a command.** `hatch` commands that open windows put them into `--ws NAME`, else `$HATCH_WORKSPACE`, else `main`. Hatch exports `HATCH_WORKSPACE` (with `HATCH_URL` and `HATCH_STATE`) in every workspace's terminals, so Claude running in a workspace's terminal opens its windows there; `hatch-mcp` does the same. Windows moved to another workspace update the variable for new tmux windows only: a shell that is already running keeps the value it started with (open a new tmux window, or pass `--ws`). `main` terminals export `HATCH_WORKSPACE=main`. A workspace can start its terminals in a directory (`cwd` in `workspaces.json`; `hatch migrate` sets it); a terminal window can carry its own `props.cwd`.
+
+Environment variables `HATCH_URL`, `HATCH_STATE` and `HATCH_WORKSPACE` are set for the tmux
 session; windows that already exist only get them in new windows.
+
+## Upgrading to the per-user instance
+
+Older versions kept one `.hatch/` per project (own token, port, windows). Now there is one instance per user in `~/.hatch`, and each project becomes a workspace in it. Your project `.hatch` is never modified or deleted by this.
+
+```
+hatch migrate --dry-run             # in the project (or: hatch migrate PROJECT-DIR): prints exactly what would be imported, changes nothing
+hatch-server stop --state .hatch    # 1. stop the old instance (in the project; or Ctrl+C where it runs). Migrate never stops or starts anything
+hatch migrate                       # 2. import it (asks before creating ~/.hatch; --yes skips the question; --name NAME names the workspace)
+hatch-server start                  # 3. start the per-user instance, then open the URL it prints (new token)
+```
+
+`hatch migrate [DIR]` takes `DIR/.hatch` (or a path that is itself a state dir; without DIR the nearest `.hatch` above the current directory, for this command only). It creates a workspace named after the project folder (`--name` overrides; a name that already exists is an error and changes nothing; the source's own workspaces become `NAME-WORKSPACE`) and carries over: windows and layout, the background, the start directory of its terminals, saved commands and prompts, widgets, schedules, bookmarks, custom CSS/JS, fx/transparency/size settings, `allowedHosts`, and other `config.json` settings. It merges files and never overwrites: whatever the target already has wins and every difference is listed as a conflict (a differing `custom.js`/`custom.css` is saved next to the target's as `custom.js.NAME.migrated` for a hand merge). Token, port and tmux session name belong to the target and are not carried over; progress plans, run history and trash are not imported. It works on files, so it works with the target stopped or running (a running server notices the new files by itself). A terminal window or workspace terminal starts a fresh shell in the old directory: the old tmux sessions are not attached, so anything running in them has to be recreated by hand (they keep running until you kill them). With `--state TARGET` it imports into another state dir instead of `~/.hatch`.
+
+Going back: the project `.hatch` is as it was. Stop the per-user instance and start the old one from the project with `hatch-server start --state .hatch --yes` (and `HATCH_STATE=.hatch` for the CLI). `~/.hatch` can be deleted to undo the import.
 
 ## What you can do
 
@@ -127,7 +145,7 @@ session; windows that already exist only get them in new windows.
 - **Background image.** `hatch set background IMAGE` stores the image in the state dir and shows it behind the page (see `docs/CUSTOMIZE.md`).
 - **Customising.** `.hatch/custom.css` and `.hatch/custom.js` are loaded when present; `window.hatchUI` lets `custom.js` add palette commands and react to events (`docs/CUSTOMIZE.md`).
 - **Taskbar and snapping.** The chips in the header list every window of the current workspace; click one to bring it to the front (or restore it). The palette snaps a window to the left or right half or makes it fill the terminal area.
-- **Workspaces.** One Hatch instance holds several named workspaces; each has its own windows and layout, its own main terminal (a tmux session) and its own background. Server config, settings and the palette are shared. Switching only changes what is shown: terminals keep running, and a workspace that rang a bell or printed a burst while you were away gets a dot in the header. The header chips switch, `+` adds one; palette: `workspace: switch | new | rename | close | set background...` and `window: move to workspace...` (the terminal stays alive). Closing asks you to type the exact workspace name, then ends its windows and tmux sessions. Leader then `]` / `[` is next / previous workspace, leader then `w` and a digit jumps by number (Ctrl+Shift+1..9 also works). The URL follows the workspace (`/#work`; back, forward and bookmarks work; an unknown name offers to create it; a bare URL opens the last used one). The same workspace may be open in two tabs (both stay live and show an "also open in another tab" notice). From the CLI: `hatch workspace list|new|rename|close NAME --confirm NAME|import STATE-DIR [NAME]`, `hatch set background IMAGE --ws NAME`, and `--ws NAME` on any command that opens a window (default `main`). On the first start after upgrading, the existing windows and background become workspace `main` and the previous state is copied to `backup-pre-workspaces/` in the state dir (delete it when you are happy). `Pin to all workspaces` (palette) keeps a window visible everywhere; leader Tab cycles through windows. Leader then Shift+d docks the focused floating window or releases a docked one.
+- **Workspaces.** One Hatch instance holds several named workspaces; each has its own windows and layout, its own main terminal (a tmux session) and its own background. Server config, settings and the palette are shared. Switching only changes what is shown: terminals keep running, and a workspace that rang a bell or printed a burst while you were away gets a dot in the header. The header chips switch, `+` adds one; palette: `workspace: switch | new | rename | close | set background...` and `window: move to workspace...` (the terminal stays alive). Closing asks you to type the exact workspace name, then ends its windows and tmux sessions. Leader then `]` / `[` is next / previous workspace, leader then `w` and a digit jumps by number (Ctrl+Shift+1..9 also works). The URL follows the workspace (`/#work`; back, forward and bookmarks work; an unknown name offers to create it; a bare URL opens the last used one). The same workspace may be open in two tabs (both stay live and show an "also open in another tab" notice). From the CLI: `hatch workspace list|new|rename|close NAME --confirm NAME|import STATE-DIR [NAME]`, `hatch migrate [DIR]` (a whole project `.hatch`, see Upgrading), `hatch set background IMAGE --ws NAME`, and `--ws NAME` on any command that opens a window (default `$HATCH_WORKSPACE`, else `main`). On the first start after upgrading, the existing windows and background become workspace `main` and the previous state is copied to `backup-pre-workspaces/` in the state dir (delete it when you are happy). `Pin to all workspaces` (palette) keeps a window visible everywhere; leader Tab cycles through windows. Leader then Shift+d docks the focused floating window or releases a docked one.
 - **Setup transfer.** `hatch export` bundles your saved commands, prompts, watches, schedules, bookmarks, `custom.css/js` and widgets (never the token or uploads); `hatch import FILE.tgz` restores them on another box.
 - **Trash.** Closing a window moves its file to `.hatch/trash/<time>-<id>.json` (kept: last 30, at most 14 days). `hatch trash`, `trash restore [ID]`, `trash empty`, or the palette ("Reopen closed window"). Terminal windows keep name, command and position, not scrollback: restoring reattaches the tmux session of that name if it is still alive, else starts a fresh one.
 - **Watches.** `hatch watch add failed --pattern "FAIL|Error" --level warn` and `hatch watch idle 30` notify you when terminal output matches or goes quiet for 30 s (stored in `watches.json`, 30 s cooldown per watch). Overlapping watches match independently; UTF-8 text and terminal escapes may span output chunks. Invalid hand edits show a warning while the last valid watches stay active.
@@ -177,7 +195,7 @@ The header keeps secondary tools in the command palette. It opens immediately wi
 | Ctrl+Shift+G | Fold or unfold progress strip |
 | Ctrl+Shift+F / Z / 1..9 | Terminal find / Zen mode / workspaces |
 
-For agents, run `hatch agent init` once in your project. This adds a managed Hatch block to `CLAUDE.md` and `AGENTS.md`, preserving the project's other rules; rerunning updates only that block. Use `--target claude` or `--target codex` to configure one, and `--dir DIR` to choose the project. It works before the server starts. `hatch agent show` prints the instructions for manual setup, or you can install the supplied Hatch skill. The instructions ask the agent to maintain small steps and update details at meaningful transitions without repeated reminders. Hatch does not infer task completion from terminal output; the agent must report it. State remains per project in `.hatch/`. Keyboard shortcuts work inside widgets that load `/sdk.js`; an external website embedded in a popup can capture its own keyboard events.
+For agents, run `hatch agent init` once in your project. This adds a managed Hatch block to `CLAUDE.md` and `AGENTS.md`, preserving the project's other rules; rerunning updates only that block. Use `--target claude` or `--target codex` to configure one, and `--dir DIR` to choose the project. It works before the server starts. `hatch agent show` prints the instructions for manual setup, or you can install the supplied Hatch skill. The instructions ask the agent to maintain small steps and update details at meaningful transitions without repeated reminders. Hatch does not infer task completion from terminal output; the agent must report it. State lives in the per-user instance (`~/.hatch`); the project is a workspace. Keyboard shortcuts work inside widgets that load `/sdk.js`; an external website embedded in a popup can capture its own keyboard events.
 
 ## hatch
 
@@ -199,7 +217,7 @@ hatch export [FILE] | import FILE [--force]
 hatch upload-dir | doctor           (exit codes: 0 ok, 1 usage, 2 server unreachable)
 ```
 
-**MCP.** `claude mcp add hatch -- hatch-mcp` (after `./install.sh`; or `node /path/to/hatch/bin/mcp.js`) gives Claude the same actions as typed tools (`hatch_progress_get`, `hatch_progress_plan`, `hatch_progress_open`, `hatch_progress_set`, `hatch_progress_step`, `hatch_note`, `hatch_image`, `hatch_notify`, `hatch_ask`, `hatch_run`, `hatch_open_widget`, `hatch_copy`, `hatch_report`; `hatch_run` with `wait` returns the output tail too). Set `HATCH_STATE` if there is no `.hatch/` above the working directory.
+**MCP.** `claude mcp add hatch -- hatch-mcp` (after `./install.sh`; or `node /path/to/hatch/bin/mcp.js`) gives Claude the same actions as typed tools (`hatch_progress_get`, `hatch_progress_plan`, `hatch_progress_open`, `hatch_progress_set`, `hatch_progress_step`, `hatch_note`, `hatch_image`, `hatch_notify`, `hatch_ask`, `hatch_run`, `hatch_open_widget`, `hatch_copy`, `hatch_report`; `hatch_run` with `wait` returns the output tail too). It uses `HATCH_STATE`, else `~/.hatch`.
 
 Teach Claude about it by pasting `docs/claude-snippet.md` into your project's `CLAUDE.md`, or copy `.claude/skills/hatch/` into your project (or `~/.claude/skills/`) so it loads on demand.
 `hatch open http://localhost:3000` shows a dev server running on the box: the URL is rewritten to `/proxy/3000/`, which Hatch forwards to the box's own port (HTTP and WebSocket). Root-absolute links in HTML are rewritten; URLs built in JavaScript are not, so some single-page apps need `--direct` and a reachable address instead.
