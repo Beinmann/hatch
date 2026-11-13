@@ -360,11 +360,21 @@
   }
   function dragArrow(e, id) {
     if (e.button !== 0) return; e.stopPropagation(); e.preventDefault();
-    var from = board.cards.filter(function (k) { return k.id === id; })[0], target = null;
+    var from = board.cards.filter(function (k) { return k.id === id; })[0], target = null, sx = e.clientX, sy = e.clientY;
     function mark(t) { els.forEach(function (el, k) { el.classList.toggle('target', !!t && t.id === k); }); }
     track(e, function (ev) { var p = worldPt(ev), q = M.edgePoint(from, p.x, p.y); target = M.cardAt(board, p.x, p.y); if (target && target.id === id) target = null;
         mark(target); drawLines({ x1: q.x, y1: q.y, x2: p.x, y2: p.y }); },
-      function () { mark(null); if (target) { var r = M.addArrow(board, id, target.id); board = r.board; if (r.id) { sel = { kind: 'arrow', id: r.id }; changed(); } } render(); });
+      function (ev) {
+        mark(null);
+        var p = worldPt(ev), r = stage.getBoundingClientRect(), onSelf = !target && M.cardAt(board, p.x, p.y),
+            inside = ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+        if (target) { var a = M.addArrow(board, id, target.id); board = a.board; if (a.id) { sel = { kind: 'arrow', id: a.id }; changed(); } }
+        // released on empty canvas after a real drag (not a click on the handle): a new card there, connected, as one step
+        else if (!onSelf && inside && Math.hypot(ev.clientX - sx, ev.clientY - sy) >= 8) {
+          var n = M.addCardLinked(board, id, p.x, p.y); if (n) { board = n.board; sel = { kind: 'card', id: n.id }; render(); changed(); var el = els.get(n.id); el.classList.add('editing'); el.querySelector('textarea').focus(); return; }
+        }
+        render();
+      });
   }
   // middle button: pan (anywhere, also over cards). Left button on the background: rubber-band selection; a plain click deselects.
   stage.tabIndex = 0; stage.style.outline = 'none';

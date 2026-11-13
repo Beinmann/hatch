@@ -226,3 +226,13 @@ test('nested board storage: child boards live next to the file (or in the data d
     }
   } finally { await h.close(); }
 });
+
+test('addCardLinked: one new card plus an arrow from the source, nothing for an unknown source', () => {
+  const { board, id } = J(M.addCard(M.empty(), 100, 100, 'a'));
+  const r = J(M.addCardLinked(board, id, 500, 300));
+  assert.equal(r.board.cards.length, 2); assert.equal(r.board.arrows.length, 1);
+  assert.deepEqual(r.board.arrows[0], { id: r.arrowId, from: id, to: r.id });
+  assert.equal(r.board.cards[1].id, r.id); assert.equal(r.board.cards[1].text, '');
+  assert.equal(M.addCardLinked(board, 'nope', 0, 0), null);
+  assert.equal(board.cards.length, 1); // the input is not changed
+});

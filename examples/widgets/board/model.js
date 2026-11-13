@@ -115,6 +115,12 @@
     const id = 'a' + b.nextId;
     return { board: { ...b, nextId: b.nextId + 1, arrows: [...b.arrows, { id, from, to }] }, id };
   }
+  /** Adds a card of `type` at (x, y) and an arrow from `from` to it in one board (one undo step). Returns {board, id, arrowId}, or null when `from` is unknown. */
+  function addCardLinked(b, from, x, y, type = DEFAULT_TYPE, rng = Math.random) {
+    if (!b.cards.some((c) => c.id === from)) return null;
+    const c = addCard(b, x, y, '', type, rng), a = addArrow(c.board, from, c.id);
+    return { board: a.board, id: c.id, arrowId: a.id };
+  }
   const removeArrow = (b, id) => ({ ...b, arrows: b.arrows.filter((a) => a.id !== id) });
 
   const setView = (b, view) => ({ ...b, view: { x: view.x, y: view.y, zoom: clamp(view.zoom, MIN_ZOOM, MAX_ZOOM) } });
@@ -223,6 +229,6 @@
     const out = []; for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size)); return out;
   }
 
-  const api = { tokenize, splitQuote, imageUrl, linkUrl, cycle, CARD_W, CARD_H, TYPES, TYPE_ORDER, DEFAULT_TYPE, STATUSES, MILESTONE_STATES, NOTE_COLORS, BOARD_ID_RE, typeOf, groupMembers, newBoardId, boardSummary, setChildSummary, wouldCycle, clip, removeCards, paste, wrap, empty, sanitize, parse, serialize, addCard, moveCard, setText, lines, progress, toggleCheck, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, cardAt, raise, chunks };
+  const api = { addCardLinked, tokenize, splitQuote, imageUrl, linkUrl, cycle, CARD_W, CARD_H, TYPES, TYPE_ORDER, DEFAULT_TYPE, STATUSES, MILESTONE_STATES, NOTE_COLORS, BOARD_ID_RE, typeOf, groupMembers, newBoardId, boardSummary, setChildSummary, wouldCycle, clip, removeCards, paste, wrap, empty, sanitize, parse, serialize, addCard, moveCard, setText, lines, progress, toggleCheck, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, cardAt, raise, chunks };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ScratchModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
