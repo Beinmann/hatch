@@ -1,4 +1,4 @@
-// "Peek": hold a modifier (default Alt) ALONE and everything except the terminal is hidden so its text can be read;
+// "Peek": hold a modifier (default Alt) ALONE and the floating windows are hidden so what is behind them can be read;
 // release and everything is back exactly as it was. This file is the pure state machine (timers are injected so it can be
 // tested without a browser); app.js wires it to key events and toggles a CSS class on <body>.
 export const DEFAULT_PEEK = 'Alt';

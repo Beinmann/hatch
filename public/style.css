@@ -171,10 +171,8 @@ body.zen #bar,body.zen #hint,body.zen #dock,body.zen #split,body.zen #keys{displ
 .win.flash{outline:3px solid var(--accent);outline-offset:-1px;transition:outline-color .5s}
 #taskbar:has(#chips:empty){display:none}
 body.zen #taskbar{display:none}
-/* Peek (hold Alt alone): everything but the terminal is made invisible. visibility, not display, so nothing reflows or refits and the layout comes back untouched. */
-html.peek #bar,html.peek #hint,html.peek #keys,html.peek #dock,html.peek #split,html.peek #taskbar,html.peek #progress-strip,html.peek #floats,html.peek #findbar,html.peek #welcome,html.peek #dropmsg,html.peek #reconnect,html.peek #askbox,html.peek #toasts,html.peek #palette,html.peek #leaderhint,html.peek #fx{visibility:hidden!important}
-html.peek body{background-image:none!important}
-html.peek #termwrap{background:var(--term)!important}
+/* Peek (hold Alt alone): only the floating windows are made invisible; the dock, fx layer and background image stay. visibility, not display, so nothing reflows or refits and the layout comes back untouched. */
+html.peek #floats{visibility:hidden!important}
 /* taskbar: tabs on a rail. Full-height cells split by 1px dividers; the focused window gets an accent underline and tint. */
 #taskbar{border-top:1px solid var(--line);background:var(--surface);padding:0 6px;min-height:34px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
 #chips{display:flex;align-items:stretch;gap:0;flex-wrap:nowrap;max-width:none;overflow:visible}
