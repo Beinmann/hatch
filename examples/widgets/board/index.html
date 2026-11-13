@@ -48,14 +48,15 @@
 </head>
 <body>
 <div id="bar"><span class="hint">PROTOTYPE. Double-click: new card. Drag the card top: move. Drag the right dot to another card: arrow. Click + Delete: remove. Lines like \"- [ ] item\" in a card are checkboxes: click to tick. Left-drag background: select a rectangle. Middle-drag: pan. Wheel: scroll, Shift+wheel: sideways, Ctrl+wheel: zoom.</span>
-  <span id="status" class="hint" style="flex:none"></span><button id="add">+ card</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
+  <span id="status" class="hint" style="flex:none"></span><button id="add">+ card</button><button id="tidy" title="Arrange the cards by their arrows: left to right, no overlap, unconnected cards in a grid below (key: T)">tidy</button><button id="undo" title="Put the cards back where they were before the last tidy (Ctrl+Z)" hidden>undo</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
 <div id="stage"><div id="world"><svg id="lines"><defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg></div></div>
 <script src="/sdk.js"></script>
 <script src="model.js"></script>
+<script src="layout.js"></script>
 <script>
   // Visual board, PROTOTYPE. The board (cards, arrows, pan/zoom) lives in the widget's data/board.json, or in the *.board.json file given to `hatch widget open board FILE` (the server then pins load and save to it). It is read with the
   // "load" source and written in chunks through the "save" source (hatch.call arguments are short). model.js has the pure logic.
-  var M = window.ScratchModel, board = M.empty(), sel = null, multi = new Set(); // sel: {kind:'card'|'arrow', id}
+  var M = window.ScratchModel, BL = window.BoardLayout, undoStack = [], board = M.empty(), sel = null, multi = new Set(); // sel: {kind:'card'|'arrow', id}
   var stage = document.getElementById('stage'), world = document.getElementById('world'), lines = document.getElementById('lines'),
       statusEl = document.getElementById('status'), els = new Map(), loaded = false, saveTimer = null, saving = Promise.resolve(), dirty = false;
   stage.style.pointerEvents = 'none'; // edits wait for the file to be read, or the late answer would replace them
@@ -142,6 +143,18 @@
     });
     if (tmp) { var t = line(tmp.x1, tmp.y1, tmp.x2, tmp.y2, 'tmp'); lines.appendChild(t); }
   }
+  // ---- tidy: layered auto-layout (layout.js). Each run first saves the old positions on a small undo stack (Ctrl+Z / undo button).
+  function pushUndo() { undoStack.push(BL.snapshot(board)); if (undoStack.length > 20) undoStack.shift(); syncUndo(); }
+  function syncUndo() { document.getElementById('undo').hidden = !undoStack.length; }
+  function tidy() { if (!board.cards.length) return; pushUndo(); board = BL.layout(board); render(); changed(); fitView(); }
+  function undo() { if (!undoStack.length) return; board = BL.restore(board, undoStack.pop()); syncUndo(); render(); changed(); }
+  // bring the whole board into view after a layout, without zooming in past 1
+  function fitView() {
+    if (!board.cards.length) return; var r = stage.getBoundingClientRect(), pad = 30, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    board.cards.forEach(function (c) { x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y); x1 = Math.max(x1, c.x + c.w); y1 = Math.max(y1, c.y + c.h); });
+    var z = Math.min(1, (r.width - 2 * pad) / (x1 - x0), (r.height - 2 * pad) / (y1 - y0));
+    board = M.setView(board, { x: pad - x0 * Math.max(z, 0.2), y: pad - y0 * Math.max(z, 0.2), zoom: z }); applyView(); changed();
+  }
   function select(kind, id) { if (!(kind === 'card' && multi.has(id))) multi = new Set(); sel = { kind: kind, id: id }; render(); }
 
   // ---- pointer interaction. Screen -> world uses the stage's rectangle and the current view.
@@ -213,6 +226,8 @@
   }
   addEventListener('keydown', function (e) {
     if (e.target && e.target.tagName === 'TEXTAREA') { if (e.key === 'Escape') e.target.blur(); return; }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 't') { e.preventDefault(); tidy(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && multi.size) {
       multi.forEach(function (id) { board = M.removeCard(board, id); }); multi = new Set(); sel = null; render(); changed();
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) {
@@ -220,13 +235,17 @@
     }
   });
   document.getElementById('add').addEventListener('click', function () { var r = stage.getBoundingClientRect(); newCardAt(M.toWorld(board.view, r.width / 2, r.height / 2)); });
+  document.getElementById('tidy').addEventListener('click', tidy);
+  document.getElementById('undo').addEventListener('click', undo);
   document.getElementById('reset').addEventListener('click', function () { board = M.setView(board, { x: 0, y: 0, zoom: 1 }); applyView(); changed(); });
 
   hatch.ready(function () {
     setStatus('loading');
     hatch.call('load').then(function (r) {
       if (r && r.error) throw new Error(r.error);
-      board = M.sanitize(r && r.json); loaded = true; stage.style.pointerEvents = ''; setStatus(board.cards.length ? 'loaded' : 'empty board'); render();
+      board = M.sanitize(r && r.json); loaded = true;
+      // a board written by an AI often has no positions (or a pile at the origin): lay it out once, undoable; arranged boards stay as they are
+      var auto = BL.onLoad(r && r.json, board); if (auto.changed) { undoStack.push(BL.snapshot(board)); syncUndo(); board = auto.board; fitView(); changed(); } stage.style.pointerEvents = ''; setStatus(board.cards.length ? 'loaded' : 'empty board'); render();
     }).catch(function (e) { setStatus('load failed: ' + e.message + ' (saving is off so the file is not overwritten)'); hatch.log('load failed: ' + e.message); });
   });
   render();
