@@ -291,26 +291,32 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     atomicWrite(path.join(l.widgets, name, 'widget.json'), JSON.stringify({ ...meta, sources: [{ ...src, path: path.join(l.log, 'server.log') }] }, null, 2));
     state.rescan();
   }
-  /** One git widget per project: `git-<folder>` with its source command pinned to that directory (shell-quoted).
-   *  The directory comes from the client, so it must be an absolute path of an existing directory; a repo subfolder
-   *  resolves to the repository root. A second folder with the same name gets a short hash of its path. */
+  /** A git window for a directory, labelled with any text (`options.label`, default `Git: <folder>`).
+   *  The directory comes from the client: an absolute path of an existing directory, compared by realpath (a repo subfolder
+   *  is its own directory). One window per directory per workspace: asking again brings the existing one back and focuses it
+   *  (the result carries `existing: true`). Each window has its own widget copy `git-<folder>` with its source pinned to
+   *  that directory (shell-quoted); a copy that is taken by another directory or workspace gets a short hash suffix. */
   function openGitFor(options) {
     const dir = options.dir;
     if (typeof dir !== 'string' || !path.isAbsolute(dir) || dir.includes('\0')) throw new HttpError(400, 'dir must be an absolute path');
     let real; try { real = fs.realpathSync(dir); if (!fs.statSync(real).isDirectory()) throw new Error('not a directory'); } catch { throw new HttpError(400, `not a directory: ${dir}`); }
-    try { real = fs.realpathSync(execFileSync('git', ['--no-optional-locks', '-C', real, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim() || real); } catch { /* not a repository: the widget says so */ }
-    const slug = (path.basename(real).replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'root').slice(0, 40);
-    const project = path.basename(real) || real;
-    let name = `git-${slug}`;
+    if (options.label !== undefined && (typeof options.label !== 'string' || !options.label.trim() || options.label.length > 200)) throw new HttpError(400, 'name must be non-empty text of at most 200 characters');
+    const ws = options.ws || 'main';
     const dirOf = (n) => { try { return JSON.parse(fs.readFileSync(path.join(l.widgets, n, 'widget.json'), 'utf8')).dir; } catch { return undefined; } };
-    if (fs.existsSync(path.join(l.widgets, name)) && dirOf(name) !== real) name = `${name}-${crypto.createHash('sha1').update(real).digest('hex').slice(0, 6)}`;
+    const same = state.listPanels().find((q) => q.type === 'widget' && (q.ws || 'main') === ws && dirOf(q.props?.name) === real && state.widgetMeta(q.props?.name)?.from === 'git');
+    if (same) return { ...state.createPanel({ type: 'widget', props: { name: same.props.name }, ws, ...(options.autoFocus !== undefined && { autoFocus: options.autoFocus }) }), existing: true };
+    const slug = (path.basename(real).replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'root').slice(0, 40);
+    const hash = (extra = '') => crypto.createHash('sha1').update(real + extra).digest('hex').slice(0, 6);
+    // first free copy: one for this directory with no window anywhere (reusable), or a new one
+    const free = (n) => !fs.existsSync(path.join(l.widgets, n)) || (dirOf(n) === real && !state.listPanels().some((q) => q.props?.name === n));
+    const base = `git-${slug}`; let name = [base, `${base}-${hash()}`, `${base}-${hash(ws)}`].find(free);
+    for (let i = 2; !name; i++) { const c = `${base}-${hash(`${ws}#${i}`)}`; if (free(c)) name = c; }
     const target = path.join(l.widgets, name);
-    if (!fs.existsSync(target)) {
-      fs.cpSync(path.join(EXAMPLES, 'git'), target, { recursive: true });
-      const metaFile = path.join(target, 'widget.json'); const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
-      atomicWrite(metaFile, `${JSON.stringify(gitProjectMeta(meta, real, `Git: ${project}`), null, 2)}\n`);
-    }
-    const windowOptions = {};
+    const title = options.label?.trim() || `Git: ${path.basename(real) || real}`;
+    if (!fs.existsSync(target)) fs.cpSync(path.join(EXAMPLES, 'git'), target, { recursive: true });
+    const metaFile = path.join(target, 'widget.json');
+    atomicWrite(metaFile, `${JSON.stringify(gitProjectMeta(JSON.parse(fs.readFileSync(path.join(EXAMPLES, 'git', 'widget.json'), 'utf8')), real, title), null, 2)}\n`);
+    const windowOptions = { title };
     for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
     state.rescan(); return state.createPanel({ type: 'widget', props: { name }, ...windowOptions });
   }

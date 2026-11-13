@@ -57,7 +57,7 @@ widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget new NAME [--from example]  scaffold widgets/NAME: from an example (cpu, log-tail, ...) or, without --from, a minimal one
   widget add NAME [DIR|FILE] [--dock]  register and open (a single HTML file becomes index.html)
   (short forms: ha for hatch, w for widget, o for open: ha w o git; top-level open is for files, folders and URLs)
-  widget list | open NAME [--dock] | close NAME | rm NAME | reload NAME   (open git: the git window for the current directory's repository)
+  widget list | open NAME [--dock] | close NAME | rm NAME | reload NAME   (open git [--name LABEL] [--dir PATH]: a git window for PATH or the current directory; one per directory per workspace, an existing one is brought forward)
   widget save [DIR] | restore [DIR]   write / apply the layout (name, position, size, placement) of this workspace's widgets in DIR/.hatch-widgets.json (default .);
                                     restore opens missing widgets, moves and resizes open ones, un-minimizes them, closes nothing
   widget open board FILE.board.json  a board that autosaves straight to that file (created on the first save; relative to here)
@@ -462,7 +462,15 @@ async function main(argv) {
       // "top" is a terminal window running htop, not the old widget, so keys work
       if (sub === 'open' && name === 'top') { const p = await api('POST', '/api/examples/top/open', {}); return console.log(`top open as ${p.id}`); }
       // "git" follows the shell: one widget per project, made by the server for this directory (the server does not know our cwd)
-      if (sub === 'open' && (name === 'git' || name === 'files')) { const p = await api('POST', `/api/examples/${name}/open`, { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
+      if (sub === 'open' && name === 'git') {
+        // --name is a free-text label (any string); --dir defaults to here. A window for the same directory in this workspace is reused.
+        need(o.name === undefined || (typeof o.name === 'string' && o.name.trim()), '--name needs a label: hatch widget open git --name "my label"');
+        need(o.dir === undefined || (typeof o.dir === 'string' && o.dir), '--dir needs a path: hatch widget open git --dir PATH');
+        const gitDir = path.resolve(o.dir || process.cwd());
+        const p = await api('POST', '/api/examples/git/open', { dir: gitDir, ...(o.name !== undefined && { label: o.name }), ...dockOpt });
+        return console.log(p.existing ? `git window for ${gitDir} already exists in this workspace as "${p.title}" (${p.id}); brought it forward, nothing renamed` : `widget ${p.props.name} open as ${p.id}`);
+      }
+      if (sub === 'open' && name === 'files') { const p = await api('POST', `/api/examples/${name}/open`, { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
       // "board FILE": a board that autosaves to that file (the server pins the widget to it; relative paths are from here)
       if (sub === 'open' && name === 'board' && rest[1] !== undefined) {
         const file = path.resolve(rest[1]);
