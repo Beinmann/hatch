@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { startHatch } from './helpers.js';
 
-const DIR = fileURLToPath(new URL('../examples/widgets/scratchpad/', import.meta.url));
+const DIR = fileURLToPath(new URL('../examples/widgets/board/', import.meta.url));
 const ctx = vm.createContext({}); vm.runInContext(fs.readFileSync(path.join(DIR, 'model.js'), 'utf8'), ctx);
 const J = (v) => JSON.parse(JSON.stringify(v)); // objects from the vm context have another realm's prototypes
 const M = ctx.ScratchModel;
@@ -61,21 +61,21 @@ test('view math: zoomAt keeps the point under the cursor; edge points sit on the
   assert.equal(M.cardAt(b, 60, 60).id, 'c2'); assert.equal(M.cardAt(b, 10, 10).id, 'c1'); assert.equal(M.cardAt(b, 300, 300), null);
 });
 
-test('scratchpad example: the save and load sources write the file in chunks and read it back', async () => {
+test('board example: the save and load sources write the file in chunks and read it back', async () => {
   const h = await startHatch();
   try {
-    assert.equal((await h.call('POST', '/api/examples/scratchpad/open', {})).status, 200);
-    const call = async (source, arg) => { const r = await h.call('POST', '/api/call', { widget: 'scratchpad', source, arg }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.value; };
+    assert.equal((await h.call('POST', '/api/examples/board/open', {})).status, 200);
+    const call = async (source, arg) => { const r = await h.call('POST', '/api/call', { widget: 'board', source, arg }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.value; };
     assert.equal((await call('load')).json, null, 'no file yet: null, so the widget starts empty');
     let { board } = J(M.addCard(M.empty(), 10, 10, 'café "q" $HOME `x` ' + 'y'.repeat(7000)));
     const parts = M.chunks(board);
     let r = await call('save', 'B ' + parts[0]); assert.equal(r.code, 0, r.error);
     for (const p of parts.slice(1)) { r = await call('save', 'A ' + p); assert.equal(r.code, 0, r.error); }
-    assert.ok(!fs.existsSync(path.join(h.stateDir, 'widgets', 'scratchpad', 'data', 'board.json')), 'nothing is live before the commit step');
+    assert.ok(!fs.existsSync(path.join(h.stateDir, 'widgets', 'board', 'data', 'board.json')), 'nothing is live before the commit step');
     await call('save', 'C');
     const back = J(M.sanitize((await call('load')).json));
     assert.deepEqual(back, J(M.sanitize(board)));
-    const bad = await h.call('POST', '/api/call', { widget: 'scratchpad', source: 'save', arg: 'rm -rf x' });
+    const bad = await h.call('POST', '/api/call', { widget: 'board', source: 'save', arg: 'rm -rf x' });
     assert.equal(bad.data.value.code, 1, 'unknown steps are refused');
   } finally { await h.close(); }
 });

@@ -1,4 +1,4 @@
-// Scratchpad data model (prototype): pure functions on a plain board object, no DOM. Boards are never mutated; every
+// Board data model (prototype): pure functions on a plain board object, no DOM. Boards are never mutated; every
 // function returns a new board. Loaded as a classic script in the widget (window.ScratchModel) and by node tests.
 (function (root) {
   const CARD_W = 180, CARD_H = 100, MIN_ZOOM = 0.2, MAX_ZOOM = 3;

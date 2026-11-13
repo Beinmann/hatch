@@ -70,7 +70,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Git window (stage, commit, diffs) | 048 | src/git.js, panels/git.js | yes | no push/pull/discard |
 | exec placeholders in widget sources | 057 | sources.js, server.js | yes | |
 | Git status widget (sections, per-project instances via `hatch widget open git`) | - | examples/widgets/git, server openGitFor | parser and server, not seen in a browser | read-only |
-| Scratchpad widget (PROTOTYPE: pan/zoom canvas, text cards, arrows, saved to data/board.json via exec sources) | - | examples/widgets/scratchpad, test/scratchpad.test.js | headless Chromium only (layout and interaction; text glyphs not visible there) | model in model.js is node-tested; no undo, plain text only |
+| Board widget (PROTOTYPE: pan/zoom canvas, text cards, arrows, saved to data/board.json via exec sources) | - | examples/widgets/board, test/board.test.js | headless Chromium only (layout and interaction; text glyphs not visible there) | model in model.js is node-tested; no undo, plain text only |
 | ports metric, ports and pomodoro widgets | 051 | sources.js, examples/widgets | yes | |
 | Task runner, listening ports | 047 | src/discover.js | tests only | |
 | Session report | 046 | server /api/report, ui.js | CLI only | |
