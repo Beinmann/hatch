@@ -287,9 +287,10 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
 
   // Dock splitter: drag to resize, width is remembered per browser.
+  const zoneW = () => document.getElementById('dockstrip')?.offsetWidth || 0; // the scroll zone sits right of the dock
   split.addEventListener('pointerdown', (e) => {
     e.preventDefault(); split.setPointerCapture(e.pointerId); split.classList.add('on');
-    const move = (m) => { dock.style.width = `${Math.max(120, Math.min(window.innerWidth * 0.7, window.innerWidth - m.clientX))}px`; };
+    const move = (m) => { dock.style.width = `${Math.max(120, Math.min(window.innerWidth * 0.7, window.innerWidth - m.clientX - (zoneW())))}px`; };
     const up = () => {
       split.classList.remove('on'); split.removeEventListener('pointermove', move); split.removeEventListener('pointerup', up);
       try { localStorage.setItem('hatch.dockw', dock.style.width); } catch { /* storage may be blocked */ }
