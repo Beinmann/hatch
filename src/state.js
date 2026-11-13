@@ -9,6 +9,7 @@ import { listWorkspaces, workspaceDir } from './workspaces.js';
 import { readFx } from './fx.js';
 import { readTransparency, DEFAULT_TRANSPARENCY } from './transparency.js';
 import { newPageKey } from './pages.js';
+import { fileDimensions, windowSizeFor } from './image-size.js';
 import { sizeKey, sizeFor, readSizes, rememberSize } from './sizes.js';
 import { createPlans } from './plans.js';
 import { normalizeSteps, STEP_STATUS, findStep, unusedStepId } from './progress.js';
@@ -385,6 +386,12 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
         if (size && +size[1] >= 180 && +size[1] <= 8192 && +size[2] >= 90 && +size[2] <= 8192) {
           if (input.w === undefined) draft.w = +size[1];
           if (input.h === undefined) draft.h = +size[2];
+        }
+        // no configured or remembered size: let the image's own size pull the default
+        if (!size && !readSizes(dir).sizes.image) {
+          const src = String(input?.props?.src || ''); const file = src.startsWith('/') ? src : path.join(l.uploads, src);
+          const fit = src && windowSizeFor(fileDimensions(file) || {});
+          if (fit) { if (input.w === undefined) draft.w = fit.w; if (input.h === undefined) draft.h = fit.h; }
         }
       } catch { /* a broken preference must not prevent opening an image */ }
     }

@@ -100,14 +100,18 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       e.preventDefault();
       w.tb.setPointerCapture(e.pointerId);
       const sx = e.clientX; const sy = e.clientY; const ox = w.node.offsetLeft; const oy = w.node.offsetTop;
+      let moved = false;
       w.node.classList.add('dragging');
       const move = (m) => {
+        moved = true;
         const { x, y } = clampMove({ x: ox + m.clientX - sx, y: oy + m.clientY - sy }, { w: w.node.offsetWidth, h: w.node.offsetHeight }, area());
         w.node.style.left = `${x}px`; w.node.style.top = `${y}px`;
       };
       const up = () => {
         w.tb.removeEventListener('pointermove', move); w.tb.removeEventListener('pointerup', up); w.tb.removeEventListener('pointercancel', up);
         w.node.classList.remove('dragging');
+        // a plain click (or double-click) must not save: a maximized window reports offset 0,0, which would overwrite its real spot
+        if (!moved || w.panel.maximized) return;
         const { x, y } = clampMove({ x: w.node.offsetLeft, y: w.node.offsetTop }, { w: w.node.offsetWidth, h: w.node.offsetHeight }, area()); // also on release
         w.node.style.left = `${x}px`; w.node.style.top = `${y}px`;
         w.panel = { ...w.panel, x, y };

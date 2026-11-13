@@ -14,6 +14,7 @@
   #stage { position: absolute; top: 26px; left: 0; right: 0; bottom: 0; overflow: hidden; cursor: grab; touch-action: none;
     background-image: radial-gradient(color-mix(in srgb, var(--muted, #888) 35%, transparent) 1px, transparent 1px); }
   #stage.panning { cursor: grabbing; }
+  #marquee { position: absolute; z-index: 9999; border: 1px solid var(--accent, #6af); background: rgba(102,170,255,.15); pointer-events: none; }
   #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   #lines { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
   #lines .hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; fill: none; }
@@ -46,7 +47,7 @@
 </style>
 </head>
 <body>
-<div id="bar"><span class="hint">PROTOTYPE. Double-click: new card. Drag the card top: move. Drag the right dot to another card: arrow. Click + Delete: remove. Lines like \"- [ ] item\" in a card are checkboxes: click to tick. Wheel: zoom.</span>
+<div id="bar"><span class="hint">PROTOTYPE. Double-click: new card. Drag the card top: move. Drag the right dot to another card: arrow. Click + Delete: remove. Lines like \"- [ ] item\" in a card are checkboxes: click to tick. Left-drag background: select a rectangle. Middle-drag: pan. Wheel: scroll, Shift+wheel: sideways, Ctrl+wheel: zoom.</span>
   <span id="status" class="hint" style="flex:none"></span><button id="add">+ card</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
 <div id="stage"><div id="world"><svg id="lines"><defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg></div></div>
 <script src="/sdk.js"></script>
@@ -54,7 +55,7 @@
 <script>
   // Visual board, PROTOTYPE. The board (cards, arrows, pan/zoom) lives in the widget's data/board.json, or in the *.board.json file given to `hatch widget open board FILE` (the server then pins load and save to it). It is read with the
   // "load" source and written in chunks through the "save" source (hatch.call arguments are short). model.js has the pure logic.
-  var M = window.ScratchModel, board = M.empty(), sel = null; // sel: {kind:'card'|'arrow', id}
+  var M = window.ScratchModel, board = M.empty(), sel = null, multi = new Set(); // sel: {kind:'card'|'arrow', id}
   var stage = document.getElementById('stage'), world = document.getElementById('world'), lines = document.getElementById('lines'),
       statusEl = document.getElementById('status'), els = new Map(), loaded = false, saveTimer = null, saving = Promise.resolve(), dirty = false;
   stage.style.pointerEvents = 'none'; // edits wait for the file to be read, or the late answer would replace them
@@ -121,7 +122,7 @@
     els.forEach(function (el, id) { if (!live.has(id)) { el.remove(); els.delete(id); } });
     board.cards.forEach(function (c, i) {
       var el = els.get(c.id); if (!el) { el = cardEl(c); els.set(c.id, el); world.appendChild(el); }
-      place(el, c); el.style.zIndex = i + 1; el.classList.toggle('sel', !!sel && sel.kind === 'card' && sel.id === c.id);
+      place(el, c); el.style.zIndex = i + 1; el.classList.toggle('sel', multi.has(c.id) || !!sel && sel.kind === 'card' && sel.id === c.id);
       var ta = el.querySelector('textarea'); if (ta.value !== c.text && document.activeElement !== ta) ta.value = c.text;
       drawChecks(el, c);
     });
@@ -141,7 +142,7 @@
     });
     if (tmp) { var t = line(tmp.x1, tmp.y1, tmp.x2, tmp.y2, 'tmp'); lines.appendChild(t); }
   }
-  function select(kind, id) { sel = { kind: kind, id: id }; render(); }
+  function select(kind, id) { if (!(kind === 'card' && multi.has(id))) multi = new Set(); sel = { kind: kind, id: id }; render(); }
 
   // ---- pointer interaction. Screen -> world uses the stage's rectangle and the current view.
   function worldPt(e) { var r = stage.getBoundingClientRect(); return M.toWorld(board.view, e.clientX - r.left, e.clientY - r.top); }
@@ -153,8 +154,9 @@
   function dragCard(e, id) {
     if (e.button !== 0) return; e.stopPropagation(); e.preventDefault();
     board = M.raise(board, id); select('card', id);
-    var c = board.cards.filter(function (k) { return k.id === id; })[0], start = worldPt(e), ox = c.x, oy = c.y, moved = false;
-    track(e, function (ev) { var p = worldPt(ev); moved = true; board = M.moveCard(board, id, ox + p.x - start.x, oy + p.y - start.y); render(); },
+    var ids = multi.has(id) ? Array.from(multi) : [id], start = worldPt(e), moved = false,
+        orig = ids.map(function (i) { var k = board.cards.filter(function (c) { return c.id === i; })[0]; return k && { id: i, x: k.x, y: k.y }; }).filter(Boolean);
+    track(e, function (ev) { var p = worldPt(ev); moved = true; orig.forEach(function (o) { board = M.moveCard(board, o.id, o.x + p.x - start.x, o.y + p.y - start.y); }); render(); },
       function () { if (moved) changed(); });
   }
   function resizeCard(e, id) {
@@ -171,22 +173,39 @@
         mark(target); drawLines({ x1: q.x, y1: q.y, x2: p.x, y2: p.y }); },
       function () { mark(null); if (target) { var r = M.addArrow(board, id, target.id); board = r.board; if (r.id) { sel = { kind: 'arrow', id: r.id }; changed(); } } render(); });
   }
-  // pan with the background; a click on it deselects
+  // middle button: pan (anywhere, also over cards). Left button on the background: rubber-band selection; a plain click deselects.
   stage.tabIndex = 0; stage.style.outline = 'none';
   stage.addEventListener('pointerdown', function (e) {
-    if (e.button !== 0 || e.target !== stage && e.target !== world && e.target !== lines) return;
-    sel = null; render(); stage.focus(); stage.classList.add('panning');
+    if (e.button !== 1) return;
+    e.preventDefault(); e.stopPropagation(); stage.classList.add('panning');
     var sx = e.clientX, sy = e.clientY, v0 = board.view, moved = false;
     track(e, function (ev) { moved = true; board = M.setView(board, { x: v0.x + ev.clientX - sx, y: v0.y + ev.clientY - sy, zoom: v0.zoom }); applyView(); },
       function () { stage.classList.remove('panning'); if (moved) changed(); });
+  }, true);
+  stage.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0 || e.target !== stage && e.target !== world && e.target !== lines) return;
+    sel = null; multi = new Set(); render(); stage.focus();
+    var r = stage.getBoundingClientRect(), x0 = e.clientX - r.left, y0 = e.clientY - r.top, box = mk('div'); box.id = 'marquee'; stage.appendChild(box);
+    function rect(ev) { var x = ev.clientX - r.left, y = ev.clientY - r.top; return { l: Math.min(x0, x), t: Math.min(y0, y), r: Math.max(x0, x), b: Math.max(y0, y) }; }
+    track(e, function (ev) { var q = rect(ev); box.style.left = q.l + 'px'; box.style.top = q.t + 'px'; box.style.width = (q.r - q.l) + 'px'; box.style.height = (q.b - q.t) + 'px'; },
+      function (ev) {
+        var q = rect(ev), a = M.toWorld(board.view, q.l, q.t), z = M.toWorld(board.view, q.r, q.b); box.remove();
+        if (q.r - q.l < 4 && q.b - q.t < 4) return;
+        board.cards.forEach(function (c) { if (c.x < z.x && c.x + c.w > a.x && c.y < z.y && c.y + c.h > a.y) multi.add(c.id); });
+        if (multi.size === 1) { sel = { kind: 'card', id: Array.from(multi)[0] }; multi = new Set(); }
+        render();
+      });
   });
   stage.addEventListener('dblclick', function (e) {
     if (e.target !== stage && e.target !== world && e.target !== lines) return;
     newCardAt(worldPt(e));
   });
+  // wheel: scroll up/down; shift+wheel: left/right; ctrl+wheel: zoom
   stage.addEventListener('wheel', function (e) {
-    e.preventDefault(); var r = stage.getBoundingClientRect();
-    board = M.setView(board, M.zoomAt(board.view, e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1)); applyView(); changed();
+    e.preventDefault(); var r = stage.getBoundingClientRect(), v = board.view;
+    if (e.ctrlKey) board = M.setView(board, M.zoomAt(v, e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1));
+    else { var dy = e.deltaY, dx = e.deltaX; if (e.shiftKey && !dx) { dx = dy; dy = 0; } board = M.setView(board, { x: v.x - dx, y: v.y - dy, zoom: v.zoom }); }
+    applyView(); changed();
   }, { passive: false });
   function newCardAt(p) {
     var r = M.addCard(board, p.x, p.y); board = r.board; sel = { kind: 'card', id: r.id }; render(); changed();
@@ -194,7 +213,9 @@
   }
   addEventListener('keydown', function (e) {
     if (e.target && e.target.tagName === 'TEXTAREA') { if (e.key === 'Escape') e.target.blur(); return; }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && sel) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && multi.size) {
+      multi.forEach(function (id) { board = M.removeCard(board, id); }); multi = new Set(); sel = null; render(); changed();
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) {
       board = sel.kind === 'card' ? M.removeCard(board, sel.id) : M.removeArrow(board, sel.id); sel = null; render(); changed();
     }
   });

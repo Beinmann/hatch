@@ -72,3 +72,17 @@ test('a broken sizes.json warns and falls back to defaults; deleting it works', 
     assert.equal((await t.call('POST', '/api/panels', { type: 'note', props: { markdown: 'x' } })).data.w, 360);
   } finally { await t.close(); }
 });
+
+test('image windows open larger and are pulled toward the image size', async () => {
+  const t = await startHatch();
+  try {
+    const png = (w, h) => { const b = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b); b.writeUInt32BE(13, 8); b.write('IHDR', 12); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20); return b; };
+    fs.writeFileSync(path.join(t.stateDir, 'uploads', 'small.png'), png(200, 200));
+    fs.writeFileSync(path.join(t.stateDir, 'uploads', 'big.png'), png(4000, 3000));
+    const open = async (src) => (await t.call('POST', '/api/panels', { type: 'image', props: { src } })).data;
+    const small = await open('small.png'); const big = await open('big.png'); const none = await open('missing.png');
+    assert.ok(small.w >= 480 && small.w < big.w, `small ${small.w} < big ${big.w}`);
+    assert.ok(big.w <= 1000 && big.h <= 760 && big.w < 4000);
+    assert.deepEqual([none.w, none.h], [640, 440], 'unreadable image keeps the default');
+  } finally { await t.close(); }
+});
