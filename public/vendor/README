@@ -1,3 +1,17 @@
 Vendored, loaded lazily by the progress panel (the boxes may have no internet, so no CDN at runtime).
 mermaid.min.js  mermaid 11.4.1 (MIT, see mermaid.LICENSE), copied from the npm package's dist/ directory.
 To update: install the new version somewhere outside this repo, copy dist/mermaid.min.js and LICENSE, change the version above.
+
+Also vendored, one level up in public/ (ES modules, loaded by the terminal):
+xterm.mjs            @xterm/xterm 6.0.0, lib/xterm.mjs
+addon-fit.mjs        @xterm/addon-fit 0.11.0, lib/addon-fit.mjs
+addon-unicode11.mjs  @xterm/addon-unicode11 0.9.0, lib/addon-unicode11.mjs
+xterm.css, xterm.LICENSE   @xterm/xterm 6.0.0, css/xterm.css and LICENSE
+All are unmodified copies from the npm packages; the only difference is that the trailing "//# sourceMappingURL=..." comment line was removed from the .mjs files.
+To re-verify: npm pack the package at that version in a scratch directory, extract, and diff against the file here.
+
+SHA-256 of the files as stored here:
+a43bc1afd446f9c4cc66ac5dd45d02e8d65e26fc5344ec0ef787f88d6ddb6f9e  vendor/mermaid.min.js (identical to the npm 11.4.1 dist file)
+3fd3d0046d2604ea5860235e2f96625a2fab158dcf3d4cfb0f7c1655559a5d9a  xterm.mjs
+aa22c5f28e4d64118ac0e7d60276b3384188e59dd104c96e43760d6e2cedd771  addon-fit.mjs
+37bb2d573c615661c875398be2a3497e02bd21d7202a5d1159f6ab70a8cfc2f2  addon-unicode11.mjs (identical to the npm 0.9.0 file)
