@@ -432,6 +432,7 @@ test('w is short for widget (w open top, w list) and top-level open still opens 
     let r = await ui(['w', 'open', 'top'], { state: s }); assert.equal(r.status, 0, r.stderr);
     const panels = JSON.parse((await ui(['panels', '--json'], { state: s })).stdout);
     assert.ok(panels.some((p) => p.type === 'terminal' && p.props.name === 'top'));
+    r = await ui(['w', 'o', 'top'], { state: s }); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /top open as/);
     r = await ui(['w', 'list'], { state: s }); assert.equal(r.status, 0, r.stderr);
     r = await ui(['w', '--help'], { state: s }); assert.match(r.stdout, /widget protocol/);
     r = await ui(['open', 'git'], { state: s }); assert.notEqual(r.status, 0); assert.match(r.stderr, /no such file or directory/);
@@ -442,4 +443,49 @@ test('package.json and install.sh both provide the ha alias for hatch', () => {
   const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(pkg.bin.ha, pkg.bin.hatch);
   assert.match(fs.readFileSync(new URL('../install.sh', import.meta.url), 'utf8'), /ha:\$here\/bin\/hatch\.js/);
+});
+
+test('widget save writes layout only, restore reopens, moves and un-minimizes without closing anything', async () => {
+  const h = await startHatch(); const s = h.stateDir; const d = tmp();
+  const panelsOf = async () => JSON.parse((await ui(['panels', '--json'], { state: s })).stdout);
+  try {
+    for (const n of ['la', 'lb']) {
+      const wdir = path.join(s, 'widgets', n); fs.mkdirSync(wdir, { recursive: true });
+      fs.writeFileSync(path.join(wdir, 'index.html'), '<div>secret content</div>');
+    }
+    await ui(['widget', 'open', 'la', '--size', '400x300'], { state: s });
+    await ui(['widget', 'open', 'lb', '--dock'], { state: s });
+    const pa = (await panelsOf()).find((p) => p.id === 'w-la');
+    let r = await ui(['widget', 'save', d], { state: s }); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /saved 2 widgets/);
+    const saved = JSON.parse(fs.readFileSync(path.join(d, '.hatch-widgets.json'), 'utf8'));
+    assert.deepEqual(saved.widgets.map((w) => w.name), ['la', 'lb']);
+    assert.equal(saved.widgets[0].w, 400); assert.equal(saved.widgets[1].placement, 'dock'); assert.equal(saved.widgets[0].minimized, false);
+    assert.ok(!JSON.stringify(saved).includes('secret'));
+    // drift: la moved and minimized, lb closed, a third widget open that must stay open
+    await ui(['widget', 'close', 'lb'], { state: s });
+    await h.call('PATCH', '/api/panels/w-la', { x: 500, y: 500, w: 250, h: 200, minimized: true });
+    const wdir = path.join(s, 'widgets', 'lc'); fs.mkdirSync(wdir, { recursive: true }); fs.writeFileSync(path.join(wdir, 'index.html'), '<div/>');
+    await ui(['widget', 'open', 'lc'], { state: s });
+    r = await ui(['widget', 'restore', d], { state: s }); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /1 opened, 1 updated, 0 skipped/);
+    const after = await panelsOf();
+    const a = after.find((p) => p.id === 'w-la');
+    assert.equal(a.x, pa.x); assert.equal(a.w, 400); assert.ok(!a.minimized);
+    assert.equal(after.find((p) => p.id === 'w-lb').placement, 'dock');
+    assert.ok(after.some((p) => p.id === 'w-lc'), 'restore closes nothing');
+  } finally { await h.close(); }
+});
+
+test('widget restore: missing, malformed and partly bad layout files warn instead of crashing', async () => {
+  const h = await startHatch(); const s = h.stateDir; const d = tmp();
+  try {
+    let r = await ui(['w', 'restore', d], { state: s }); assert.equal(r.status, 1); assert.match(r.stderr, /no \.hatch-widgets\.json/);
+    fs.writeFileSync(path.join(d, '.hatch-widgets.json'), '{ nope');
+    r = await ui(['w', 'restore', d], { state: s }); assert.equal(r.status, 1); assert.match(r.stderr, /not valid JSON/);
+    fs.writeFileSync(path.join(d, '.hatch-widgets.json'), '{"widgets": 3}');
+    r = await ui(['w', 'restore', d], { state: s }); assert.equal(r.status, 1); assert.match(r.stderr, /no "widgets" list/);
+    fs.writeFileSync(path.join(d, '.hatch-widgets.json'), JSON.stringify({ widgets: [null, { name: '../x' }, { name: 'ghost', x: 'a' }] }));
+    r = await ui(['w', 'restore', d], { state: s }); assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /entry 1 skipped/); assert.match(r.stderr, /ghost: x .* ignored/); assert.match(r.stderr, /ghost is not installed/); assert.match(r.stdout, /0 opened, 0 updated, 1 skipped/);
+    r = await ui(['w', 'save', path.join(d, 'nodir')], { state: s }); assert.equal(r.status, 1); assert.match(r.stderr, /not a directory/);
+  } finally { await h.close(); }
 });

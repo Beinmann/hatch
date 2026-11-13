@@ -42,7 +42,7 @@
 <script src="/sdk.js"></script>
 <script src="model.js"></script>
 <script>
-  // Visual board, PROTOTYPE. The board (cards, arrows, pan/zoom) lives in the widget's data/board.json. It is read with the
+  // Visual board, PROTOTYPE. The board (cards, arrows, pan/zoom) lives in the widget's data/board.json, or in the *.board.json file given to `hatch widget open board FILE` (the server then pins load and save to it). It is read with the
   // "load" source and written in chunks through the "save" source (hatch.call arguments are short). model.js has the pure logic.
   var M = window.ScratchModel, board = M.empty(), sel = null; // sel: {kind:'card'|'arrow', id}
   var stage = document.getElementById('stage'), world = document.getElementById('world'), lines = document.getElementById('lines'),
