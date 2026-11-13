@@ -35,19 +35,101 @@
   .card .view .ck.done span { text-decoration: line-through; opacity: .55; }
   .card .view .ln0 { min-height: 1.35em; }
   .card .prog { position: absolute; left: 4px; top: 0; height: 14px; line-height: 14px; font-size: 10px; color: var(--muted, #888); pointer-events: none; }
-  .card.checks textarea { display: none; }
-  .card.checks.editing textarea { display: block; }
-  .card.checks.editing .view { display: none; }
-  .card:not(.checks) .view, .card:not(.checks) .prog { display: none; }
+  /* a card shows a rendered view (checkboxes, highlighted code, ...) until it is clicked; then the raw text is edited in the textarea */
+  .card.hasview textarea { display: none; }
+  .card.hasview.editing textarea { display: block; }
+  .card.hasview.editing .view { display: none; }
+  .card:not(.hasview) .view { display: none; }
   .card .out { position: absolute; right: -7px; top: 50%; margin-top: -7px; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%;
-    background: var(--bg, #1b1b1b); border: 2px solid var(--accent, #6af); cursor: crosshair; opacity: 0; }
+    background: var(--bg, #1b1b1b); border: 2px solid var(--accent, #6af); cursor: crosshair; opacity: 0; z-index: 3; }
   .card:hover .out, .card.sel .out { opacity: 1; }
-  .card .rs { position: absolute; right: 0; bottom: 0; width: 12px; height: 12px; cursor: nwse-resize; opacity: .5;
+  .card .rs { position: absolute; right: 0; bottom: 0; width: 12px; height: 12px; cursor: nwse-resize; opacity: .5; z-index: 3;
     background: linear-gradient(135deg, transparent 55%, var(--muted, #888) 55%, var(--muted, #888) 65%, transparent 65%, transparent 80%, var(--muted, #888) 80%); }
+  .card.dragging { transform: none !important; }
+
+  /* ---- node types (look from the node prototypes; colors that carry meaning are fixed, the rest follows the theme) */
+  .card { --surface: color-mix(in srgb, var(--fg, #ddd) 8%, var(--bg, #1b1b1b)); --line: color-mix(in srgb, var(--muted, #888) 45%, transparent); --amber: #e8b84a; --red: #ef6b6b; --green: #5fcf80; }
+  /* sticky note: colored paper, tape strip, slight tilt, handwriting font, no title bar */
+  .card.t-note { --paper: #e9d874; --ink: #3b3412; background: var(--paper); color: var(--ink); border: 0; border-radius: 2px 2px 12px 2px; box-shadow: 2px 4px 10px #0008;
+    font-family: 'Segoe Print', 'Comic Sans MS', cursive, var(--sans, system-ui); transform: rotate(-1.5deg); }
+  .card.t-note.col-b { --paper: #9fe0c4; --ink: #10382a; transform: rotate(1.2deg); }
+  .card.t-note.col-c { --paper: #f2a7b4; --ink: #47121e; transform: rotate(-.6deg); }
+  .card.t-note:before { content: ""; position: absolute; top: -7px; left: 50%; width: 44px; height: 14px; margin-left: -22px; background: #fff6; transform: rotate(2deg); pointer-events: none; }
+  .card.t-note.sel { box-shadow: 0 0 0 2px var(--accent, #6af), 2px 4px 10px #0008; }
+  .card.t-note .top { background: transparent; }
+  .card.t-note .x, .card.t-note .clr { color: var(--ink); }
+  .card .clr { position: absolute; left: 4px; top: 1px; width: 11px; height: 11px; padding: 0; border-radius: 50%; border: 1.5px solid var(--ink, currentColor); background: var(--paper); opacity: .55; }
+  .card .clr:hover { opacity: 1; }
+  .card:not(.t-note) .clr { display: none; }
+  /* task card: colored left edge for state, status chip (click cycles), progress bar */
+  .card.t-task { --st: var(--accent, #6af); border-left: 4px solid var(--st); box-shadow: 0 4px 12px #0006; }
+  .card.t-task.st-waiting { --st: var(--amber); } .card.t-task.st-blocked { --st: var(--red); }
+  .card.t-task .ttl { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; font-weight: 600; font-size: 13px; margin-bottom: 4px; white-space: normal; }
+  .chip { font-size: 10px; font-weight: 400; padding: 1px 7px; border-radius: 99px; white-space: nowrap; cursor: pointer; color: var(--st, var(--accent, #6af)); border: 1px solid color-mix(in srgb, var(--st, var(--accent, #6af)) 40%, transparent);
+    background: color-mix(in srgb, var(--st, var(--accent, #6af)) 14%, transparent); }
+  .card .bar { height: 5px; flex: none; margin: 0 10px 8px; background: #0006; border-radius: 3px; overflow: hidden; }
+  .card .bar i { display: block; height: 100%; background: var(--st, var(--accent, #6af)); }
+  .card:not(.t-task) .bar { display: none; }
+  /* code snippet: window dots, file name, tinted monospace body, copy button on hover */
+  .card.t-code { background: #0a1010; color: #cfe3df; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: 0 4px 14px #0007; font-family: var(--mono, ui-monospace, monospace); font-size: 11px; line-height: 1.5; }
+  .card.t-code .top { display: flex; align-items: center; gap: 5px; padding: 0 9px; height: 24px; background: #141d1e; color: #93a4a9; border-radius: 0; }
+  .card.t-code .top i { width: 9px; height: 9px; border-radius: 50%; background: var(--red); flex: none; }
+  .card.t-code .top i:nth-of-type(2) { background: var(--amber); } .card.t-code .top i:nth-of-type(3) { background: var(--green); }
+  .card .fname { flex: 1; min-width: 0; margin-left: 6px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; padding: 0; }
+  .card:not(.t-code) .fname, .card:not(.t-code) .cp, .card:not(.t-code) .top i { display: none; }
+  .card .cp { position: static; height: 16px; font-size: 10px; padding: 0 5px; opacity: 0; line-height: 14px; color: #93a4a9; }
+  .card:hover .cp { opacity: 1; }
+  .card.t-code .x { position: static; margin: 0; }
+  .card.t-code .view { white-space: pre; word-break: normal; padding: 9px 11px; }
+  .card.t-code textarea { white-space: pre; padding: 9px 11px; }
+  .view .k { color: #c792ea; } .view .s { color: #9fe0a0; } .view .c { color: #5d7378; } .view .f { color: #7fc4ff; } .view .n { color: #e8b84a; }
+  /* image / link card */
+  .card.t-link { border-radius: 10px; overflow: hidden; box-shadow: 0 4px 14px #0007; }
+  .card.t-link .top { position: absolute; left: 0; right: 0; top: 0; z-index: 2; background: transparent; }
+  .card.t-link .x { background: #0007; color: #fff; border-radius: 0 0 0 4px; }
+  .card .im { flex: none; height: 56%; position: relative; background-size: cover; background-position: center; }
+  .card .im:after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: linear-gradient(transparent, var(--surface)); }
+  .card .lk { padding: 0 11px 8px; flex: 1; min-height: 0; overflow: hidden; }
+  .card .lk b { display: block; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .lk span { color: var(--muted, #888); font-size: 11px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .lk a { color: var(--accent, #6af); font-size: 11px; }
+  .card.t-link .view { padding: 0; display: flex; flex-direction: column; overflow: hidden; white-space: normal; }
+  .card .urlin { display: none; margin: 0 6px 4px; border: 1px solid var(--line); border-radius: 4px; outline: 0; background: transparent; color: inherit; font: inherit; padding: 2px 5px; flex: none; user-select: text; }
+  .card.t-link.editing .urlin { display: block; }
+  /* milestone pill: numbered dot (click cycles todo / now / done), label */
+  .card.t-milestone { flex-direction: row; align-items: center; gap: 8px; padding: 0 14px 0 8px; border-radius: 99px; border: 1.5px solid var(--accent, #6af); font-weight: 600; white-space: nowrap;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #6af) 8%, transparent), 0 4px 12px #0006; }
+  .card.t-milestone .top { position: absolute; left: 0; right: 0; top: 0; height: 100%; background: transparent; border-radius: 99px; z-index: 0; }
+  .card.t-milestone .x { top: -9px; right: 4px; background: var(--bg, #1b1b1b); border-radius: 8px; z-index: 4; display: none; } .card.t-milestone:hover .x { display: block; }
+  .card.t-milestone textarea { padding: 0; resize: none; overflow: hidden; white-space: nowrap; height: 1.35em; flex: 1; min-width: 0; z-index: 1; }
+  .card .dot { display: none; flex: none; width: 20px; height: 20px; border-radius: 50%; padding: 0; z-index: 2; place-items: center; font-size: 11px; line-height: 1; border: 2px solid var(--muted, #888); color: transparent; background: transparent; }
+  .card.t-milestone .dot { display: grid; }
+  .card.t-milestone.ms-now { border-color: var(--amber); box-shadow: 0 0 0 4px #e8b84a14, 0 4px 12px #0006; } .card.t-milestone.ms-now .dot { background: var(--amber); border-color: var(--amber); color: #2b2008; }
+  .card.t-milestone.ms-done .dot { background: var(--accent, #6af); border-color: var(--accent, #6af); color: #06201c; }
+  .card.t-milestone.ms-todo { border-color: var(--line); color: var(--muted, #888); box-shadow: 0 4px 12px #0006; }
+  /* group frame: dashed tinted frame with a small caps label; the body does not take clicks (so cards inside and the background stay usable) */
+  .card.t-group { background: color-mix(in srgb, var(--accent, #6af) 4%, transparent); border: 1.5px dashed color-mix(in srgb, var(--accent, #6af) 40%, transparent); border-radius: 12px; pointer-events: none; }
+  .card.t-group.sel { border-color: var(--accent, #6af); }
+  .card.t-group .top { position: absolute; left: 0; right: 0; top: -2px; height: 18px; background: transparent; pointer-events: auto; }
+  .card.t-group textarea { position: absolute; top: -10px; left: 12px; flex: none; width: calc(100% - 60px); height: 20px; padding: 0 8px; background: var(--bg, #1b1b1b); color: var(--accent, #6af); font-size: 11px; letter-spacing: .06em;
+    text-transform: uppercase; pointer-events: auto; z-index: 2; white-space: nowrap; overflow: hidden; resize: none; }
+  .card.t-group .x, .card.t-group .out, .card.t-group .rs { pointer-events: auto; }
+  /* quote */
+  .card.t-quote { border: 0; border-left: 3px solid #c792ea; border-radius: 0 8px 8px 0; background: #c792ea12; font-style: italic; color: var(--fg, #ddd); }
+  .card.t-quote .top { background: transparent; }
+  .card.t-quote small { display: block; font-style: normal; color: var(--muted, #888); margin-top: 4px; }
+  .card.t-quote .view { padding: 4px 12px; }
+  /* type picker */
+  #menu { position: absolute; z-index: 10000; min-width: 190px; padding: 4px; border-radius: 6px; background: var(--bg, #1b1b1b); box-shadow: 0 6px 20px #000a;
+    border: 1px solid color-mix(in srgb, var(--muted, #888) 60%, transparent); }
+  #menu button { display: flex; width: 100%; align-items: center; gap: 8px; text-align: left; border: 0; padding: 4px 8px; }
+  #menu button:hover, #menu button:focus { background: color-mix(in srgb, var(--accent, #6af) 22%, transparent); outline: 0; }
+  #menu .sw { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid #0006; }
+  #menu .k { margin-left: auto; color: var(--muted, #888); }
 </style>
 </head>
 <body>
-<div id="bar"><span class="hint">PROTOTYPE. Double-click: new card. Drag the card top: move. Drag the right dot to another card: arrow. Click + Delete: remove. Lines like \"- [ ] item\" in a card are checkboxes: click to tick. Left-drag background: select a rectangle. Middle-drag: pan. Wheel: scroll, Shift+wheel: sideways, Ctrl+wheel: zoom.</span>
+<div id="bar"><span class="hint">PROTOTYPE. Double-click or + card: pick a node type (Enter = sticky note). Drag a card top (or the paper) to move. Drag the right dot to another card: arrow. Click + Delete: remove. "- [ ] item" lines are checkboxes. Left-drag background: select a rectangle. Middle-drag: pan. Wheel: scroll, Shift+wheel: sideways, Ctrl+wheel: zoom.</span>
   <span id="status" class="hint" style="flex:none"></span><button id="add">+ card</button><button id="tidy" title="Arrange the cards by their arrows: left to right, no overlap, unconnected cards in a grid below (key: T)">tidy</button><button id="undo" title="Put the cards back where they were before the last tidy (Ctrl+Z)" hidden>undo</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
 <div id="stage"><div id="world"><svg id="lines"><defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg></div></div>
 <script src="/sdk.js"></script>
@@ -82,50 +164,108 @@
   function applyView() { var v = board.view; world.style.transform = 'translate(' + v.x + 'px,' + v.y + 'px) scale(' + v.zoom + ')';
     stage.style.backgroundSize = (24 * v.zoom) + 'px ' + (24 * v.zoom) + 'px'; stage.style.backgroundPosition = v.x + 'px ' + v.y + 'px'; }
   function place(el, c) { el.style.left = c.x + 'px'; el.style.top = c.y + 'px'; el.style.width = c.w + 'px'; el.style.height = c.h + 'px'; }
+  var VISIBLE_TYPES = M.TYPE_ORDER.filter(function (t) { return t !== 'board'; });
+  var TYPE_SWATCH = { note: '#e9d874', task: 'var(--accent, #6af)', code: '#0a1010', link: 'linear-gradient(135deg,#1f6f78,#d9778a)', milestone: 'var(--amber, #e8b84a)', group: 'transparent', quote: '#c792ea', board: 'var(--muted, #888)' };
+  var PLACEHOLDER = { note: 'text', task: 'Title\n- [ ] step', code: 'code', link: 'Title\nsource or caption', milestone: 'milestone', group: 'group', quote: 'quote\n— source', board: 'title' };
   function cardEl(c) {
-    var el = mk('div', 'card'); el.dataset.id = c.id;
-    var top = mk('div', 'top'), x = mk('button', 'x', '×'), ta = mk('textarea'), view = mk('div', 'view'), prog = mk('span', 'prog'), out = mk('div', 'out'), rs = mk('div', 'rs');
-    x.title = 'delete card'; ta.value = c.text; ta.placeholder = 'text'; ta.spellcheck = false;
-    x.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    var type = M.typeOf(c), el = mk('div', 'card t-' + type); el.dataset.id = c.id;
+    var top = mk('div', 'top'), x = mk('button', 'x', '×'), ta = mk('textarea'), view = mk('div', 'view'), prog = mk('span', 'prog'), out = mk('div', 'out'), rs = mk('div', 'rs'),
+        clr = mk('button', 'clr'), dot = mk('button', 'dot'), bar = mk('div', 'bar'), fname = mk('input', 'fname'), cp = mk('button', 'cp', 'copy'), urlin = mk('input', 'urlin');
+    bar.appendChild(mk('i'));
+    x.title = 'delete card'; ta.value = c.text; ta.placeholder = PLACEHOLDER[type] || 'text'; ta.spellcheck = false;
+    clr.title = 'change color'; dot.title = 'cycle: todo, now, done'; cp.title = 'copy the code'; fname.placeholder = 'file name'; fname.spellcheck = false; urlin.placeholder = 'https://... (page, or image address)'; urlin.spellcheck = false;
+    [x, clr, dot, cp, fname, urlin].forEach(function (b) { b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); b.addEventListener('dblclick', function (e) { e.stopPropagation(); }); });
     x.addEventListener('click', function () { board = M.removeCard(board, c.id); if (sel && sel.id === c.id) sel = null; render(); changed(); });
+    clr.addEventListener('click', function () { var k = cardOf(c.id); board = M.patchCard(board, c.id, { color: M.cycle(M.NOTE_COLORS, k.color || 'a') }); render(); changed(); });
+    dot.addEventListener('click', function () { var k = cardOf(c.id); board = M.patchCard(board, c.id, { state: M.cycle(M.MILESTONE_STATES, k.state || 'todo') }); render(); changed(); });
+    fname.addEventListener('input', function () { board = M.patchCard(board, c.id, { name: fname.value }); changed(); });
+    urlin.addEventListener('input', function () { board = M.patchCard(board, c.id, { url: urlin.value }); changed(); });
+    cp.addEventListener('click', function () { copyText(cardOf(c.id).text); cp.textContent = 'copied'; setTimeout(function () { cp.textContent = 'copy'; }, 1200); });
     ta.addEventListener('input', function () { board = M.setText(board, c.id, ta.value); changed(); });
     ta.addEventListener('focus', function () { el.classList.add('editing'); select('card', c.id); });
-    ta.addEventListener('blur', function () { el.classList.remove('editing'); render(); });
+    // focus moving to another field of the same card (file name, address) keeps the card in edit mode
+    function leave(e) { if (e.relatedTarget && el.contains(e.relatedTarget)) return; el.classList.remove('editing'); render(); }
+    ta.addEventListener('blur', leave); urlin.addEventListener('blur', leave);
     view.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
     view.addEventListener('dblclick', function (e) { e.stopPropagation(); });
-    // a click on a checkbox row toggles that line; a click on any other line (or the empty area) opens the raw text for editing
+    // a click on a checkbox row toggles that line, on the status chip cycles it; a click on any other line (or the empty area) opens the raw text for editing
     view.addEventListener('click', function (e) {
       var row = e.target.closest && e.target.closest('.ck');
       if (row) { board = M.toggleCheck(board, c.id, +row.dataset.line); render(); changed(); return; }
+      if (e.target.closest && e.target.closest('.chip')) { var k = cardOf(c.id); board = M.patchCard(board, c.id, { status: M.cycle(M.STATUSES, k.status || 'active') }); render(); changed(); return; }
+      if (e.target.closest && e.target.closest('a')) return; // a real link: let the browser open it
       el.classList.add('editing'); ta.focus();
     });
     ta.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
     ta.addEventListener('dblclick', function (e) { e.stopPropagation(); });
     top.addEventListener('pointerdown', function (e) { dragCard(e, c.id); });
+    // sticky notes, quotes and pills have no visible title bar: dragging the card itself (not its text) moves it
+    el.addEventListener('pointerdown', function (e) { if (e.target === el) dragCard(e, c.id); });
     out.addEventListener('pointerdown', function (e) { dragArrow(e, c.id); });
     rs.addEventListener('pointerdown', function (e) { resizeCard(e, c.id); });
-    top.appendChild(x); top.appendChild(prog); el.append(top, view, ta, out, rs); return el;
+    top.append(clr, mk('i'), mk('i'), mk('i'), fname, cp, x); top.appendChild(prog);
+    el.append(top);
+    if (type === 'milestone') el.append(dot);
+    el.append(view, ta, urlin, bar, out, rs); return el;
   }
-  // checklist view of a card: rebuilt from the text on every render (cheap), only shown when the text has checklist lines
-  function drawChecks(el, c) {
-    var p = M.progress(c.text), view = el.querySelector('.view'), prog = el.querySelector('.prog');
-    el.classList.toggle('checks', p.total > 0); prog.textContent = p.total ? p.done + '/' + p.total : '';
-    if (!p.total || el.classList.contains('editing') && document.activeElement === el.querySelector('textarea')) return;
+  function copyText(t) {
+    try { navigator.clipboard.writeText(t).catch(function () {}); } catch (e) {}
+  }
+  // what a card shows besides its textarea: rebuilt from the data on every render (cheap). Returns true when the card shows a view.
+  function drawBody(el, c, i) {
+    var type = M.typeOf(c), view = el.querySelector('.view'), prog = el.querySelector('.prog'), ta = el.querySelector('textarea'), p = M.progress(c.text);
+    var editing = el.classList.contains('editing') && document.activeElement && el.contains(document.activeElement);
+    el.className = el.className.replace(/\b(col|st|ms)-\S+/g, '').replace(/\s+/g, ' ').trim();
+    if (type === 'note' && c.color) el.classList.add('col-' + c.color);
+    if (type === 'task') el.classList.add('st-' + (c.status || 'active'));
+    if (type === 'milestone') { el.classList.add('ms-' + (c.state || 'todo')); el.querySelector('.dot').textContent = c.state === 'done' ? '✓' : String(milestoneRank(c)); }
+    var hasview = type === 'task' || type === 'code' || type === 'link' || type === 'quote' || (type === 'note' && p.total > 0);
+    el.classList.toggle('hasview', hasview);
+    prog.textContent = type === 'note' && p.total ? p.done + '/' + p.total : '';
+    var fname = el.querySelector('.fname'), urlin = el.querySelector('.urlin');
+    if (document.activeElement !== fname) fname.value = c.name || '';
+    if (document.activeElement !== urlin) urlin.value = c.url || '';
+    if (type === 'task') {
+      var pct = p.total ? Math.round(100 * p.done / p.total) : (c.status === 'done' ? 100 : 0);
+      el.querySelector('.bar i').style.width = pct + '%';
+    }
+    if (!hasview || editing) return;
     view.textContent = '';
-    M.lines(c.text).forEach(function (l, i) {
+    if (type === 'code') { c.text ? M.tokenize(c.text).forEach(function (t) { view.appendChild(t[0] ? mk('span', t[0], t[1]) : document.createTextNode(t[1])); }) : view.appendChild(mk('span', 'c', 'click to add code')); return; }
+    if (type === 'quote') {
+      var q = M.splitQuote(c.text); view.appendChild(mk('div', '', q.quote || 'click to add a quote')); if (q.source) view.appendChild(mk('small', '', q.source)); return;
+    }
+    if (type === 'link') {
+      var ls = c.text.split('\n'), img = M.imageUrl(c.url), link = M.linkUrl(c.url), im = mk('div', 'im'), lk = mk('div', 'lk');
+      im.style.backgroundImage = img ? 'url("' + img.replace(/"/g, '%22') + '")' : 'linear-gradient(135deg, hsl(' + hue(ls[0] || c.id) + ',45%,32%), hsl(' + (hue(ls[0] || c.id) + 70) + ',50%,40%))';
+      lk.append(mk('b', '', ls[0] || 'click to add a title'), mk('span', '', ls.slice(1).join(' ') || (link ? link.replace(/^https?:\/\//, '') : '')));
+      if (link) { var a = mk('a', '', 'open'); a.href = link; a.target = '_blank'; a.rel = 'noopener noreferrer'; lk.appendChild(a); }
+      view.append(im, lk); return;
+    }
+    var lines = M.lines(c.text);
+    if (type === 'task') { // first line is the title, the status chip sits next to it
+      var ttl = mk('div', 'ttl'); ttl.append(mk('span', '', lines[0].text || 'click to add a title'), mk('span', 'chip', c.status || 'active')); view.appendChild(ttl); lines = lines.slice(1);
+    }
+    lines.forEach(function (l, j) {
+      var idx = type === 'task' ? j + 1 : j;
       if (!l.check) { view.appendChild(mk('div', 'ln0', l.text)); return; }
       var row = mk('div', 'ck' + (l.check.checked ? ' done' : '')), box = document.createElement('input');
-      row.dataset.line = i; box.type = 'checkbox'; box.checked = l.check.checked; row.append(box, mk('span', '', l.check.label)); view.appendChild(row);
+      row.dataset.line = idx; box.type = 'checkbox'; box.checked = l.check.checked; row.append(box, mk('span', '', l.check.label)); view.appendChild(row);
     });
   }
+  function hue(str) { var h = 0; for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360; return h; }
+  // pills are numbered by their position from left to right
+  function milestoneRank(c) { return board.cards.filter(function (k) { return M.typeOf(k) === 'milestone'; }).sort(function (a, b) { return a.x - b.x; }).indexOf(c) + 1; }
+  function cardOf(id) { return board.cards.filter(function (k) { return k.id === id; })[0]; }
   function render() {
     var live = new Set(board.cards.map(function (c) { return c.id; }));
     els.forEach(function (el, id) { if (!live.has(id)) { el.remove(); els.delete(id); } });
     board.cards.forEach(function (c, i) {
       var el = els.get(c.id); if (!el) { el = cardEl(c); els.set(c.id, el); world.appendChild(el); }
       place(el, c); el.style.zIndex = i + 1; el.classList.toggle('sel', multi.has(c.id) || !!sel && sel.kind === 'card' && sel.id === c.id);
+      if (M.typeOf(c) === 'group') el.style.zIndex = -1; // frames sit behind everything, also behind arrows
       var ta = el.querySelector('textarea'); if (ta.value !== c.text && document.activeElement !== ta) ta.value = c.text;
-      drawChecks(el, c);
+      drawBody(el, c, i);
     });
     drawLines(); applyView();
   }
@@ -167,15 +307,17 @@
   function dragCard(e, id) {
     if (e.button !== 0) return; e.stopPropagation(); e.preventDefault();
     board = M.raise(board, id); select('card', id);
-    var ids = multi.has(id) ? Array.from(multi) : [id], start = worldPt(e), moved = false,
-        orig = ids.map(function (i) { var k = board.cards.filter(function (c) { return c.id === i; })[0]; return k && { id: i, x: k.x, y: k.y }; }).filter(Boolean);
+    var ids = multi.has(id) ? Array.from(multi) : [id], start = worldPt(e), moved = false;
+    ids.slice().forEach(function (i) { M.groupMembers(board, i).forEach(function (m) { if (ids.indexOf(m) < 0) ids.push(m); }); }); // a frame takes what is inside it along
+    var tilted = ids.map(function (i) { return els.get(i); }).filter(Boolean); tilted.forEach(function (el) { el.classList.add('dragging'); });
+    var orig = ids.map(function (i) { var k = board.cards.filter(function (c) { return c.id === i; })[0]; return k && { id: i, x: k.x, y: k.y }; }).filter(Boolean);
     track(e, function (ev) { var p = worldPt(ev); moved = true; orig.forEach(function (o) { board = M.moveCard(board, o.id, o.x + p.x - start.x, o.y + p.y - start.y); }); render(); },
-      function () { if (moved) changed(); });
+      function () { tilted.forEach(function (el) { el.classList.remove('dragging'); }); if (moved) changed(); });
   }
   function resizeCard(e, id) {
     if (e.button !== 0) return; e.stopPropagation(); e.preventDefault();
-    var c = board.cards.filter(function (k) { return k.id === id; })[0], start = worldPt(e), w0 = c.w, h0 = c.h, moved = false;
-    track(e, function (ev) { var p = worldPt(ev); moved = true; board = M.patchCard(board, id, { w: Math.max(80, Math.round(w0 + p.x - start.x)), h: Math.max(50, Math.round(h0 + p.y - start.y)) }); render(); },
+    var c = board.cards.filter(function (k) { return k.id === id; })[0], start = worldPt(e), w0 = c.w, h0 = c.h, moved = false, min = M.TYPES[M.typeOf(c)].min;
+    track(e, function (ev) { var p = worldPt(ev); moved = true; board = M.patchCard(board, id, { w: Math.max(min[0], Math.round(w0 + p.x - start.x)), h: Math.max(min[1], Math.round(h0 + p.y - start.y)) }); render(); },
       function () { if (moved) changed(); });
   }
   function dragArrow(e, id) {
@@ -204,14 +346,18 @@
       function (ev) {
         var q = rect(ev), a = M.toWorld(board.view, q.l, q.t), z = M.toWorld(board.view, q.r, q.b); box.remove();
         if (q.r - q.l < 4 && q.b - q.t < 4) return;
-        board.cards.forEach(function (c) { if (c.x < z.x && c.x + c.w > a.x && c.y < z.y && c.y + c.h > a.y) multi.add(c.id); });
+        board.cards.forEach(function (c) {
+          var inside = M.typeOf(c) === 'group' ? c.x >= a.x && c.x + c.w <= z.x && c.y >= a.y && c.y + c.h <= z.y // a frame is picked only when fully enclosed
+            : c.x < z.x && c.x + c.w > a.x && c.y < z.y && c.y + c.h > a.y;
+          if (inside) multi.add(c.id);
+        });
         if (multi.size === 1) { sel = { kind: 'card', id: Array.from(multi)[0] }; multi = new Set(); }
         render();
       });
   });
   stage.addEventListener('dblclick', function (e) {
     if (e.target !== stage && e.target !== world && e.target !== lines) return;
-    newCardAt(worldPt(e));
+    openPicker(e.clientX, e.clientY, worldPt(e));
   });
   // wheel: scroll up/down; shift+wheel: left/right; ctrl+wheel: zoom
   stage.addEventListener('wheel', function (e) {
@@ -220,12 +366,36 @@
     else { var dy = e.deltaY, dx = e.deltaX; if (e.shiftKey && !dx) { dx = dy; dy = 0; } board = M.setView(board, { x: v.x - dx, y: v.y - dy, zoom: v.zoom }); }
     applyView(); changed();
   }, { passive: false });
-  function newCardAt(p) {
-    var r = M.addCard(board, p.x, p.y); board = r.board; sel = { kind: 'card', id: r.id }; render(); changed();
-    els.get(r.id).querySelector('textarea').focus();
+  function newCardAt(p, type) {
+    var r = M.addCard(board, p.x, p.y, '', type || M.DEFAULT_TYPE); board = r.board; sel = { kind: 'card', id: r.id }; render(); changed();
+    var el = els.get(r.id); el.classList.add('editing'); el.querySelector('textarea').focus();
   }
+  // type picker: one button per node type, the sticky note (the default) first and focused, so Enter alone adds a note
+  var menu = null;
+  function closePicker() { if (menu) { menu.remove(); menu = null; } }
+  function openPicker(sx, sy, wp) {
+    closePicker(); menu = mk('div'); menu.id = 'menu';
+    VISIBLE_TYPES.forEach(function (t, i) {
+      var b = mk('button'), sw = mk('span', 'sw'); sw.style.background = TYPE_SWATCH[t];
+      b.append(sw, mk('span', '', M.TYPES[t].label), mk('span', 'k', String(i + 1))); b.dataset.type = t;
+      b.addEventListener('click', function () { closePicker(); newCardAt(wp, t); });
+      menu.appendChild(b);
+    });
+    var r = document.body.getBoundingClientRect(); document.body.appendChild(menu);
+    menu.style.left = Math.max(2, Math.min(sx, r.width - 200)) + 'px'; menu.style.top = Math.max(2, Math.min(sy, r.height - menu.offsetHeight - 2)) + 'px';
+    menu.addEventListener('keydown', function (e) {
+      var bs = Array.prototype.slice.call(menu.querySelectorAll('button')), i = bs.indexOf(document.activeElement);
+      if (e.key === 'Escape') { closePicker(); stage.focus(); }
+      else if (e.key === 'ArrowDown') { bs[(i + 1) % bs.length].focus(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { bs[(i + bs.length - 1) % bs.length].focus(); e.preventDefault(); }
+      else if (/^[1-9]$/.test(e.key) && bs[+e.key - 1]) { bs[+e.key - 1].click(); e.preventDefault(); }
+      e.stopPropagation();
+    });
+    menu.querySelector('button').focus();
+  }
+  document.addEventListener('pointerdown', function (e) { if (menu && !menu.contains(e.target)) closePicker(); }, true);
   addEventListener('keydown', function (e) {
-    if (e.target && e.target.tagName === 'TEXTAREA') { if (e.key === 'Escape') e.target.blur(); return; }
+    if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') && e.target.type !== 'checkbox') { if (e.key === 'Escape') e.target.blur(); return; }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
     if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 't') { e.preventDefault(); tidy(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && multi.size) {
@@ -234,7 +404,10 @@
       board = sel.kind === 'card' ? M.removeCard(board, sel.id) : M.removeArrow(board, sel.id); sel = null; render(); changed();
     }
   });
-  document.getElementById('add').addEventListener('click', function () { var r = stage.getBoundingClientRect(); newCardAt(M.toWorld(board.view, r.width / 2, r.height / 2)); });
+  document.getElementById('add').addEventListener('click', function (e) {
+    var r = stage.getBoundingClientRect(), b = e.currentTarget.getBoundingClientRect();
+    openPicker(b.left, b.bottom + 2, M.toWorld(board.view, r.width / 2, r.height / 2));
+  });
   document.getElementById('tidy').addEventListener('click', tidy);
   document.getElementById('undo').addEventListener('click', undo);
   document.getElementById('reset').addEventListener('click', function () { board = M.setView(board, { x: 0, y: 0, zoom: 1 }); applyView(); changed(); });
