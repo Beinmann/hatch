@@ -33,7 +33,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Clickable file:line and URLs in the terminal | 039 | public/terminal.js | yes | |
 | File management (new, rename, delete) | 056 | files.js, panels/files.js | yes | permanent deletes |
 | HTML page window (`hatch open FILE.html`) | - | src/pages.js, panels/page.js, server /page/ | yes | sandboxed iframe, per-window key, Chromium only |
-| Files browser + text editor | 020 | src/files.js, panels/files.js, editor.js | yes | any-path access unless --root |
+| Files browser + text editor, image preview pane | 020 | src/files.js, panels/files.js, panels/files-preview.js, editor.js | yes (preview helpers) | any-path access unless --root |
 | Ask the user (dialog) | 029 | server /api/ask, app.js | yes | |
 | Terminal windows | 035 | /api/pterm, panels/terminal.js | yes | |
 | Decorative widgets (matrix, analog-clock, ascii-donut, quote) | - | examples/widgets/* | no (not seen in a browser) | pure client side, just for looks |
