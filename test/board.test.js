@@ -152,3 +152,77 @@ test('checklist: lines parse, progress counts, toggleCheck flips one line and su
   assert.deepEqual(J(M.progress(undefined)), { done: 0, total: 0 });
   assert.equal(M.toggleCheck(board, id, 1).cards.length, 1);
 });
+
+test('node types: untyped cards are sticky notes and round-trip unchanged; bad types and bad board cards are repaired', () => {
+  const old = { version: 1, cards: [{ id: 'c1', x: 1, y: 2, w: 180, h: 100, text: 'old' }], arrows: [], view: { x: 0, y: 0, zoom: 1 }, nextId: 2 };
+  const b = J(M.sanitize(old)); assert.equal(M.typeOf(b.cards[0]), 'note'); assert.equal('type' in b.cards[0], false);
+  assert.deepEqual(J(M.sanitize(b)), b);
+  const r = J(M.sanitize({ cards: [
+    { id: 'c1', type: 'nope', text: 'x' }, { id: 'c2', type: 'task', status: 'blocked' }, { id: 'c3', type: 'task', status: 'bad' },
+    { id: 'c4', type: 'board', childId: '../evil' }, { id: 'c5', type: 'board', childId: 'bab12', count: 3, preview: [[0, 0, 5, 5, 'note'], 'junk'] }, { id: 'c6', type: 'milestone', w: 1, h: 1 }] }));
+  assert.deepEqual(r.cards.map((c) => M.typeOf(c)), ['note', 'task', 'task', 'note', 'board', 'milestone']);
+  assert.equal(r.cards[1].status, 'blocked'); assert.equal(r.cards[2].status, undefined);
+  assert.deepEqual(r.cards[4].preview, [[0, 0, 5, 5, 'note']]); assert.equal(r.cards[5].w, 90);
+  const added = J(M.addCard(M.empty(), 0, 0, '', 'code')); assert.equal(added.board.cards[0].type, 'code'); assert.equal(J(M.addCard(M.empty(), 0, 0)).board.cards[0].type, undefined);
+});
+
+test('node types: code tinting round-trips, quote source, link and image addresses, group members, frames do not catch arrows', () => {
+  const code = 'const a = f(1, "x") // hi\nif (a) { return null }';
+  const toks = J(M.tokenize(code)); assert.equal(toks.map((t) => t[1]).join(''), code);
+  assert.deepEqual(toks.filter((t) => t[0]).map((t) => t[0] + t[1]), ['kconst', 'ff', 'n1', 's"x"', 'c// hi', 'kif', 'kreturn', 'knull']);
+  assert.deepEqual(J(M.splitQuote('wise words\n— someone')), { quote: 'wise words', source: 'someone' });
+  assert.deepEqual(J(M.splitQuote('- not a source')), { quote: '- not a source', source: '' });
+  assert.equal(M.linkUrl('javascript:alert(1)'), ''); assert.equal(M.linkUrl('https://example.org/a'), 'https://example.org/a');
+  assert.equal(M.imageUrl('https://example.org/a.png'), 'https://example.org/a.png'); assert.equal(M.imageUrl('https://example.org/page'), '');
+  assert.equal(M.cycle(['a', 'b', 'c'], 'c'), 'a');
+  const b = { cards: [{ id: 'g', type: 'group', x: 0, y: 0, w: 300, h: 300 }, { id: 'in', x: 10, y: 10, w: 50, h: 50 }, { id: 'half', x: 280, y: 10, w: 50, h: 50 }], arrows: [] };
+  assert.deepEqual(J(M.groupMembers(b, 'g')), ['in']);
+  assert.equal(M.cardAt(b, 20, 20).id, 'in'); assert.equal(M.cardAt(b, 200, 200).id, 'g');
+});
+
+test('nested boards: wrap moves cards and inner arrows into a child, paste remaps ids and refuses loops, summary follows the child', () => {
+  let b = M.empty(); const ids = [];
+  for (const x of [0, 300, 600]) { const r = J(M.addCard(b, x, 0, 't' + x)); b = r.board; ids.push(r.id); }
+  b = J(M.addArrow(b, ids[0], ids[1])).board; b = J(M.addArrow(b, ids[1], ids[2])).board;
+  const w = J(M.wrap(b, [ids[0], ids[1]], 'Inner', () => 0.5));
+  assert.deepEqual(w.board.cards.map((c) => M.typeOf(c)).sort(), ['board', 'note']);
+  assert.deepEqual(w.board.arrows, [], 'the arrow to the card that stayed is dropped');
+  assert.equal(w.child.cards.length, 2); assert.equal(w.child.arrows.length, 1);
+  const card = w.board.cards.find((c) => c.id === w.id); assert.equal(card.count, 2); assert.equal(card.preview.length, 2); assert.match(card.childId, /^b[a-z0-9]{10}$/);
+  assert.equal(M.wrap(b, [], 'x'), null);
+  // paste: fresh ids, relative layout, arrows between pasted cards kept
+  const clip = J(M.clip(w.child, w.child.cards.map((c) => c.id)));
+  const p = J(M.paste(M.empty(), clip, 100, 100)); assert.equal(p.board.cards.length, 2); assert.equal(p.board.arrows.length, 1);
+  assert.equal(Math.min(...p.board.cards.map((c) => c.x)), 100);
+  assert.deepEqual(new Set(p.board.arrows.map((a) => a.from)).size, 1);
+  // a board card whose child is open above is refused (and reported), others still go through
+  const loop = J(M.paste(M.empty(), J(M.clip(w.board, [w.id, w.board.cards.find((c) => c.id !== w.id).id])), 0, 0, [card.childId]));
+  assert.deepEqual(loop.refused, [w.id]); assert.equal(loop.board.cards.length, 1);
+  assert.equal(M.wouldCycle(['b1', 'b2'], 'b2'), true); assert.equal(M.wouldCycle(['b1'], 'b3'), false);
+  // the summary of the card follows the child
+  const grown = J(M.addCard(w.child, 0, 0, 'more')).board; assert.equal(J(M.setChildSummary(w.board, w.id, grown)).cards.find((c) => c.id === w.id).count, 3);
+});
+
+test('nested board storage: child boards live next to the file (or in the data dir), ids cannot escape, root protocol is unchanged', async () => {
+  const h = await startHatch();
+  const file = path.join(h.dir, 'plan.board.json');
+  try {
+    for (const open of [() => h.call('POST', '/api/examples/board/open', {}), () => h.call('POST', '/api/examples/board/open', { file })]) {
+      const r = await open(); assert.equal(r.status, 200, JSON.stringify(r.data));
+      const name = r.data.props.name;
+      const call = async (source, arg) => { const x = await h.call('POST', '/api/call', { widget: name, source, arg }); assert.equal(x.status, 200, JSON.stringify(x.data)); return x.data.value; };
+      assert.equal((await call('load', 'bchild1')).json, null, 'an unwritten child is empty');
+      const { board } = J(M.addCard(M.empty(), 0, 0, 'inside'));
+      const parts = M.chunks(board);
+      await call('save', 'B:bchild1 ' + parts[0]); for (const p of parts.slice(1)) await call('save', 'A:bchild1 ' + p); await call('save', 'C:bchild1');
+      assert.equal(J(M.sanitize((await call('load', 'bchild1')).json)).cards[0].text, 'inside');
+      assert.equal((await call('load')).json, null, 'the root is a different file');
+      const where = (await call('path', 'bchild1')).out;
+      assert.ok(where.endsWith(name === 'board' ? 'board.bchild1.json' : 'plan.bchild1.board.json'), where);
+      assert.ok(fs.existsSync(where));
+      assert.equal(path.dirname(where), path.dirname((await call('path')).out), 'next to the parent');
+      const bad = await call('save', 'B:../x ' + parts[0]); assert.equal(bad.code, 1);
+      assert.equal((await h.call('POST', '/api/call', { widget: name, source: 'load', arg: 'a.b' })).data.value.code, 1, 'dots are not allowed in ids');
+    }
+  } finally { await h.close(); }
+});
