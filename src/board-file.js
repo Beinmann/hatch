@@ -28,11 +28,15 @@ export function resolveBoardFile(file) {
 
 /** widget.json for a board bound to `file`: the shipped one with load and save pinned to it (same protocol as the default). */
 export function boardFileMeta(shippedMeta, file) {
-  const f = quote(file);
-  const load = `F=${f}; if [ -s "$F" ]; then cat "$F"; else printf 'null'; fi`;
-  // chunks go to a temp file next to the target (same filesystem), then one mv makes the save atomic
-  const save = `F=${f}; T="$F.hatch-tmp"; case "$HATCH_ARG" in 'B '*) printf '%s' "\${HATCH_ARG#B }" > "$T";; 'A '*) printf '%s' "\${HATCH_ARG#A }" >> "$T";; C) mv "$T" "$F" || exit 1;; *) echo 'unknown save step' >&2; exit 1;; esac; printf '{"ok":true}'`;
-  const sources = (shippedMeta.sources || []).map((s) => (s.name === 'load' ? { ...s, cmd: load } : s.name === 'save' ? { ...s, cmd: save } : s));
+  // Same protocol as the shipped widget.json. The root board is the file itself; a nested board `ID` (letters, digits, - and _ only)
+  // lives next to it as NAME.ID.board.json. Chunks go to a temp file next to the target (same filesystem), then one mv makes the save atomic.
+  const setup = `R=${quote(file)};`;
+  const pick = `case "$ID" in '') F="$R";; *[!A-Za-z0-9_-]*) echo "bad board id" >&2; exit 1;; *) F="\${R%${BOARD_SUFFIX}}.$ID${BOARD_SUFFIX}";; esac`;
+  const load = `${setup} ID="\${HATCH_ARG:-}"; ${pick}; if [ -s "$F" ]; then cat "$F"; else printf 'null'; fi`;
+  const where = `${setup} ID="\${HATCH_ARG:-}"; ${pick}; printf '%s' "$F"`;
+  const save = `${setup} A="$HATCH_ARG"; OP="\${A%% *}"; DATA="\${A#* }"; case "$OP" in *:*) ID="\${OP#*:}"; OP="\${OP%%:*}";; *) ID=;; esac; ${pick}; T="$F.hatch-tmp"; case "$OP" in B) printf '%s' "$DATA" > "$T";; A) printf '%s' "$DATA" >> "$T";; C) mv "$T" "$F" || exit 1;; *) echo 'unknown save step' >&2; exit 1;; esac; printf '{"ok":true}'`;
+  const cmds = { load, save, path: where };
+  const sources = (shippedMeta.sources || []).map((s) => (cmds[s.name] ? { ...s, cmd: cmds[s.name] } : s));
   return { ...shippedMeta, title: `Board: ${path.basename(file, BOARD_SUFFIX)}`, file, sources };
 }
 

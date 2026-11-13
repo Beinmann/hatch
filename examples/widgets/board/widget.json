@@ -8,14 +8,19 @@
    "name": "load",
    "kind": "exec",
    "json": true,
-   "cmd": "F={{state}}/widgets/{{widget}}/data/board.json; if [ -s \"$F\" ]; then cat \"$F\"; else printf 'null'; fi"
+   "cmd": "D={{state}}/widgets/{{widget}}/data; ID=\"${HATCH_ARG:-}\"; case \"$ID\" in '') F=\"$D/board.json\";; *[!A-Za-z0-9_-]*) echo \"bad board id\" >&2; exit 1;; *) F=\"$D/board.$ID.json\";; esac; if [ -s \"$F\" ]; then cat \"$F\"; else printf 'null'; fi"
   },
   {
    "name": "save",
    "kind": "exec",
    "json": true,
    "arg": "any",
-   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; T=\"$D/board.json.tmp\"; case \"$HATCH_ARG\" in 'B '*) printf '%s' \"${HATCH_ARG#B }\" > \"$T\";; 'A '*) printf '%s' \"${HATCH_ARG#A }\" >> \"$T\";; C) mv \"$T\" \"$D/board.json\" || exit 1;; *) echo 'unknown save step' >&2; exit 1;; esac; printf '{\"ok\":true}'"
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; A=\"$HATCH_ARG\"; OP=\"${A%% *}\"; DATA=\"${A#* }\"; case \"$OP\" in *:*) ID=\"${OP#*:}\"; OP=\"${OP%%:*}\";; *) ID=;; esac; case \"$ID\" in '') F=\"$D/board.json\";; *[!A-Za-z0-9_-]*) echo \"bad board id\" >&2; exit 1;; *) F=\"$D/board.$ID.json\";; esac; T=\"$F.hatch-tmp\"; case \"$OP\" in B) printf '%s' \"$DATA\" > \"$T\";; A) printf '%s' \"$DATA\" >> \"$T\";; C) mv \"$T\" \"$F\" || exit 1;; *) echo 'unknown save step' >&2; exit 1;; esac; printf '{\"ok\":true}'"
+  },
+  {
+   "name": "path",
+   "kind": "exec",
+   "cmd": "D={{state}}/widgets/{{widget}}/data; ID=\"${HATCH_ARG:-}\"; case \"$ID\" in '') F=\"$D/board.json\";; *[!A-Za-z0-9_-]*) echo \"bad board id\" >&2; exit 1;; *) F=\"$D/board.$ID.json\";; esac; printf '%s' \"$F\""
   }
  ]
 }

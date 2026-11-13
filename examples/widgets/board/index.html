@@ -119,6 +119,20 @@
   .card.t-quote .top { background: transparent; }
   .card.t-quote small { display: block; font-style: normal; color: var(--muted, #888); margin-top: 4px; }
   .card.t-quote .view { padding: 4px 12px; }
+  /* nested board card: title, mini preview of the inner board, card count; double-click opens it */
+  .card.t-board { border-top: 3px solid var(--accent, #6af); box-shadow: 0 4px 12px #0006; }
+  .card.t-board .view { display: flex; flex-direction: column; gap: 3px; overflow: hidden; white-space: normal; cursor: default; }
+  .card .bt { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; }
+  .card .bp { flex: 1; min-height: 0; width: 100%; border-radius: 4px; background: color-mix(in srgb, var(--bg, #1b1b1b) 70%, #000); }
+  .card .bc { color: var(--muted, #888); font-size: 10px; }
+  .card.t-board textarea { flex: none; height: 26px; white-space: nowrap; overflow: hidden; font-weight: 600; }
+  #crumbs { display: flex; align-items: center; gap: 4px; flex: none; }
+  #crumbs button { border: 0; padding: 0 2px; color: var(--accent, #6af); } #crumbs span { color: var(--muted, #888); }
+  #crumbs b { font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button:disabled { opacity: .4; cursor: default; } button:disabled:hover { border-color: color-mix(in srgb, var(--muted, #888) 60%, transparent); }
+  #dlg { position: absolute; inset: 0; z-index: 10001; display: grid; place-items: center; background: #0007; }
+  #dlg div { max-width: 340px; padding: 14px; border-radius: 8px; background: var(--bg, #1b1b1b); border: 1px solid var(--accent, #6af); }
+  #dlg p { margin: 0 0 12px; } #dlg .row { display: flex; gap: 8px; justify-content: flex-end; }
   /* type picker */
   #menu { position: absolute; z-index: 10000; min-width: 190px; padding: 4px; border-radius: 6px; background: var(--bg, #1b1b1b); box-shadow: 0 6px 20px #000a;
     border: 1px solid color-mix(in srgb, var(--muted, #888) 60%, transparent); }
@@ -129,8 +143,8 @@
 </style>
 </head>
 <body>
-<div id="bar"><span class="hint">PROTOTYPE. Double-click or + card: pick a node type (Enter = sticky note). Drag a card top (or the paper) to move. Drag the right dot to another card: arrow. Click + Delete: remove. "- [ ] item" lines are checkboxes. Left-drag background: select a rectangle. Middle-drag: pan. Wheel: scroll, Shift+wheel: sideways, Ctrl+wheel: zoom.</span>
-  <span id="status" class="hint" style="flex:none"></span><button id="add">+ card</button><button id="tidy" title="Arrange the cards by their arrows: left to right, no overlap, unconnected cards in a grid below (key: T)">tidy</button><button id="undo" title="Put the cards back where they were before the last tidy (Ctrl+Z)" hidden>undo</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
+<div id="bar"><span id="crumbs"><b>Root</b></span><span class="hint">PROTOTYPE. Double-click or + card: pick a node type (Enter = sticky note). Board card: double-click opens it; cut/paste moves cards between levels. Drag a card top (or the paper) to move. Drag the right dot to another card: arrow. Click + Delete: remove. "- [ ] item" lines are checkboxes. Left-drag background: select a rectangle. Middle-drag: pan. Wheel: scroll, Shift+wheel: sideways, Ctrl+wheel: zoom.</span>
+  <span id="status" class="hint" style="flex:none"></span><button id="cut" title="Cut the selected cards (Ctrl+X); paste them at any level with Ctrl+V" disabled>cut</button><button id="paste" title="Paste the cut cards here (Ctrl+V)" disabled>paste</button><button id="wrapbtn" title="Move the selected cards into a new nested board" disabled>into board</button><button id="add">+ card</button><button id="tidy" title="Arrange the cards by their arrows: left to right, no overlap, unconnected cards in a grid below (key: T)">tidy</button><button id="undo" title="Put the cards back where they were before the last tidy (Ctrl+Z)" hidden>undo</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
 <div id="stage"><div id="world"><svg id="lines"><defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg></div></div>
 <script src="/sdk.js"></script>
 <script src="model.js"></script>
@@ -138,7 +152,7 @@
 <script>
   // Visual board, PROTOTYPE. The board (cards, arrows, pan/zoom) lives in the widget's data/board.json, or in the *.board.json file given to `hatch widget open board FILE` (the server then pins load and save to it). It is read with the
   // "load" source and written in chunks through the "save" source (hatch.call arguments are short). model.js has the pure logic.
-  var M = window.ScratchModel, BL = window.BoardLayout, undoStack = [], board = M.empty(), sel = null, multi = new Set(); // sel: {kind:'card'|'arrow', id}
+  var M = window.ScratchModel, BL = window.BoardLayout, undoStack = [], board = M.empty(), curId = '', stack = [], titles = ['Root'], clipboard = null, busy = false, sel = null, multi = new Set(); // sel: {kind:'card'|'arrow', id}
   var stage = document.getElementById('stage'), world = document.getElementById('world'), lines = document.getElementById('lines'),
       statusEl = document.getElementById('status'), els = new Map(), loaded = false, saveTimer = null, saving = Promise.resolve(), dirty = false;
   stage.style.pointerEvents = 'none'; // edits wait for the file to be read, or the late answer would replace them
@@ -149,22 +163,25 @@
 
   // ---- saving: debounce, then send the chunks one after the other (a later save waits for the running one)
   function changed() { dirty = true; setStatus('unsaved'); clearTimeout(saveTimer); saveTimer = setTimeout(save, 500); }
-  function save() {
+  function save() { saveBoard(curId, board); dirty = false; }
+  // one board file per level: the root is the file itself, a nested board has its id as the save prefix ("B:id ", "A:id ", "C:id")
+  function saveBoard(id, b) {
     if (!loaded) return; // never overwrite the file with an empty board before it was read
-    dirty = false; var parts = M.chunks(board);
+    var parts = M.chunks(b), sfx = id ? ':' + id : '';
     saving = saving.then(function () {
-      var p = hatch.call('save', 'B ' + parts[0]);
-      parts.slice(1).forEach(function (c) { p = p.then(function () { return hatch.call('save', 'A ' + c); }); });
-      return p.then(function () { return hatch.call('save', 'C'); });
+      var p = hatch.call('save', 'B' + sfx + ' ' + parts[0]);
+      parts.slice(1).forEach(function (c) { p = p.then(function () { return hatch.call('save', 'A' + sfx + ' ' + c); }); });
+      return p.then(function () { return hatch.call('save', 'C' + sfx); });
     }).then(function (r) { if (r && r.error) throw new Error(r.error); setStatus(dirty ? 'unsaved' : 'saved'); })
       .catch(function (e) { setStatus('save failed: ' + e.message); hatch.log('save failed: ' + e.message); });
   }
+  function flush() { if (dirty) { clearTimeout(saveTimer); save(); } }
 
   // ---- drawing
   function applyView() { var v = board.view; world.style.transform = 'translate(' + v.x + 'px,' + v.y + 'px) scale(' + v.zoom + ')';
     stage.style.backgroundSize = (24 * v.zoom) + 'px ' + (24 * v.zoom) + 'px'; stage.style.backgroundPosition = v.x + 'px ' + v.y + 'px'; }
   function place(el, c) { el.style.left = c.x + 'px'; el.style.top = c.y + 'px'; el.style.width = c.w + 'px'; el.style.height = c.h + 'px'; }
-  var VISIBLE_TYPES = M.TYPE_ORDER.filter(function (t) { return t !== 'board'; });
+  var VISIBLE_TYPES = M.TYPE_ORDER;
   var TYPE_SWATCH = { note: '#e9d874', task: 'var(--accent, #6af)', code: '#0a1010', link: 'linear-gradient(135deg,#1f6f78,#d9778a)', milestone: 'var(--amber, #e8b84a)', group: 'transparent', quote: '#c792ea', board: 'var(--muted, #888)' };
   var PLACEHOLDER = { note: 'text', task: 'Title\n- [ ] step', code: 'code', link: 'Title\nsource or caption', milestone: 'milestone', group: 'group', quote: 'quote\n— source', board: 'title' };
   function cardEl(c) {
@@ -175,7 +192,7 @@
     x.title = 'delete card'; ta.value = c.text; ta.placeholder = PLACEHOLDER[type] || 'text'; ta.spellcheck = false;
     clr.title = 'change color'; dot.title = 'cycle: todo, now, done'; cp.title = 'copy the code'; fname.placeholder = 'file name'; fname.spellcheck = false; urlin.placeholder = 'https://... (page, or image address)'; urlin.spellcheck = false;
     [x, clr, dot, cp, fname, urlin].forEach(function (b) { b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); b.addEventListener('dblclick', function (e) { e.stopPropagation(); }); });
-    x.addEventListener('click', function () { board = M.removeCard(board, c.id); if (sel && sel.id === c.id) sel = null; render(); changed(); });
+    x.addEventListener('click', function () { requestDelete([c.id]); });
     clr.addEventListener('click', function () { var k = cardOf(c.id); board = M.patchCard(board, c.id, { color: M.cycle(M.NOTE_COLORS, k.color || 'a') }); render(); changed(); });
     dot.addEventListener('click', function () { var k = cardOf(c.id); board = M.patchCard(board, c.id, { state: M.cycle(M.MILESTONE_STATES, k.state || 'todo') }); render(); changed(); });
     fname.addEventListener('input', function () { board = M.patchCard(board, c.id, { name: fname.value }); changed(); });
@@ -187,18 +204,20 @@
     function leave(e) { if (e.relatedTarget && el.contains(e.relatedTarget)) return; el.classList.remove('editing'); render(); }
     ta.addEventListener('blur', leave); urlin.addEventListener('blur', leave);
     view.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
-    view.addEventListener('dblclick', function (e) { e.stopPropagation(); });
+    view.addEventListener('dblclick', function (e) { if (type !== 'board') e.stopPropagation(); });
     // a click on a checkbox row toggles that line, on the status chip cycles it; a click on any other line (or the empty area) opens the raw text for editing
     view.addEventListener('click', function (e) {
       var row = e.target.closest && e.target.closest('.ck');
       if (row) { board = M.toggleCheck(board, c.id, +row.dataset.line); render(); changed(); return; }
       if (e.target.closest && e.target.closest('.chip')) { var k = cardOf(c.id); board = M.patchCard(board, c.id, { status: M.cycle(M.STATUSES, k.status || 'active') }); render(); changed(); return; }
       if (e.target.closest && e.target.closest('a')) return; // a real link: let the browser open it
+      if (type === 'board' && !(e.target.closest && e.target.closest('.bt'))) return; // only the title is text; a double-click opens the board
       el.classList.add('editing'); ta.focus();
     });
     ta.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
     ta.addEventListener('dblclick', function (e) { e.stopPropagation(); });
     top.addEventListener('pointerdown', function (e) { dragCard(e, c.id); });
+    if (type === 'board') el.addEventListener('dblclick', function (e) { if (e.target.closest('textarea, button, input')) return; e.stopPropagation(); enterBoard(c.id); });
     // sticky notes, quotes and pills have no visible title bar: dragging the card itself (not its text) moves it
     el.addEventListener('pointerdown', function (e) { if (e.target === el) dragCard(e, c.id); });
     out.addEventListener('pointerdown', function (e) { dragArrow(e, c.id); });
@@ -219,7 +238,7 @@
     if (type === 'note' && c.color) el.classList.add('col-' + c.color);
     if (type === 'task') el.classList.add('st-' + (c.status || 'active'));
     if (type === 'milestone') { el.classList.add('ms-' + (c.state || 'todo')); el.querySelector('.dot').textContent = c.state === 'done' ? '✓' : String(milestoneRank(c)); }
-    var hasview = type === 'task' || type === 'code' || type === 'link' || type === 'quote' || (type === 'note' && p.total > 0);
+    var hasview = type === 'task' || type === 'board' || type === 'code' || type === 'link' || type === 'quote' || (type === 'note' && p.total > 0);
     el.classList.toggle('hasview', hasview);
     prog.textContent = type === 'note' && p.total ? p.done + '/' + p.total : '';
     var fname = el.querySelector('.fname'), urlin = el.querySelector('.urlin');
@@ -242,6 +261,7 @@
       if (link) { var a = mk('a', '', 'open'); a.href = link; a.target = '_blank'; a.rel = 'noopener noreferrer'; lk.appendChild(a); }
       view.append(im, lk); return;
     }
+    if (type === 'board') { drawBoardCard(view, c); return; }
     var lines = M.lines(c.text);
     if (type === 'task') { // first line is the title, the status chip sits next to it
       var ttl = mk('div', 'ttl'); ttl.append(mk('span', '', lines[0].text || 'click to add a title'), mk('span', 'chip', c.status || 'active')); view.appendChild(ttl); lines = lines.slice(1);
@@ -253,6 +273,24 @@
       row.dataset.line = idx; box.type = 'checkbox'; box.checked = l.check.checked; row.append(box, mk('span', '', l.check.label)); view.appendChild(row);
     });
   }
+  // board card: title, then a thumbnail of the inner board made from the cached rectangles (refreshed whenever the inner board is left)
+  function drawBoardCard(view, c) {
+    view.appendChild(mk('div', 'bt', title(c)));
+    var rects = c.preview || [], svg = document.createElementNS(SVGNS, 'svg'); svg.setAttribute('class', 'bp'); svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    if (rects.length) {
+      var x0 = Math.min.apply(null, rects.map(function (r) { return r[0]; })), y0 = Math.min.apply(null, rects.map(function (r) { return r[1]; })),
+          x1 = Math.max.apply(null, rects.map(function (r) { return r[0] + r[2]; })), y1 = Math.max.apply(null, rects.map(function (r) { return r[1] + r[3]; })), pad = Math.max(x1 - x0, y1 - y0) * 0.06 + 4;
+      svg.setAttribute('viewBox', (x0 - pad) + ' ' + (y0 - pad) + ' ' + (x1 - x0 + 2 * pad) + ' ' + (y1 - y0 + 2 * pad));
+      rects.forEach(function (r) {
+        var q = document.createElementNS(SVGNS, 'rect'); q.setAttribute('x', r[0]); q.setAttribute('y', r[1]); q.setAttribute('width', r[2]); q.setAttribute('height', r[3]); q.setAttribute('rx', 6);
+        var t = r[4]; q.setAttribute('fill', t === 'note' ? '#e9d874' : t === 'group' ? 'none' : t === 'quote' ? '#c792ea' : t === 'code' ? '#2a3a3c' : t === 'board' ? '#6a8fb0' : '#4fd1c0');
+        if (t === 'group') { q.setAttribute('stroke', '#4fd1c0'); q.setAttribute('stroke-width', 6); q.setAttribute('stroke-dasharray', '14 10'); }
+        q.setAttribute('opacity', '.85'); svg.appendChild(q);
+      });
+    }
+    view.append(svg, mk('div', 'bc', (c.count || 0) + (c.count === 1 ? ' card' : ' cards') + ' · double-click to open'));
+  }
+  function title(c) { return (String(c.text || '').split('\n')[0] || '').trim() || 'Untitled'; }
   function hue(str) { var h = 0; for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360; return h; }
   // pills are numbered by their position from left to right
   function milestoneRank(c) { return board.cards.filter(function (k) { return M.typeOf(k) === 'milestone'; }).sort(function (a, b) { return a.x - b.x; }).indexOf(c) + 1; }
@@ -267,7 +305,7 @@
       var ta = el.querySelector('textarea'); if (ta.value !== c.text && document.activeElement !== ta) ta.value = c.text;
       drawBody(el, c, i);
     });
-    drawLines(); applyView();
+    drawLines(); applyView(); updateBar();
   }
   function line(x1, y1, x2, y2, cls) { var l = document.createElementNS(SVGNS, 'line'); l.setAttribute('class', cls);
     l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); return l; }
@@ -398,10 +436,12 @@
     if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') && e.target.type !== 'checkbox') { if (e.key === 'Escape') e.target.blur(); return; }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
     if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 't') { e.preventDefault(); tidy(); return; }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && multi.size) {
-      multi.forEach(function (id) { board = M.removeCard(board, id); }); multi = new Set(); sel = null; render(); changed();
-    } else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) {
-      board = sel.kind === 'card' ? M.removeCard(board, sel.id) : M.removeArrow(board, sel.id); sel = null; render(); changed();
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) { cutSelection(); e.preventDefault(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) { pasteHere(); e.preventDefault(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && multi.size) requestDelete(Array.from(multi));
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) {
+      if (sel.kind === 'card') requestDelete([sel.id]);
+      else { board = M.removeArrow(board, sel.id); sel = null; render(); changed(); }
     }
   });
   document.getElementById('add').addEventListener('click', function (e) {
@@ -412,11 +452,95 @@
   document.getElementById('undo').addEventListener('click', undo);
   document.getElementById('reset').addEventListener('click', function () { board = M.setView(board, { x: 0, y: 0, zoom: 1 }); applyView(); changed(); });
 
+  // ---- nested boards
+  function pathIds() { return stack.map(function (f) { return f.id; }).concat([curId]).filter(Boolean); } // board ids from the root's first child down to this one
+  function selectedIds() { return multi.size ? Array.from(multi) : sel && sel.kind === 'card' ? [sel.id] : []; }
+  function updateBar() {
+    var n = selectedIds().length; document.getElementById('cut').disabled = !n; document.getElementById('wrapbtn').disabled = !n; document.getElementById('paste').disabled = !clipboard;
+  }
+  function drawCrumbs() {
+    var box = document.getElementById('crumbs'); box.textContent = '';
+    titles.forEach(function (t, i) {
+      if (i) box.appendChild(mk('span', '', '>'));
+      if (i === titles.length - 1) box.appendChild(mk('b', '', t));
+      else { var b = mk('button', '', t); b.addEventListener('click', function () { goUp(i); }); box.appendChild(b); }
+    });
+  }
+  // the title-bar path button shows the file of the open level
+  function reportPath() { if (hatch.setPath) hatch.call('path', curId).then(function (r) { if (r && r.out) hatch.setPath(r.out); }).catch(function () {}); }
+  function afterNav() { undoStack = []; syncUndo(); sel = null; multi = new Set(); els.forEach(function (el) { el.remove(); }); els.clear(); render(); drawCrumbs(); reportPath(); stage.focus(); }
+  function enterBoard(cardId) {
+    var c = cardOf(cardId); if (!c || M.typeOf(c) !== 'board' || busy) return;
+    if (M.wouldCycle(pathIds(), c.childId)) { setStatus('this board is already open above: a board cannot contain itself'); return; }
+    busy = true; flush(); setStatus('opening');
+    hatch.call('load', c.childId).then(function (r) {
+      if (r && r.error) throw new Error(r.error);
+      stack.push({ id: curId, board: board, cardId: cardId }); titles.push(title(c)); curId = c.childId; board = M.sanitize(r && r.json);
+      afterNav(); setStatus(board.cards.length ? 'loaded' : 'empty board');
+    }).catch(function (e) { setStatus('open failed: ' + e.message); }).then(function () { busy = false; });
+  }
+  // back to level `depth` (0 = root): every level left is saved, and its board card gets a fresh count and preview
+  function goUp(depth) {
+    if (busy) return; flush();
+    while (stack.length > depth) {
+      var f = stack.pop(); titles.pop(); var parent = M.setChildSummary(f.board, f.cardId, board);
+      if (JSON.stringify(parent) !== JSON.stringify(f.board)) saveBoard(f.id, parent);
+      board = parent; curId = f.id;
+    }
+    afterNav();
+  }
+  function confirmBox(msg, okLabel) {
+    return new Promise(function (resolve) {
+      var d = mk('div'); d.id = 'dlg'; var box = mk('div'), row = mk('div', 'row'), ok = mk('button', '', okLabel), no = mk('button', '', 'Cancel');
+      function done(v) { d.remove(); resolve(v); }
+      ok.addEventListener('click', function () { done(true); }); no.addEventListener('click', function () { done(false); });
+      d.addEventListener('keydown', function (e) { if (e.key === 'Escape') done(false); });
+      row.append(no, ok); box.append(mk('p', '', msg), row); d.appendChild(box); document.body.appendChild(d); no.focus();
+    });
+  }
+  // deleting a board card whose inner board has cards asks first (the inner board's file stays on disk)
+  function requestDelete(ids) {
+    var boards = ids.map(cardOf).filter(function (c) { return c && M.typeOf(c) === 'board'; });
+    Promise.all(boards.map(function (c) { return hatch.call('load', c.childId).then(function (r) { return r && r.json ? M.sanitize(r.json).cards.length : 0; }).catch(function () { return c.count || 0; }); })).then(function (counts) {
+      var total = counts.reduce(function (a, n) { return a + n; }, 0);
+      if (!total) return true;
+      return confirmBox('Delete ' + (boards.length > 1 ? 'these board cards' : 'the board "' + title(boards[0]) + '"') + ' with ' + total + ' card' + (total === 1 ? '' : 's') + ' inside? The inner boards are no longer reachable from here.', 'Delete');
+    }).then(function (ok) {
+      if (!ok) return;
+      ids.forEach(function (id) { board = M.removeCard(board, id); }); multi = new Set(); sel = null; render(); changed();
+    });
+  }
+  var CLIP_KEY = 'hatch-board-clipboard';
+  function storeClip() { try { if (clipboard) localStorage.setItem(CLIP_KEY, JSON.stringify(clipboard)); else localStorage.removeItem(CLIP_KEY); } catch (e) {} }
+  function cutSelection() {
+    var ids = selectedIds(); if (!ids.length) return;
+    clipboard = M.clip(board, ids); storeClip(); board = M.removeCards(board, ids); sel = null; multi = new Set(); render(); changed(); setStatus('cut ' + ids.length + ' card' + (ids.length === 1 ? '' : 's') + ': paste at any level');
+  }
+  // paste puts the cut cards (with the arrows between them) at the middle of the view; a cut can be pasted once, so a board is never in two places
+  function pasteHere() {
+    if (!clipboard) return;
+    var r = stage.getBoundingClientRect(), p = M.toWorld(board.view, r.width / 2 - 60, r.height / 2 - 40), res = M.paste(board, clipboard, p.x, p.y, pathIds());
+    board = res.board;
+    clipboard = res.refused.length ? M.clip({ cards: clipboard.cards, arrows: clipboard.arrows }, res.refused) : null; storeClip();
+    multi = new Set(res.ids); sel = null; if (res.ids.length === 1) { sel = { kind: 'card', id: res.ids[0] }; multi = new Set(); }
+    render(); changed(); setStatus(res.refused.length ? 'a board cannot be pasted into itself or its own inner boards: it stays in the clipboard' : 'pasted');
+  }
+  function wrapSelection() {
+    var ids = selectedIds(); if (!ids.length) return;
+    var r = M.wrap(board, ids, 'Board'); if (!r) return;
+    saveBoard(r.board.cards.filter(function (k) { return k.id === r.id; })[0].childId, r.child); // the new inner board is written first
+    board = r.board; sel = { kind: 'card', id: r.id }; multi = new Set(); render(); changed(); setStatus('moved ' + ids.length + ' card' + (ids.length === 1 ? '' : 's') + ' into a new board');
+  }
+  document.getElementById('cut').addEventListener('click', cutSelection);
+  document.getElementById('paste').addEventListener('click', pasteHere);
+  document.getElementById('wrapbtn').addEventListener('click', wrapSelection);
+  try { var cb0 = M.sanitize(JSON.parse(localStorage.getItem(CLIP_KEY) || 'null')); clipboard = cb0.cards.length ? M.clip(cb0, cb0.cards.map(function (k) { return k.id; })) : null; } catch (e) { clipboard = null; }
+
   hatch.ready(function () {
     setStatus('loading');
     hatch.call('load').then(function (r) {
       if (r && r.error) throw new Error(r.error);
-      board = M.sanitize(r && r.json); loaded = true;
+      board = M.sanitize(r && r.json); loaded = true; reportPath();
       // a board written by an AI often has no positions (or a pile at the origin): lay it out once, undoable; arranged boards stay as they are
       var auto = BL.onLoad(r && r.json, board); if (auto.changed) { undoStack.push(BL.snapshot(board)); syncUndo(); board = auto.board; fitView(); changed(); } stage.style.pointerEvents = ''; setStatus(board.cards.length ? 'loaded' : 'empty board'); render();
     }).catch(function (e) { setStatus('load failed: ' + e.message + ' (saving is off so the file is not overwritten)'); hatch.log('load failed: ' + e.message); });
