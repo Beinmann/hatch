@@ -80,6 +80,23 @@ function notify({ text, level }) {
   if (store.get('sound', false)) beep();
 }
 
+// `hatch host`: open the page at this browser's own origin (works behind a reverse proxy; the login cookie covers the token).
+// Every connected tab gets the event; they agree through localStorage which one acts (a visible tab first), so one browser opens one page.
+// A pop-up without a user click is often blocked: then a toast stays until you click its link (a click is allowed to open a window).
+function openHosted({ path: p, id }) {
+  const url = location.origin + p;
+  const claim = () => { try { if (localStorage.getItem('hatch-host-claimed') === id) return false; localStorage.setItem('hatch-host-claimed', id); } catch { /* no storage: every tab opens it */ } return true; };
+  setTimeout(() => {
+    if (!claim()) return;
+    let w = null; try { w = window.open(url, '_blank'); } catch { /* blocked */ }
+    if (w) return;
+    const a = el('a', { href: url, target: '_blank', rel: 'noopener' }, 'Open hosted page');
+    const t = el('div', { class: 'toast info', role: 'status' }, 'The browser blocked the new window: ', a);
+    a.addEventListener('click', () => setTimeout(() => t.remove(), 0)); // after the link has been followed
+    $('toasts').append(t);
+  }, document.hidden ? 400 : 0);
+}
+
 // ---- state mirrored from the server ----
 const widgets = new Map();
 let info = {};
@@ -219,6 +236,7 @@ function connectEvents() {
   es.addEventListener('ask-done', (e) => dropAsk(JSON.parse(e.data).id));
   es.addEventListener('copy', (e) => { const d = JSON.parse(e.data); clipboardIn(d.text, d.label); });
   es.addEventListener('notify', (e) => { const d = JSON.parse(e.data); window.hatchUI?.emit('notify', d); notify(d); });
+  es.addEventListener('open-hosted', (e) => openHosted(JSON.parse(e.data)));
   es.addEventListener('warning', (e) => { const d = JSON.parse(e.data); if (d.message === null) warnings.delete(d.file); else warnings.set(d.file, d.message); paintWarnings(); });
 }
 
