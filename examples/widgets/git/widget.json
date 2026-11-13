@@ -8,7 +8,7 @@
    "name": "status",
    "kind": "exec",
    "everyMs": 3000,
-   "cmd": "cd {{cwd}} 2>/dev/null || { echo @@nodir; exit 0; }; g='git --no-optional-locks -c core.quotePath=false'; echo \"@@home $HOME\"; top=$($g rev-parse --show-toplevel 2>/dev/null) || { echo @@norepo; exit 0; }; echo \"@@top $top\"; echo @@status; $g status --porcelain=v2 --branch 2>&1 | awk 'NR<=230{print;next}{n++}END{if(n)print \"@@more \" n}'; echo @@log; $g log --format='%h%x1f%s%x1f%ct%x1f%an%x1f%D' -n 5 2>/dev/null; echo @@activity; $g reflog --all --format='%ct%x1f%gd%x1f%gs%x1f%h' -n 40 2>/dev/null; true"
+   "cmd": "cd {{cwd}} 2>/dev/null || { echo @@nodir; exit 0; }; g='git --no-optional-locks -c core.quotePath=false'; echo \"@@home $HOME\"; top=$($g rev-parse --show-toplevel 2>/dev/null) || { echo @@norepo; exit 0; }; echo \"@@top $top\"; echo @@status; $g status --porcelain=v2 --branch 2>&1 | awk 'NR<=230{print;next}{n++}END{if(n)print \"@@more \" n}'; echo @@log; $g log --format='%h%x1f%s%x1f%ct%x1f%an%x1f%D' -n 5 2>/dev/null; echo @@activity; $g reflog --all --format='%ct%x1f%gd%x1f%gs%x1f%h' -n 40 2>/dev/null; echo @@commit; f=\"${TMPDIR:-/tmp}/hatch-commit-$(printf %s \"$top\" | cksum | cut -d' ' -f1)\"; if [ -f \"$f.s\" ]; then read -r st pid <\"$f.s\"; if [ \"$st\" = running ] && ! kill -0 \"$pid\" 2>/dev/null; then echo lost; else cat \"$f.s\"; fi; fi; true"
   },
   {
    "name": "show",
@@ -21,6 +21,11 @@
    "kind": "exec",
    "arg": "any",
    "cmd": "cd {{cwd}} 2>/dev/null || { echo @@nodir; exit 0; }\ng='git --no-optional-locks -c core.quotePath=false -c color.ui=false'\ncd \"$($g rev-parse --show-toplevel 2>/dev/null)\" 2>/dev/null || { echo @@bad; exit 0; }\nprintf '%s' \"$HATCH_ARG\" | { IFS=$(printf '\\t') read -r m r p f\nt=$(mktemp) || exit 0\ncase \"$m\" in\n  unstaged) $g diff --no-ext-diff --no-textconv -- \"$p\";;\n  staged) $g diff --cached -M --no-ext-diff --no-textconv -- ${f:+\"$f\"} \"$p\";;\n  untracked) if [ -d \"$p\" ]; then echo @@list; $g ls-files --others --exclude-standard -- \"$p\" | head -200; else $g diff --no-index --no-ext-diff --no-textconv -- /dev/null \"$p\"; fi;;\n  commit) case \"$r\" in ''|*[!0-9a-f]*) echo @@bad;; *) $g show --format= -m --first-parent -M --no-ext-diff --no-textconv \"$r\" -- ${f:+\"$f\"} \"$p\";; esac;;\n  *) echo @@bad;;\nesac | head -c 40001 >\"$t\"\n[ \"$(wc -c <\"$t\")\" -gt 40000 ] && echo @@trunc\nhead -c 40000 \"$t\"; rm -f \"$t\"; }\n"
+  },
+  {
+   "name": "commit",
+   "kind": "exec",
+   "cmd": "cd {{cwd}} 2>/dev/null || { echo @@nodir; exit 0; }\ntop=$(git rev-parse --show-toplevel 2>/dev/null) || { echo @@norepo; exit 0; }\ncommand -v claude >/dev/null 2>&1 || { echo @@noclaude; exit 0; }\nf=\"${TMPDIR:-/tmp}/hatch-commit-$(printf %s \"$top\" | cksum | cut -d' ' -f1)\"\nif [ -f \"$f.s\" ]; then read -r st pid <\"$f.s\"; if [ \"$st\" = running ] && kill -0 \"$pid\" 2>/dev/null; then echo @@running; exit 0; fi; fi\nrm -f \"$f.s\" \"$f.err\"\nnohup /bin/sh -c 'cd \"$1\" || exit 1; echo \"running $$\" >\"$2.s\"; out=$(claude -p \"Commit the current state of the git repository at $1 (work there). Look at git status and git diff, decide which changes belong together, stage them, and write a commit message in the style of the recent commits (git log -n 10). Before committing, check the staged diff for private information (secrets, tokens, hostnames, usernames, emails, absolute home paths, private project names); if the repository is public, leave such content out or stop and say so. Do not push, do not amend or rewrite history, do not switch branches. Reply with one short line saying what you committed.\" --permission-mode auto </dev/null 2>\"$2.err\"); rc=$?; { echo \"done $rc $(date +%s)\"; printf %s \"$out\" | tail -n 1; tail -n 1 \"$2.err\"; } >\"$2.t\"; mv \"$2.t\" \"$2.s\"' sh \"$top\" \"$f\" >/dev/null 2>&1 </dev/null &\necho @@started\n"
   }
  ]
 }
