@@ -55,6 +55,7 @@ progress
 widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget new NAME [--from example]  scaffold widgets/NAME: from an example (cpu, log-tail, ...) or, without --from, a minimal one
   widget add NAME [DIR|FILE]        register and open (a single HTML file becomes index.html)
+  (short forms: ha for hatch, w for widget: ha w open git; top-level open is for files, folders and URLs)
   widget list | open NAME | close NAME | rm NAME | reload NAME   (open git: the git window for the current directory's repository)
   widget examples                   list the example widgets (also in the palette)
   widget generate "DESCRIPTION" [--name N]   ask \`claude -p\` to write a widget from a description, then open it
@@ -262,7 +263,8 @@ async function main(argv) {
   const di = firstPos >= 0 && (argv[firstPos] === 'diff' || argv[firstPos] === 'log' || argv[firstPos] === 'curl') ? firstPos : -1; // only when diff/log IS the command, not an argument of another one
   const diffArgs = di >= 0 ? argv.slice(di + 1) : null;
   const o = parse(diffArgs ? argv.slice(0, di + 1) : argv);
-  const [rawCmd, rawSub, ...rest] = o._;
+  const [cmd0, rawSub, ...rest] = o._;
+  const rawCmd = cmd0 === 'w' ? 'widget' : cmd0; // `w` is short for `widget`
   const sub = rawCmd === 'popup' && rawSub === 'create' ? 'new' : rawSub;
   const cmd = rawCmd === 'popup' ? 'widget' : rawCmd;
   if (rawCmd === 'popup' && (!sub || o.help)) return console.log(COMMAND_HELP.popup);

@@ -401,3 +401,21 @@ test('host: prints the HATCH_URL based link, mentions the opened tabs, --no-open
     assert.match(r.stdout.trim(), /^http:\/\/127\.0\.0\.1:\d+\/host\//, 'without HATCH_URL the local server address');
   } finally { await h.close(); }
 });
+
+test('w is short for widget (w open top, w list) and top-level open still opens files', async () => {
+  const h = await startHatch(); const s = h.stateDir;
+  try {
+    let r = await ui(['w', 'open', 'top'], { state: s }); assert.equal(r.status, 0, r.stderr);
+    const panels = JSON.parse((await ui(['panels', '--json'], { state: s })).stdout);
+    assert.ok(panels.some((p) => p.type === 'terminal' && p.props.name === 'top'));
+    r = await ui(['w', 'list'], { state: s }); assert.equal(r.status, 0, r.stderr);
+    r = await ui(['w', '--help'], { state: s }); assert.match(r.stdout, /widget protocol/);
+    r = await ui(['open', 'git'], { state: s }); assert.notEqual(r.status, 0); assert.match(r.stderr, /no such file or directory/);
+  } finally { await h.close(); }
+});
+
+test('package.json and install.sh both provide the ha alias for hatch', () => {
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(pkg.bin.ha, pkg.bin.hatch);
+  assert.match(fs.readFileSync(new URL('../install.sh', import.meta.url), 'utf8'), /ha:\$here\/bin\/hatch\.js/);
+});

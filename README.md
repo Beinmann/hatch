@@ -25,7 +25,7 @@ Zero npm dependencies: Node 20+, python3 (standard library, for the pty), tmux, 
 ## Quick start
 
 ```
-./install.sh                 # links hatch, hatch-server, hatch-mcp (and the deprecated hatch-ui) into ~/.local/bin
+./install.sh                 # links hatch (and its short alias ha), hatch-server, hatch-mcp (and the deprecated hatch-ui) into ~/.local/bin
 hatch-server start                  # one instance per user, state in ~/.hatch (created silently the first time); prints  http://<box-ip>:7070/
 hatch-server token                  # prints the login token: open the address above and paste it at /login (or: hatch-server url --once for a single-use link)
 ```
@@ -168,6 +168,7 @@ Use `hatch` for everyday interaction with the page. `hatch-ui` still works as a 
 ```sh
 hatch image screenshot.png --size 800x550
 hatch open README.md                 # images, text files, HTML pages, directories or http(s) URLs
+ha w open git                    # short forms: `ha` is `hatch`, `w` is `widget` (top-level `open` stays for files, folders and URLs)
 hatch widget examples              # bundled example widgets (hatch widget open NAME installs and opens one)
 hatch popup open progress
 hatch popup create my-clock --from clock
