@@ -92,3 +92,60 @@ test('hatch host CLI: refuses without a terminal or --yes, registers nothing; --
     assert.equal(r.status, 0, r.stderr); assert.match(r.stderr, /not sandboxed/); assert.match(r.stdout, /\/host\//);
   } finally { await h.close(); }
 });
+
+test('hosted pages can be listed and stopped (full token only)', async () => {
+  const { site: s } = site(); const h = await startHatch();
+  try {
+    assert.deepEqual((await h.call('GET', '/api/host')).data, []);
+    const a = (await h.call('POST', '/api/host', { file: path.join(s, 'page.html') })).data;
+    const b = (await h.call('POST', '/api/host', { file: path.join(s, 'style.css') })).data;
+    const l = (await h.call('GET', '/api/host')).data;
+    assert.deepEqual(l.map((x) => x.id).sort(), [a.id, b.id].sort());
+    const first = l.find((x) => x.id === a.id);
+    assert.equal(first.entry, 'page.html'); assert.equal(first.path, a.path); assert.equal(first.dir, fs.realpathSync(s));
+    const tok = { 'x-token': h.hatch.token };
+    // a view token can neither list nor stop
+    const view = 'v'.repeat(32); const cfgFile = path.join(h.stateDir, 'config.json');
+    fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')), viewToken: view }));
+    for (const [m, route] of [['GET', '/api/host'], ['DELETE', `/api/host/${a.id}`], ['DELETE', '/api/host']]) assert.equal((await fetch(h.base + route, { method: m, headers: { 'x-token': view } })).status, 403, `${m} ${route}`);
+    assert.equal((await get(h.base, a.path, tok)).status, 200, 'refused requests stopped nothing');
+    // stop one
+    assert.equal((await h.call('DELETE', `/api/host/${a.id}`)).status, 200);
+    assert.equal((await get(h.base, a.path, tok)).status, 404);
+    assert.equal((await get(h.base, b.path, tok)).status, 200, 'the other page is still hosted');
+    const gone = await h.call('DELETE', `/api/host/${a.id}`); assert.equal(gone.status, 404); assert.match(gone.data.error, /not hosted/);
+    assert.equal((await h.call('DELETE', '/api/host/ffffffffff')).status, 404);
+    // stop all
+    const all = await h.call('DELETE', '/api/host'); assert.equal(all.status, 200); assert.equal(all.data.stopped, 1);
+    assert.equal((await get(h.base, b.path, tok)).status, 404);
+    assert.deepEqual((await h.call('GET', '/api/host')).data, []);
+  } finally { await h.close(); }
+});
+
+test('hatch host list / stop CLI; a file named list needs ./list', async () => {
+  const { spawn } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const BIN = fileURLToPath(new URL('../bin/hatch.js', import.meta.url));
+  const home = tmp();
+  const run = (state, args, cwd) => new Promise((resolve) => {
+    const p = spawn('node', [BIN, '--state', state, ...args], { cwd, env: { ...process.env, HOME: home, HATCH_STATE: '', HATCH_URL: '', HATCH_WORKSPACE: '' } });
+    let stdout = ''; let stderr = '';
+    p.stdout.on('data', (d) => { stdout += d; }); p.stderr.on('data', (d) => { stderr += d; });
+    p.on('close', (status) => resolve({ status, stdout, stderr })); p.stdin.end();
+  });
+  const h = await startHatch();
+  try {
+    const { site: s } = site(); fs.writeFileSync(path.join(s, 'list'), 'plain');
+    let r = await run(h.stateDir, ['host', 'list']); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /nothing hosted/);
+    r = await run(h.stateDir, ['host', 'list', '--json']); assert.deepEqual(JSON.parse(r.stdout), []);
+    assert.equal((await run(h.stateDir, ['host', path.join(s, 'page.html'), '--yes'])).status, 0);
+    assert.equal((await run(h.stateDir, ['host', './list', '--yes'], s)).status, 0, 'a file named list is hosted as ./list');
+    r = await run(h.stateDir, ['host', 'list']); assert.match(r.stdout, /ID\s+FILE\s+FOLDER\s+LINK PATH/); assert.match(r.stdout, /page\.html/); assert.match(r.stdout, /\/host\/[0-9a-f]{10}\/list/);
+    const id = JSON.parse((await run(h.stateDir, ['host', 'list', '--json'])).stdout).find((x) => x.entry === 'page.html').id;
+    r = await run(h.stateDir, ['host', 'stop', id]); assert.equal(r.status, 0, r.stderr);
+    r = await run(h.stateDir, ['host', 'stop', id]); assert.notEqual(r.status, 0); assert.match(r.stderr, /not hosted/);
+    assert.notEqual((await run(h.stateDir, ['host', 'stop'])).status, 0);
+    r = await run(h.stateDir, ['host', 'stop', '--all']); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /stopped hosting 1 page\b/);
+    assert.match((await run(h.stateDir, ['host', 'list'])).stdout, /nothing hosted/);
+  } finally { await h.close(); }
+});

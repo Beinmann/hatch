@@ -63,6 +63,7 @@ panels
   term NAME [--cmd CMD]             another terminal in a window (its own tmux session; --cmd runs a command first)
   files [DIR]                       file browser (open images and text files, download, drop to upload)
   edit FILE[:LINE]                  small text editor window (Ctrl+S saves); LINE puts the cursor there
+  host list [--json] | stop ID | stop --all   list hosted pages; stop hosting one or all (their links then give 404; a file named list or stop: host ./list)
   host FILE.html [--yes]            print a URL that opens the page full size in a browser tab (its folder is served read-only; the page is NOT sandboxed, so this warns and asks to confirm; --yes skips the question)
   serve-dir [DIR] [PORT]            serve a folder over HTTP (python3) and show it in a window, e.g. a generated HTML report
   image PATH [--title T]            show an image
@@ -150,7 +151,7 @@ Editing any file in the widget directory reloads the widget in the page.`;
 
 function parse(argv) {
   const o = { _: [] };
-  const flags = new Set(['json', 'help', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus', 'dry-run', 'yes']);
+  const flags = new Set(['json', 'help', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus', 'dry-run', 'yes', 'all']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--') { o._.push(...argv.slice(i + 1)); break; }
@@ -495,6 +496,18 @@ async function main(argv) {
       return console.log(`serving ${dirp} at /proxy/${port}/ (window ${p.id}); Stop it from its output window`);
     }
     case 'host': {
+      // list/stop come first so they are never taken for a file name (host ./list hosts a file called list)
+      if (sub === 'list') {
+        const l = await api('GET', '/api/host');
+        const rows = [['ID', 'FILE', 'FOLDER', 'LINK PATH'], ...l.map((h) => [h.id, h.entry, h.dir, h.path])];
+        const w = [0, 1, 2].map((c) => Math.max(...rows.map((r) => r[c].length)));
+        return say(o, l, l.length ? rows.map((r) => [...r.slice(0, 3).map((v, c) => v.padEnd(w[c])), r[3]].join('  ')).join('\n') : 'nothing hosted');
+      }
+      if (sub === 'stop') {
+        need(o.all || rest[0], 'usage: host stop ID | host stop --all');
+        if (o.all) { const r = await api('DELETE', '/api/host'); return console.log(`stopped hosting ${r.stopped} page${r.stopped === 1 ? '' : 's'}`); }
+        await api('DELETE', `/api/host/${encodeURIComponent(rest[0])}`); return console.log(`stopped hosting ${rest[0]}`);
+      }
       need(sub, 'usage: host FILE.html'); const f = path.resolve(sub); need(fs.existsSync(f) && fs.statSync(f).isFile(), `no such file: ${f}`);
       const folder = path.dirname(f);
       if (o.yes) console.error(`Warning: ${f} is not sandboxed and gets full access to this Hatch; everything in ${folder} becomes readable to anyone with the link.`);

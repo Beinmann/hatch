@@ -353,6 +353,11 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     if (!id) { id = crypto.randomBytes(5).toString('hex'); hosted.set(id, { dir, entry }); }
     return { id, path: `/host/${id}/${encodeURIComponent(entry)}` };
   }
+  const hostedList = () => [...hosted].map(([id, h]) => ({ id, dir: h.dir, entry: h.entry, path: `/host/${id}/${encodeURIComponent(h.entry)}` }));
+  function unhost(id) {
+    if (!hosted.delete(id)) throw new HttpError(404, `not hosted: no page with id ${id} (see \`hatch host list\`)`);
+    return { ok: true };
+  }
   function serveHosted(req, res, p) {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
     const [id, ...rest] = p.split('/').slice(2); // ['', 'host', ID, ...path]
@@ -478,6 +483,9 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         const r = saveUpload(l.uploads, buf);
         return json(res, 200, { path: r.path, name: r.name, url: `/files/uploads/${r.name}`, bytes: r.bytes });
       }
+      if (p === '/api/host' && m === 'GET') return json(res, 200, hostedList());
+      if (p === '/api/host' && m === 'DELETE') { const n = hosted.size; hosted.clear(); return json(res, 200, { ok: true, stopped: n }); }
+      { const hm = /^\/api\/host\/([^/]+)$/.exec(p); if (hm && m === 'DELETE') return json(res, 200, unhost(hm[1])); }
       if (p === '/api/host' && m === 'POST') return json(res, 200, hostFile((await readJson(req)).file));
       if (p === '/api/file' && m === 'GET') return serveImage(res, url.searchParams.get('path') || '');
 
