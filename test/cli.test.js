@@ -432,6 +432,7 @@ test('w is short for widget (w open top, w list) and top-level open still opens 
     let r = await ui(['w', 'open', 'top'], { state: s }); assert.equal(r.status, 0, r.stderr);
     const panels = JSON.parse((await ui(['panels', '--json'], { state: s })).stdout);
     assert.ok(panels.some((p) => p.type === 'terminal' && p.props.name === 'top'));
+    r = await ui(['w', 'o', 'top'], { state: s }); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /top open as/);
     r = await ui(['w', 'list'], { state: s }); assert.equal(r.status, 0, r.stderr);
     r = await ui(['w', '--help'], { state: s }); assert.match(r.stdout, /widget protocol/);
     r = await ui(['open', 'git'], { state: s }); assert.notEqual(r.status, 0); assert.match(r.stderr, /no such file or directory/);
