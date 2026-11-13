@@ -11,6 +11,7 @@ import { readTransparency, DEFAULT_TRANSPARENCY } from './transparency.js';
 import { newPageKey } from './pages.js';
 import { fileDimensions, windowSizeFor } from './image-size.js';
 import { sizeKey, sizeFor, readSizes, rememberSize } from './sizes.js';
+import { FOLDER_RE } from '../public/folders.js';
 import { createPlans } from './plans.js';
 import { normalizeSteps, STEP_STATUS, findStep, unusedStepId } from './progress.js';
 import { normalizeTarget, checkConversion, checklistToSteps, stepsToMarkdown, widgetHtml, freeWidgetName } from './convert.js';
@@ -152,6 +153,7 @@ export function checkPanel(p, id) {
   if (p.maximized === true) out.maximized = true;
   if (typeof p.activation === 'string') out.activation = p.activation;
   if (p.minimized === true) out.minimized = true;
+  if (typeof p.folder === 'string' && FOLDER_RE.test(p.folder)) out.folder = p.folder; // taskbar folder (flat); a bad name from a hand edit is ignored, the window stays loose
   if (p.sticky === true) out.sticky = true; // shown in every workspace
   if (typeof p.ws === 'string' && NAME_RE.test(p.ws) && p.ws !== 'main') out.ws = p.ws; // workspace (virtual desktop); main is the default and is not stored
   return { panel: out };
@@ -419,8 +421,9 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     const cur = panels.get(id);
     if (!cur) throw Object.assign(new Error(`no panel ${id}`), { status: 404 });
     if (patch?.ifMarkdown !== undefined && (cur.type !== 'note' || cur.props.markdown !== patch.ifMarkdown)) throw Object.assign(new Error('note changed since editing began; your draft was not saved'), { status: 409 });
+    if (isObj(patch) && patch.folder !== undefined && patch.folder !== null && !FOLDER_RE.test(String(patch.folder))) throw Object.assign(new Error('folder must be a name of letters, digits, - and _ (up to 64), or null to take the window out of its folder'), { status: 400 });
     const merged = { ...cur };
-    for (const k of ['title', 'placement', 'x', 'y', 'w', 'h', 'minimized', 'ws', 'sticky', 'autoFocus', 'maximized', 'activation', 'opacity', 'dockOrder']) if (isObj(patch) && patch[k] !== undefined) merged[k] = patch[k];
+    for (const k of ['title', 'placement', 'x', 'y', 'w', 'h', 'minimized', 'ws', 'sticky', 'autoFocus', 'maximized', 'activation', 'opacity', 'dockOrder', 'folder']) if (isObj(patch) && patch[k] !== undefined) merged[k] = patch[k];
     if (isObj(patch?.props)) merged.props = { ...cur.props, ...patch.props };
     if (cur.type === 'page' && cur.props.key) merged.props.key = cur.props.key; // the key is made by the server when the window opens
     const c = checkPanel(merged, id);
