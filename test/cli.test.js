@@ -401,3 +401,27 @@ test('host: prints the HATCH_URL based link, mentions the opened tabs, --no-open
     assert.match(r.stdout.trim(), /^http:\/\/127\.0\.0\.1:\d+\/host\//, 'without HATCH_URL the local server address');
   } finally { await h.close(); }
 });
+
+test('widget open --dock sends placement dock, and popup open --dock too', async () => {
+  const h = await startHatch();
+  const s = h.stateDir;
+  try {
+    const wdir = path.join(s, 'widgets', 'dk'); fs.mkdirSync(wdir, { recursive: true });
+    fs.writeFileSync(path.join(wdir, 'index.html'), '<div>hi</div>');
+    let r = await ui(['widget', 'open', 'dk', '--dock'], { state: s }); assert.equal(r.status, 0, r.stderr);
+    let panels = JSON.parse((await ui(['panels', '--json'], { state: s })).stdout);
+    assert.equal(panels.find((p) => p.props?.name === 'dk').placement, 'dock');
+    await ui(['close', 'w-dk'], { state: s });
+    r = await ui(['widget', 'open', 'dk'], { state: s }); assert.equal(r.status, 0, r.stderr);
+    panels = JSON.parse((await ui(['panels', '--json'], { state: s })).stdout);
+    assert.equal(panels.find((p) => p.props?.name === 'dk').placement, 'float');
+    await ui(['close', 'w-dk'], { state: s });
+    r = await ui(['popup', 'open', 'dk', '--dock'], { state: s }); assert.equal(r.status, 0, r.stderr);
+    panels = JSON.parse((await ui(['panels', '--json'], { state: s })).stdout);
+    assert.equal(panels.find((p) => p.props?.name === 'dk').placement, 'dock');
+    // a bundled example is opened through the server and honours --dock as well
+    r = await ui(['widget', 'open', 'clock', '--dock'], { state: s }); assert.equal(r.status, 0, r.stderr);
+    panels = JSON.parse((await ui(['panels', '--json'], { state: s })).stdout);
+    assert.equal(panels.find((p) => p.props?.name === 'clock').placement, 'dock');
+  } finally { await h.close(); }
+});

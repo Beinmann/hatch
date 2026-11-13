@@ -54,8 +54,8 @@ progress
                                     STATUS: ${STEP_STATUS.join(' | ')}
 widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget new NAME [--from example]  scaffold widgets/NAME: from an example (cpu, log-tail, ...) or, without --from, a minimal one
-  widget add NAME [DIR|FILE]        register and open (a single HTML file becomes index.html)
-  widget list | open NAME | close NAME | rm NAME | reload NAME   (open git: the git window for the current directory's repository)
+  widget add NAME [DIR|FILE] [--dock]  register and open (a single HTML file becomes index.html)
+  widget list | open NAME [--dock] | close NAME | rm NAME | reload NAME   (open git: the git window for the current directory's repository)
   widget examples                   list the example widgets (also in the palette)
   widget generate "DESCRIPTION" [--name N]   ask \`claude -p\` to write a widget from a description, then open it
                                     (alias: popup generate; set HATCH_CLAUDE to use another claude binary)
@@ -147,11 +147,12 @@ In index.html load the helper and subscribe:
   <script src="/sdk.js"></script>
   <script>hatch.on('cpu', (v) => { el.textContent = v.total + '%'; });</script>
 hatch.on(source, fn) | hatch.off(source) | hatch.resize(w, h) | hatch.log(text) | hatch.theme (bg fg accent mono)
-Editing any file in the widget directory reloads the widget in the page.`;
+Editing any file in the widget directory reloads the widget in the page.
+hatch widget open NAME --dock opens it in the dock column instead of as a floating window (also: widget add, widget generate, popup open).`;
 
 function parse(argv) {
   const o = { _: [] };
-  const flags = new Set(['json', 'help', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus', 'dry-run', 'yes', 'no-open', 'all']);
+  const flags = new Set(['json', 'help', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus', 'dry-run', 'yes', 'no-open', 'all', 'dock']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--') { o._.push(...argv.slice(i + 1)); break; }
@@ -357,6 +358,7 @@ async function main(argv) {
       throw new CliError('usage: progress set|show|plan|plans|close|steps set|step ... [--plan NAME]');
     }
     case 'widget': {
+      const dockOpt = o.dock ? { placement: 'dock' } : {}; // --dock: open in the dock column instead of as a floating window
       const name = rest[0];
       if (rawCmd === 'popup' && sub === 'list') {
         const list = await api('GET', '/api/panels');
@@ -412,7 +414,7 @@ async function main(argv) {
         fs.writeFileSync(path.join(wdir, 'index.html'), g.html);
         fs.writeFileSync(path.join(wdir, 'widget.json'), g.json || `${JSON.stringify({ title: gname }, null, 2)}\n`);
         await new Promise((res) => setTimeout(res, 250));
-        const p = await api('POST', '/api/panels', { type: 'widget', props: { name: gname } });
+        const p = await api('POST', '/api/panels', { type: 'widget', props: { name: gname }, ...dockOpt });
         return console.log(`generated ${wdir}\nwidget ${gname} open as ${p.id}`);
       }
       need(['new', 'add', 'open', 'close', 'rm', 'reload'].includes(sub), 'usage: widget new|add|list|open|close|rm|reload');
@@ -420,13 +422,13 @@ async function main(argv) {
       // "top" is a terminal window running htop, not the old widget, so keys work
       if (sub === 'open' && name === 'top') { const p = await api('POST', '/api/examples/top/open', {}); return console.log(`top open as ${p.id}`); }
       // "git" follows the shell: one widget per project, made by the server for this directory (the server does not know our cwd)
-      if (sub === 'open' && name === 'git') { const p = await api('POST', '/api/examples/git/open', { dir: process.cwd() }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
+      if (sub === 'open' && name === 'git') { const p = await api('POST', '/api/examples/git/open', { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
       const target = path.join(l.widgets, name);
       if (sub === 'open' && !fs.existsSync(path.join(target, 'index.html'))) {
         // Not installed: a bundled example of that name is copied in and opened by the server.
         const isExample = (await api('GET', '/api/examples')).some((e) => e.name === name);
         need(isExample, `no widget ${name}; see hatch widget list`);
-        const p = await api('POST', `/api/examples/${encodeURIComponent(name)}/open`, {});
+        const p = await api('POST', `/api/examples/${encodeURIComponent(name)}/open`, { ...dockOpt });
         return console.log(`${rawCmd === 'popup' ? 'popup' : 'widget'} ${name} open as ${p.id}`);
       }
       if (sub === 'new') {
@@ -442,7 +444,7 @@ async function main(argv) {
           fs.writeFileSync(path.join(target, 'widget.json'), `${JSON.stringify({ title: name, w: 300, h: 160, placement: 'float', sources: [] }, null, 2)}\n`);
         }
         if (rawCmd === 'popup') {
-          const p = await api('POST', '/api/panels', { type: 'widget', props: { name } });
+          const p = await api('POST', '/api/panels', { type: 'widget', props: { name }, ...dockOpt });
           return console.log(`created ${target}\npopup ${name} open as ${p.id}`);
         }
         return console.log(`created ${target}\nedit it; the page reloads on save. Open it with: hatch widget open ${name}`);
@@ -462,7 +464,7 @@ async function main(argv) {
       if (sub === 'reload') { await api('POST', `/api/widgets/${name}/reload`, {}); return console.log(`reloaded ${name}`); }
       // add and open: wait briefly for the watcher so the server knows the widget (it reads widget.json for defaults)
       await new Promise((r) => setTimeout(r, 250));
-      const p = await api('POST', '/api/panels', { type: 'widget', props: { name } });
+      const p = await api('POST', '/api/panels', { type: 'widget', props: { name }, ...dockOpt });
       console.log(`widget ${name} open as ${p.id}`);
       if (sub === 'open') { // a shipped example that changed since this instance copied it: say how to refresh (best effort)
         try { const ex = (await api('GET', '/api/examples')).find((e) => e.name === name && e.stale); if (ex) console.error(`hatch: ${ex.hint}`); } catch { /* the hint is optional */ }
