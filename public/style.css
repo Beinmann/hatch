@@ -85,6 +85,8 @@ html .win.docked,html.has-tr .win.docked,html.has-tr .win.docked iframe{backgrou
 .win.docked .tb{cursor:grab}
 .win.dock-dragging{opacity:.55;border-style:dashed} .reordering,.reordering .tb{cursor:grabbing!important} .reordering iframe{pointer-events:none}
 .dock-drop{position:absolute;left:30px;right:14px;height:3px;margin-top:-1.5px;border-radius:2px;background:var(--accent);pointer-events:none;z-index:5}
+.dock-drop.slot{height:auto;margin-top:0;background:color-mix(in srgb,var(--accent) 18%,transparent);outline:2px dashed var(--accent);outline-offset:-2px;border-radius:6px}
+.float-drop{position:absolute;pointer-events:none;z-index:9999;border:2px dashed var(--accent);border-radius:6px;background:color-mix(in srgb,var(--accent) 14%,transparent)}
 .win .tb .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;font-size:13px}
 .win .tb button{padding:0 7px;line-height:20px;font-size:13px}
 .win .body{flex:1;min-height:0;overflow:auto;position:relative}

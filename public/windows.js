@@ -3,7 +3,7 @@ import { pickRestore } from './restore.js';
 import { touch, pickAfterClose } from './focus-history.js';
 import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
-import { dockIds, moveBefore, gapAt, orderPatches } from './dock-order.js';
+import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
 // (stacked in the right column). Geometry changes are written back to the panel file (debounced), so the layout
@@ -94,22 +94,55 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     return w;
   }
 
+  // Drag previews. dockGap: where in the dock a pointer at `y` would insert (skipping `skip`), plus a translucent outline of
+  // that slot. floatGhost: translucent outline of the rect a released docked window would take as a floating one.
+  function dockGap(y, skip, height) {
+    const others = dockIds([...wins.values()].map((o) => o.panel)).filter((id) => id !== skip).map((id) => wins.get(id)).filter((o) => o && !o.node.hidden);
+    const rects = others.map((o) => o.node.getBoundingClientRect());
+    const gap = gapAt(rects.map((q) => q.top + q.height / 2), y);
+    const at = rects.length === 0 ? dock.getBoundingClientRect().top + 10 : gap < rects.length ? rects[gap].top - 4 : rects[rects.length - 1].bottom + 4;
+    return { before: gap < others.length ? others[gap].panel.id : null, at, height };
+  }
+  function showSlot(ind, g) {
+    const r = dock.getBoundingClientRect();
+    ind.style.top = `${g.at - r.top + dock.scrollTop - (g.height ? 4 : 0)}px`; ind.style.height = g.height ? `${g.height}px` : '';
+    ind.classList.toggle('slot', !!g.height);
+  }
+  const overDock = (m) => !dock.hidden && inRect(dock.getBoundingClientRect(), m.clientX, m.clientY);
+
   function drag(w) {
     w.tb.addEventListener('pointerdown', (e) => {
       if (isViewOnly() || w.panel.placement !== 'float' || e.target.closest('button')) return;
       e.preventDefault();
       w.tb.setPointerCapture(e.pointerId);
       const sx = e.clientX; const sy = e.clientY; const ox = w.node.offsetLeft; const oy = w.node.offsetTop;
-      let moved = false;
+      let moved = false; let ind = null; let target = null; // target: dock slot the window would take if released now
       w.node.classList.add('dragging');
       const move = (m) => {
         moved = true;
         const { x, y } = clampMove({ x: ox + m.clientX - sx, y: oy + m.clientY - sy }, { w: w.node.offsetWidth, h: w.node.offsetHeight }, area());
         w.node.style.left = `${x}px`; w.node.style.top = `${y}px`;
+        if (overDock(m)) {
+          if (!ind) { ind = el('div', { class: 'dock-drop' }); dock.append(ind); dock.classList.add('reordering'); }
+          target = dockGap(m.clientY, w.panel.id, Math.min(Math.max(MIN_H, w.panel.h || 260), 160)); showSlot(ind, target);
+        } else if (ind) { ind.remove(); ind = null; target = null; dock.classList.remove('reordering'); }
+      };
+      const done = () => {
+        w.tb.removeEventListener('pointermove', move); w.tb.removeEventListener('pointerup', up); w.tb.removeEventListener('pointercancel', cancel);
+        document.removeEventListener('keydown', key, true);
+        w.node.classList.remove('dragging');
+        if (ind) { ind.remove(); dock.classList.remove('reordering'); }
       };
       const up = () => {
-        w.tb.removeEventListener('pointermove', move); w.tb.removeEventListener('pointerup', up); w.tb.removeEventListener('pointercancel', up);
-        w.node.classList.remove('dragging');
+        done();
+        if (target) { // dropped on the dock: dock it at the previewed slot
+          const ids = insertBefore(dockIds([...wins.values()].map((o) => o.panel)), w.panel.id, target.before);
+          const patches = orderPatches(ids, [...wins.values()].map((o) => o.panel));
+          for (const u of patches) { const o = wins.get(u.id); o.panel = { ...o.panel, dockOrder: u.dockOrder }; }
+          for (const u of patches) patch(u.id, u.id === w.panel.id ? { placement: 'dock', dockOrder: u.dockOrder } : { dockOrder: u.dockOrder }).catch((err) => ctx.toast(err.message, 'bad'));
+          if (!patches.some((u) => u.id === w.panel.id)) patch(w.panel.id, { placement: 'dock' }).catch((err) => ctx.toast(err.message, 'bad'));
+          return;
+        }
         // a plain click (or double-click) must not save: a maximized window reports offset 0,0, which would overwrite its real spot
         if (!moved || w.panel.maximized) return;
         const { x, y } = clampMove({ x: w.node.offsetLeft, y: w.node.offsetTop }, { w: w.node.offsetWidth, h: w.node.offsetHeight }, area()); // also on release
@@ -117,7 +150,10 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
         w.panel = { ...w.panel, x, y };
         save(w.panel.id, { x, y });
       };
-      w.tb.addEventListener('pointermove', move); w.tb.addEventListener('pointerup', up); w.tb.addEventListener('pointercancel', up);
+      const cancel = () => { done(); layoutFloat(w); };
+      const key = (k) => { if (k.key === 'Escape') { k.preventDefault(); k.stopPropagation(); cancel(); } };
+      w.tb.addEventListener('pointermove', move); w.tb.addEventListener('pointerup', up); w.tb.addEventListener('pointercancel', cancel);
+      document.addEventListener('keydown', key, true);
     });
   }
 
@@ -126,29 +162,40 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   function dockDrag(w) {
     w.tb.addEventListener('pointerdown', (e) => {
       if (isViewOnly() || w.panel.placement !== 'dock' || e.button !== 0 || e.target.closest('button')) return;
-      const sx = e.clientX; const sy = e.clientY; let on = false; let gap = 0; let ind = null; let others = [];
+      const sx = e.clientX; const sy = e.clientY; let on = false; let g = null; let ind = null; let ghost = null; let land = null;
+      const tbr = w.tb.getBoundingClientRect(); const grab = { x: Math.min(sx - tbr.left, 120), y: sy - tbr.top };
       const start = () => {
         on = true; w.node.classList.add('dock-dragging'); dock.classList.add('reordering');
         ind = el('div', { class: 'dock-drop' }); dock.append(ind);
       };
       const move = (m) => {
         if (!on) { if (Math.hypot(m.clientX - sx, m.clientY - sy) < 5) return; start(); }
-        const r = dock.getBoundingClientRect();
-        if (m.clientY < r.top + 30) dock.scrollTop -= 12; else if (m.clientY > r.bottom - 30) dock.scrollTop += 12; // edge auto-scroll
-        others = dockIds([...wins.values()].map((o) => o.panel)).filter((id) => id !== w.panel.id).map((id) => wins.get(id)).filter((o) => o && !o.node.hidden);
-        const rects = others.map((o) => o.node.getBoundingClientRect());
-        gap = gapAt(rects.map((q) => q.top + q.height / 2), m.clientY);
-        const y = rects.length === 0 ? 0 : gap < rects.length ? rects[gap].top - 4 : rects[rects.length - 1].bottom + 4;
-        ind.style.top = `${y - r.top + dock.scrollTop}px`;
+        if (overDock(m)) {
+          land = null; ghost?.remove(); ghost = null; ind.hidden = false;
+          const r = dock.getBoundingClientRect();
+          if (m.clientY < r.top + 30) dock.scrollTop -= 12; else if (m.clientY > r.bottom - 30) dock.scrollTop += 12; // edge auto-scroll
+          g = dockGap(m.clientY, w.panel.id, 0); showSlot(ind, g);
+        } else { // outside the dock: preview the floating rect it would become
+          g = null; ind.hidden = true;
+          land = floatLanding({ x: m.clientX, y: m.clientY }, grab, { w: w.panel.w || 420, h: Math.max(MIN_H, w.panel.h || 300) }, floats.getBoundingClientRect(), area());
+          if (!ghost) { ghost = el('div', { class: 'float-drop' }); floats.append(ghost); }
+          ghost.style.cssText = `left:${land.x}px;top:${land.y}px;width:${land.w}px;height:${land.h}px`;
+        }
       };
       const finish = (apply) => {
         w.tb.removeEventListener('pointermove', move); w.tb.removeEventListener('pointerup', up); w.tb.removeEventListener('pointercancel', cancel);
         document.removeEventListener('keydown', key, true);
         if (!on) return;
-        w.node.classList.remove('dock-dragging'); dock.classList.remove('reordering'); ind.remove();
+        w.node.classList.remove('dock-dragging'); dock.classList.remove('reordering'); ind.remove(); ghost?.remove();
         if (!apply) return;
+        if (land) { // released outside the dock: float at the previewed rect
+          w.panel = { ...w.panel, ...land };
+          patch(w.panel.id, { placement: 'float', ...land }).catch((err) => ctx.toast(err.message, 'bad'));
+          return;
+        }
+        if (!g) return;
         const all = dockIds([...wins.values()].map((o) => o.panel));
-        const ids = moveBefore(all, w.panel.id, gap < others.length ? others[gap].panel.id : null);
+        const ids = moveBefore(all, w.panel.id, g.before);
         const patches = orderPatches(ids, [...wins.values()].map((o) => o.panel));
         for (const u of patches) { const o = wins.get(u.id); o.panel = { ...o.panel, dockOrder: u.dockOrder }; }
         paintDockOrder();

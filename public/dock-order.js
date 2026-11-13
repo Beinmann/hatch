@@ -30,3 +30,25 @@ export function orderPatches(ids, panels) {
   const by = new Map(panels.map((p) => [p.id, p]));
   return ids.map((id, i) => ({ id, dockOrder: i })).filter((u) => by.get(u.id)?.dockOrder !== u.dockOrder);
 }
+
+/** New id order after inserting `id` (docked or not yet) just before `beforeId` (null = end). Unknown beforeId appends. */
+export function insertBefore(ids, id, beforeId) {
+  const rest = ids.filter((x) => x !== id);
+  const at = beforeId === null || !rest.includes(beforeId) ? rest.length : rest.indexOf(beforeId);
+  rest.splice(at, 0, id);
+  return rest;
+}
+
+/** Is the point inside the rect ({left,top,right,bottom})? Used to tell "over the dock" from "over the floating area". */
+export function inRect(r, x, y) {
+  return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+/** Where a window released at the pointer lands as a floating one: top-left keeps the grab offset, clamped into the area
+ *  ({left,top} of the area in page coordinates, {width,height} its size). Returns area-relative { x, y, w, h }. */
+export function floatLanding(pointer, grab, size, areaRect, areaSize) {
+  const w = Math.min(size.w, areaSize.width); const h = Math.min(size.h, areaSize.height);
+  const x = Math.max(0, Math.min(areaSize.width - w, pointer.x - grab.x - areaRect.left));
+  const y = Math.max(0, Math.min(areaSize.height - h, pointer.y - grab.y - areaRect.top));
+  return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+}
