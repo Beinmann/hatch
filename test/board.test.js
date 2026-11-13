@@ -65,17 +65,17 @@ test('board example: the save and load sources write the file in chunks and read
   const h = await startHatch();
   try {
     assert.equal((await h.call('POST', '/api/examples/board/open', {})).status, 200);
-    const call = async (source, arg) => { const r = await h.call('POST', '/api/call', { widget: 'board', source, arg }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.value; };
+    const call = async (source, arg) => { const r = await h.call('POST', '/api/call', { widget: 'board-default', source, arg }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.value; };
     assert.equal((await call('load')).json, null, 'no file yet: null, so the widget starts empty');
     let { board } = J(M.addCard(M.empty(), 10, 10, 'café "q" $HOME `x` ' + 'y'.repeat(7000)));
     const parts = M.chunks(board);
     let r = await call('save', 'B ' + parts[0]); assert.equal(r.code, 0, r.error);
     for (const p of parts.slice(1)) { r = await call('save', 'A ' + p); assert.equal(r.code, 0, r.error); }
-    assert.ok(!fs.existsSync(path.join(h.stateDir, 'widgets', 'board', 'data', 'board.json')), 'nothing is live before the commit step');
+    assert.ok(!fs.existsSync(path.join(h.stateDir, 'boards', 'default.board.json')), 'nothing is live before the commit step');
     await call('save', 'C');
     const back = J(M.sanitize((await call('load')).json));
     assert.deepEqual(back, J(M.sanitize(board)));
-    const bad = await h.call('POST', '/api/call', { widget: 'board', source: 'save', arg: 'rm -rf x' });
+    const bad = await h.call('POST', '/api/call', { widget: 'board-default', source: 'save', arg: 'rm -rf x' });
     assert.equal(bad.data.value.code, 1, 'unknown steps are refused');
   } finally { await h.close(); }
 });
@@ -134,7 +134,18 @@ test('hatch widget open board FILE resolves a relative path from the caller and 
     assert.equal(bad.status, 1); assert.match(bad.stderr, /\.board\.json/);
     // plain `widget open board` keeps the default behaviour
     const plainOpen = await run([bin, '--state', h.stateDir, 'widget', 'open', 'board'], { cwd, env });
-    assert.equal(plainOpen.status, 0, plainOpen.stderr); assert.match(plainOpen.stdout, /widget board open as w-board\b/);
+    assert.equal(plainOpen.status, 0, plainOpen.stderr); assert.match(plainOpen.stdout, /widget board-default open as w-board-default .*boards.default\.board\.json/);
+    // the default board is a file in the state dir: deleting the widget keeps it, and `widget boards` lists it
+    fs.writeFileSync(path.join(h.stateDir, 'boards', 'default.board.json'), '{"version":1,"cards":[],"arrows":[],"view":{"x":0,"y":0,"zoom":1},"nextId":1}');
+    assert.equal((await h.call('DELETE', '/api/widgets/board-default')).status, 200);
+    assert.ok(fs.existsSync(path.join(h.stateDir, 'boards', 'default.board.json')));
+    const listed = await run([bin, '--state', h.stateDir, 'widget', 'boards'], { cwd, env });
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.match(listed.stdout, /default\.board\.json/); assert.match(listed.stdout, /plan\.board\.json/);
+    const api = (await h.call('GET', '/api/boards')).data;
+    assert.ok(api.some((b) => b.name === 'default' && b.exists && !b.open) && api.some((b) => b.name === 'plan' && !b.exists));
+    // reopening a listed file brings the widget back
+    assert.match((await run([bin, '--state', h.stateDir, 'widget', 'open', 'board', path.join(h.stateDir, 'boards', 'default.board.json')], { cwd, env })).stdout, /board-default open/);
   } finally { await h.close(); }
 });
 
@@ -218,7 +229,7 @@ test('nested board storage: child boards live next to the file (or in the data d
       assert.equal(J(M.sanitize((await call('load', 'bchild1')).json)).cards[0].text, 'inside');
       assert.equal((await call('load')).json, null, 'the root is a different file');
       const where = (await call('path', 'bchild1')).out;
-      assert.ok(where.endsWith(name === 'board' ? 'board.bchild1.json' : 'plan.bchild1.board.json'), where);
+      assert.ok(where.endsWith(name === 'board-default' ? 'default.bchild1.board.json' : 'plan.bchild1.board.json'), where);
       assert.ok(fs.existsSync(where));
       assert.equal(path.dirname(where), path.dirname((await call('path')).out), 'next to the parent');
       const bad = await call('save', 'B:../x ' + parts[0]); assert.equal(bad.code, 1);
@@ -269,4 +280,18 @@ test('history: bounded to HISTORY_LIMIT steps, oldest dropped', () => {
   for (let i = 0; i < M.HISTORY_LIMIT + 30; i++) { h = M.historyPush(h, b, null, i); b = M.addCard(b, i, 0, '').board; }
   assert.equal(h.past.length, M.HISTORY_LIMIT);
   assert.equal(h.past[0].cards.length, 30);
+});
+
+test('board: the old widget-local default board is copied to the state-dir file once, children included', async () => {
+  const h = await startHatch();
+  try {
+    const old = path.join(h.stateDir, 'widgets', 'board', 'data'); fs.mkdirSync(old, { recursive: true });
+    fs.writeFileSync(path.join(old, 'board.json'), '{"version":1,"cards":[],"arrows":[],"view":{"x":0,"y":0,"zoom":1},"nextId":1,"old":true}');
+    fs.writeFileSync(path.join(old, 'board.k2.json'), '{"version":1,"cards":[],"arrows":[],"view":{"x":0,"y":0,"zoom":1},"nextId":1}');
+    assert.equal((await h.call('POST', '/api/examples/board/open', {})).status, 200);
+    const dir = path.join(h.stateDir, 'boards');
+    assert.match(fs.readFileSync(path.join(dir, 'default.board.json'), 'utf8'), /"old":true/);
+    assert.ok(fs.existsSync(path.join(dir, 'default.k2.board.json')));
+    assert.deepEqual((await h.call('GET', '/api/boards')).data.map((b) => b.name), ['default'], 'nested boards are not listed on their own');
+  } finally { await h.close(); }
 });

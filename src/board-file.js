@@ -47,3 +47,34 @@ export function boardWidgetName(file, existingFileOf) {
   const other = existingFileOf(name);
   return other === undefined || other === file ? name : `${name}-${crypto.createHash('sha1').update(file).digest('hex').slice(0, 6)}`;
 }
+
+/** The default board lives in the state dir, outside any widget folder, so closing or deleting its window never loses it. */
+export const defaultBoardFile = (stateDir) => path.join(stateDir, 'boards', `default${BOARD_SUFFIX}`);
+
+/** One-time move of the old widget-local default board (widgets/board/data/board.json and board.ID.json children) to `file`.
+ *  Copies, never deletes; does nothing when `file` already exists or there was no old board. */
+export function migrateOldDefault(widgetsDir, file) {
+  const old = path.join(widgetsDir, 'board', 'data');
+  if (fs.existsSync(file) || !fs.existsSync(path.join(old, 'board.json'))) return false;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  for (const f of fs.readdirSync(old)) {
+    const m = /^board(?:\.([A-Za-z0-9_-]+))?\.json$/.exec(f);
+    if (m) fs.copyFileSync(path.join(old, f), m[1] ? file.slice(0, -BOARD_SUFFIX.length) + `.${m[1]}${BOARD_SUFFIX}` : file);
+  }
+  return true;
+}
+
+/** Known board files: the default one, every file a board widget in widgets/ is bound to, and the *.board.json files in boards/.
+ *  Nested boards (NAME.ID.board.json) are not listed on their own. Newest first. */
+export function listBoardFiles(stateDir, widgetNames, metaOf, isOpen) {
+  const found = new Map(), add = (file, widget) => {
+    if (typeof file !== 'string' || !file.endsWith(BOARD_SUFFIX) || found.has(file)) return;
+    let mtime = null; try { mtime = fs.statSync(file).mtimeMs; } catch { /* a bound file that was never saved, or was removed */ }
+    found.set(file, { file, name: path.basename(file, BOARD_SUFFIX), widget: widget || null, open: !!widget && isOpen(widget), exists: mtime !== null, mtime });
+  };
+  for (const w of widgetNames) add(metaOf(w)?.file, w);
+  const dir = path.join(stateDir, 'boards');
+  try { for (const f of fs.readdirSync(dir)) add(path.join(dir, f), null); } catch { /* no boards dir yet */ }
+  const nested = (e) => [...found.keys()].some((k) => k !== e.file && e.file.startsWith(k.slice(0, -BOARD_SUFFIX.length) + '.'));
+  return [...found.values()].filter((e) => !nested(e)).sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+}

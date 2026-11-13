@@ -21,7 +21,7 @@ import { createWatches, checkWatches } from './watches.js';
 import { createSchedules, checkSchedules } from './schedules.js';
 import { createRuns } from './runs.js';
 import * as discover from './discover.js';
-import { resolveBoardFile, boardFileMeta, boardWidgetName } from './board-file.js';
+import { resolveBoardFile, boardFileMeta, boardWidgetName, defaultBoardFile, migrateOldDefault, listBoardFiles } from './board-file.js';
 import { widgetStatus, recordShipped, staleMessage, gitProjectMeta, staleProjectCopies } from './update-widgets.js';
 import * as gitapi from './git.js';
 import { setFx, readFx, FxError, EFFECTS } from './fx.js';
@@ -361,7 +361,10 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     if (name === 'top') return openTop(options);
     if (name === 'git' && options?.dir !== undefined) return openGitFor(options);
     if (name === 'files' && options?.dir !== undefined) return openFilesFor(options);
-    if (name === 'board' && options?.file !== undefined) return openBoardFor(options);
+    if (name === 'board') { // every board is a *.board.json; no file given = the default board in the state dir (survives closing the window)
+      if (options?.file === undefined) { const file = defaultBoardFile(stateDir); fs.mkdirSync(path.dirname(file), { recursive: true }); migrateOldDefault(l.widgets, file); return openBoardFor({ ...options, file }); }
+      return openBoardFor(options);
+    }
     if (name === 'trash') return state.listPanels().find((q) => q.type === 'trash') || state.createPanel({ type: 'trash', title: 'Trash' }); // one trash window is enough
     const dir = path.join(l.widgets, name);
     if (!fs.existsSync(dir)) { fs.cpSync(path.join(EXAMPLES, name), dir, { recursive: true }); recordShipped(stateDir, name); }
@@ -763,6 +766,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       }
       if (p === '/api/limits' && m === 'GET') return json(res, 200, await limits.get(url.searchParams.get('refresh') === '1'));
       if (p === '/api/desktop' && m === 'POST') return json(res, 200, openDesktop());
+      if (p === '/api/boards' && m === 'GET') return json(res, 200, listBoardFiles(stateDir, state.widgetNames(), (n) => state.widgetMeta(n), (n) => !!state.getPanel(`w-${n}`)));
       if (p === '/api/examples' && m === 'GET') return json(res, 200, exampleList());
       if ((g = /^\/api\/examples\/([\w-]+)\/open$/.exec(p)) && m === 'POST') return json(res, 200, openExample(g[1], await readJson(req)));
       if ((g = /^\/api\/git\/(status|stage|unstage|commit)$/.exec(p))) {
