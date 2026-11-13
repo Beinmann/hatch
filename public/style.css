@@ -131,6 +131,14 @@ html.has-fx #fx{display:block;position:absolute;inset:0;width:100%;height:100%;z
 #palette li.on{background:var(--accent-soft)}
 .crumbs{display:flex;flex-wrap:wrap;gap:2px;padding:4px 6px;border-bottom:1px solid var(--line);font:12px var(--mono)}
 .crumbs button{padding:0 5px;border-color:transparent;background:transparent} .crumbs button:hover{border-color:var(--accent)}
+.files{container-type:inline-size}
+.fbody{flex:1;min-height:0;display:flex}
+.flistwrap{flex:1;min-width:0;overflow:auto}
+.fpreview{flex:0 1 45%;min-width:140px;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;border-left:1px solid var(--line);overflow:hidden}
+.fpreview[hidden]{display:none}
+.fpreview img{flex:1;min-height:0;max-width:100%;max-height:100%;object-fit:contain}
+.fpreview-name{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@container (max-width:420px){.fpreview{display:none}}
 .flist{list-style:none;margin:0;padding:4px;font:13px var(--mono)}
 .flist li{display:flex;gap:8px;align-items:center;padding:5px 8px;margin:1px 0;border-radius:6px;border-left:3px solid transparent;cursor:pointer} .flist li:hover{background:var(--accent-soft)}
 .flist li.sel{background:var(--accent-soft);border-left-color:var(--accent)}

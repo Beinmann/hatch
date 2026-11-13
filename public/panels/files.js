@@ -2,7 +2,8 @@
 import { el, isViewOnly } from '../util.js';
 import { copyText } from '../terminal.js';
 
-const IMG = /\.(png|jpe?g|gif|webp|svg)$/i;
+import { IMG, PREVIEW_DELAY, previewTarget, previewUrl } from './files-preview.js';
+
 const human = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 const icon = (e) => (e.type === 'dir' ? '📁' : e.type === 'broken' ? '⚠️' : IMG.test(e.name) ? '🖼️' : '📄');
 const join = (dir, name) => (dir === '/' ? `/${name}` : `${dir}/${name}`);
@@ -22,7 +23,10 @@ export default {
     };
     const list = el('ul', { class: 'flist' });
     const msg = el('div', { class: 'muted small pad', hidden: true });
-    const root = el('div', { class: 'files', tabindex: '0', style: 'display:flex;flex-direction:column;height:100%;outline:none' }, crumbs, tools, el('div', { style: 'flex:1;overflow:auto' }, msg, list));
+    const previewImg = el('img', { alt: '', draggable: 'false' });
+    const preview = el('div', { class: 'fpreview', hidden: true }, previewImg, el('div', { class: 'fpreview-name muted small' }));
+    const root = el('div', { class: 'files', tabindex: '0', style: 'display:flex;flex-direction:column;height:100%;outline:none' }, crumbs, tools, el('div', { class: 'fbody' }, el('div', { class: 'flistwrap' }, msg, list), preview));
+    let entries = []; let previewTimer = null; let shown = '';
     let sel = ''; // name of the keyboard-selected row ('..' for the parent row); kept across the 5 s refresh
     let parentDir = null; let rows = [];
     let dir = panel.props.path || ''; let requested = dir; let revision = 0; let loading = false; let destroyed = false;
@@ -41,7 +45,7 @@ export default {
         const parts = d.path.split('/').filter(Boolean);
         crumbs.replaceChildren(el('button', { type: 'button', onclick: () => go('/') }, '/'),
           ...parts.map((seg, i) => el('button', { type: 'button', onclick: () => go(`/${parts.slice(0, i + 1).join('/')}`) }, seg)));
-        parentDir = d.parent;
+        parentDir = d.parent; entries = d.entries;
         list.replaceChildren(...(d.parent ? [el('li', { class: 'dir', 'data-name': '..', onclick: () => go(d.parent) }, el('span', { class: 'ico' }, '↰'), el('span', {}, '..'))] : []),
           ...d.entries.map((e) => {
             const full = join(d.path, e.name);
@@ -63,6 +67,20 @@ export default {
     function paintSel(scroll = true) {
       rows.forEach((r) => r.classList.toggle('sel', r.dataset.name === sel));
       if (scroll) rows.find((r) => r.dataset.name === sel)?.scrollIntoView({ block: 'nearest' });
+      schedulePreview();
+    }
+    // Image preview follows the selection; debounced so holding j/k does not fetch every image on the way.
+    function schedulePreview() {
+      clearTimeout(previewTimer);
+      const target = previewTarget(dir, entries, sel);
+      if (target === (shown || null)) return;
+      if (!target) { shown = ''; preview.hidden = true; previewImg.removeAttribute('src'); return; }
+      previewTimer = setTimeout(() => {
+        if (destroyed) return;
+        shown = target; preview.hidden = false;
+        previewImg.src = previewUrl(target); previewImg.alt = sel;
+        preview.lastChild.textContent = sel;
+      }, PREVIEW_DELAY);
     }
     const move = (n) => { if (!rows.length) return; const i = rows.findIndex((r) => r.dataset.name === sel); sel = rows[Math.max(0, Math.min(rows.length - 1, i < 0 ? (n > 0 ? 0 : rows.length - 1) : i + n))].dataset.name; paintSel(); };
     // vim keys: j/k move, h = parent folder, l = enter a folder or open a file. Ignored while typing and with modifiers.
@@ -107,6 +125,6 @@ export default {
 
     const timer = setInterval(() => { if (!destroyed && !loading && dir && root.offsetParent) load(dir); }, 5000); // pick up changes made in the terminal
     load(dir || ctx.cwd());
-    return { el: root, focus() { root.focus({ preventScroll: true }); }, update(p) { if (p.props.path && p.props.path !== requested) load(p.props.path); }, destroy() { destroyed = true; revision++; clearInterval(timer); } };
+    return { el: root, focus() { root.focus({ preventScroll: true }); }, update(p) { if (p.props.path && p.props.path !== requested) load(p.props.path); }, destroy() { destroyed = true; clearTimeout(previewTimer); revision++; clearInterval(timer); } };
   },
 };
