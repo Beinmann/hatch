@@ -2,6 +2,7 @@
 //   hatch.on('cpu', (value, ts) => ...)   subscribe to a source declared in widget.json
 //   hatch.call('pick', 'a.jpg').then((value) => ...)   run an exec source once; the argument arrives as $HATCH_ARG
 //   hatch.off('cpu')  hatch.resize(w, h)  hatch.log(text)  hatch.theme  hatch.ready(fn)
+//   hatch.saveScreenshot({ abstract })   download a PNG of this widget (abstract: text as grey bars); `hatch widget screenshot NAME` asks for one too
 (() => {
   const handlers = {}; const readyFns = []; let initialised = false; const pending = new Map(); let nextId = 1;
   const post = (msg) => parent.postMessage(msg, '*');
@@ -17,8 +18,15 @@
     off(source) { delete handlers[source]; post({ type: 'unsubscribe', source }); },
     resize(w, h) { post({ type: 'resize', w, h }); },
     log(text) { post({ type: 'log', text: String(text) }); },
+    saveScreenshot(opts) { post({ type: 'screenshot-save', abstract: !!(opts && opts.abstract) }); },
     ready(fn) { if (initialised) fn(); else readyFns.push(fn); },
   };
+  let shotLoad = null;
+  const loadShot = () => (window.hatchShot ? Promise.resolve(window.hatchShot) : (shotLoad ||= new Promise((resolve, reject) => {
+    const s = document.createElement('script'); s.src = '/shot.js';
+    s.onload = () => resolve(window.hatchShot); s.onerror = () => { shotLoad = null; reject(new Error('could not load /shot.js')); };
+    document.head.appendChild(s);
+  })));
   // Slim themed scroll bars inside widgets, with a reserved gutter so the bar never covers content (right-aligned text
   // especially). Uses --muted from the host theme; a widget can override any of it with its own CSS.
   const sb = document.createElement('style');
@@ -40,6 +48,11 @@
     } else if (m.type === 'result') {
       const p = pending.get(m.id); pending.delete(m.id);
       if (p) { if (m.error) p.reject(new Error(m.error)); else p.resolve(m.value); }
+    } else if (m.type === 'hatch-screenshot') {
+      // the host asks for a PNG of this page; the renderer (shot.js) is loaded the first time
+      const reply = (r) => post({ type: 'hatch-screenshot-result', rid: m.rid, ...r });
+      loadShot().then((shot) => shot.render({ abstract: !!m.abstract, scale: m.scale })).then(
+        (r) => reply({ png: r.blob, width: r.width, height: r.height }), (err) => reply({ error: err.message }));
     } else if (m.type === 'data') {
       for (const f of handlers[m.source] || []) { try { f(m.value, m.ts); } catch (err) { hatch.log(`handler for ${m.source} failed: ${err.message}`); } }
     }

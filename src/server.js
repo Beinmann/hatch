@@ -37,6 +37,7 @@ import { createLimiter, clientKey } from './rate-limit.js';
 import { loginPage, loginNeededPage, createCodes } from './login.js';
 import { rotateTokenFile } from './token.js';
 import { createHostSecrets, HOST_SECRET_RE } from './host-secrets.js';
+import { createScreenshots, findWidgetPanel } from './screenshots.js';
 import { injectBase, MAX_PAGE_BYTES } from './host-inject.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
@@ -98,6 +99,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const migration = wsapi.migrate(stateDir); // first start with workspaces: wraps the existing layout and background as `main`
   const presence = new Map(); // cid -> workspace shown in that tab (in memory: a restart drops it, tabs report again)
   const presenceCounts = () => { const c = {}; for (const n of presence.values()) c[n] = (c[n] || 0) + 1; return c; };
+  const screenshots = createScreenshots({ emit: (e, d, pick) => bus.emit(e, d, pick) });
   const bus = createBus((req) => ({ ...state.snapshot(), presence: presenceCounts(), info: { ...info(), viewOnly: viewOnly || levelOf(req) === 'view' }, asks: [...asks.values()].filter((a) => a.answer === null).map(({ id, question, choices, freeText }) => ({ id, question, choices, freeText })) }), { log });
   // Opt-in (--tmux-status): the running progress step is mirrored into THIS session's tmux status line ("now: build (2/4)").
   let lastStatus = null;
@@ -475,6 +477,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     // widget files + SDK: opaque-origin iframes cannot send our cookie for sub-resources, so these are token-free
     // (they hold only what Claude wrote; revisit in the security pass)
     if (p === '/sdk.js') return serveFile(res, path.join(PUBLIC, 'sdk.js'), {}, req);
+    if (p === '/shot.js') return serveFile(res, path.join(PUBLIC, 'shot.js'), {}, req);
     if (p.startsWith('/widgets/')) {
       const rest = p.slice('/widgets/'.length);
       const name = rest.split('/')[0];
@@ -803,6 +806,18 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         bus.emit('copy', { text: b.text.slice(0, 1024 * 1024), label: typeof b.label === 'string' ? b.label.slice(0, 80) : '' });
         return json(res, 200, { ok: true, bytes: Buffer.byteLength(b.text) });
       }
+      if (p === '/api/screenshot' && m === 'POST') {
+        // PNG of an open widget/board window, drawn by one browser tab (no headless browser on the box); see screenshots.js
+        const b = await readJson(req);
+        const ws = typeof b.ws === 'string' && b.ws ? b.ws : 'main';
+        const panel = findWidgetPanel(state.listPanels(), b.name, ws);
+        const scale = b.scale === undefined ? 2 : Number(b.scale);
+        if (!(scale >= 0.25 && scale <= 4)) throw new HttpError(400, 'scale must be a number from 0.25 to 4');
+        const where = panel.ws || 'main';
+        const r = await screenshots.request({ panel: panel.id, abstract: !!b.abstract, scale }, (c) => c?.full && (presence.get(c.cid) || 'main') === where);
+        return json(res, 200, { ...r, panel: panel.id, title: panel.title, abstract: !!b.abstract });
+      }
+      if ((g = /^\/api\/screenshot\/(s\w+)$/.exec(p)) && m === 'POST') { screenshots.answer(g[1], await readJson(req, 64 * 1024 * 1024)); return json(res, 200, { ok: true }); }
       if (p === '/api/runs' && m === 'POST') { const b = await readJson(req); return json(res, 201, runs.start(b.cmd, typeof b.cwd === 'string' && path.isAbsolute(b.cwd) ? b.cwd : undefined)); }
       if (p === '/api/runs' && m === 'GET') return json(res, 200, runs.list());
       if ((g = /^\/api\/runs\/(r\w+)(\/stream|\/output)?$/.exec(p))) {

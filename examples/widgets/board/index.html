@@ -47,7 +47,7 @@
 </head>
 <body>
 <div id="bar"><span class="hint">PROTOTYPE. Double-click: new card. Drag the card top: move. Drag the right dot to another card: arrow. Click + Delete: remove. Lines like \"- [ ] item\" in a card are checkboxes: click to tick. Wheel: zoom.</span>
-  <span id="status" class="hint" style="flex:none"></span><button id="add">+ card</button><button id="reset">reset view</button></div>
+  <span id="status" class="hint" style="flex:none"></span><button id="add">+ card</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
 <div id="stage"><div id="world"><svg id="lines"><defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg></div></div>
 <script src="/sdk.js"></script>
 <script src="model.js"></script>
@@ -209,6 +209,8 @@
     }).catch(function (e) { setStatus('load failed: ' + e.message + ' (saving is off so the file is not overwritten)'); hatch.log('load failed: ' + e.message); });
   });
   render();
+  document.getElementById('shot').addEventListener('click', function () { hatch.saveScreenshot(); });
+  document.getElementById('shotabs').addEventListener('click', function () { hatch.saveScreenshot({ abstract: true }); });
 </script>
 </body>
 </html>
