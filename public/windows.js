@@ -4,6 +4,7 @@ import { touch, pickAfterClose } from './focus-history.js';
 import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
+import { groupWindows, freeFolderName, folderOf, FOLDER_RE } from './folders.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
 // (stacked in the right column). Geometry changes are written back to the panel file (debounced), so the layout
@@ -262,21 +263,89 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // On screen right now: shown, and (when docked) the dock column is open. Minimized, folded-dock and other-workspace
   // windows are not; other-workspace windows get no chip at all.
   const onScreen = (w) => shown(w) && (w.panel.placement !== 'dock' || dockOpen());
+  // Taskbar chips. A window in a folder has no chip of its own: its folder shows as one chip (name and count) whose
+  // popover lists the members. Chips can be dragged onto each other (HTML5 drag and drop): onto a folder to join it,
+  // onto a loose window to make a new folder of the two.
+  const setFolder = (ids, folder) => Promise.all(ids.map((id) => patch(id, { folder }))).catch((e) => ctx.toast(e.message, 'bad'));
+  const dropOnChip = (btn, folderName) => {
+    if (isViewOnly()) return;
+    btn.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('text/x-hatch-window')) { e.preventDefault(); btn.classList.add('drop'); } });
+    btn.addEventListener('dragleave', () => btn.classList.remove('drop'));
+    btn.addEventListener('drop', (e) => {
+      btn.classList.remove('drop');
+      const id = e.dataTransfer?.getData('text/x-hatch-window'); if (!id || !wins.has(id)) return;
+      e.preventDefault();
+      const all = [...wins.values()].map((x) => x.panel);
+      if (folderName) { if (folderOf(wins.get(id).panel) !== folderName) setFolder([id], folderName); return; }
+      const other = btn.dataset.id; if (!other || other === id) return;
+      const name = freeFolderName(all, current); setFolder([other, id], name);
+    });
+  };
+  const draggable = (btn, id) => { if (isViewOnly()) return; btn.draggable = true; btn.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-hatch-window', id); e.dataTransfer.effectAllowed = 'move'; }); };
   function chipFor(w) {
     const hidden = !onScreen(w);
-    return el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, title: w.panel.minimized ? 'Restore' : hidden ? 'Open the dock and show' : 'Bring to front', disabled: isViewOnly() && w.panel.minimized,
+    const btn = el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, title: w.panel.minimized ? 'Restore' : hidden ? 'Open the dock and show' : 'Bring to front', disabled: isViewOnly() && w.panel.minimized,
       onclick: () => {
         if (w.panel.minimized) { setMinimized(w.panel.id, false).catch((e) => ctx.toast(e.message, 'bad')); return; }
         if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); } // the dock must be on screen before focusing into it
         focus(w); w.node.classList.add('flash'); setTimeout(() => w.node.classList.remove('flash'), 600);
       } }, w.panel.title);
+    draggable(btn, w.panel.id); dropOnChip(btn, null);
+    return btn;
   }
+  let openFolder = null; let pop = null;
+  const closePop = () => { openFolder = null; pop?.remove(); pop = null; };
+  function folderChip(f) {
+    const members = f.ids.map((id) => wins.get(id)).filter(Boolean);
+    const btn = el('button', { type: 'button', class: `chip folder${members.some((w) => w.node.classList.contains('focus')) ? ' ok' : ''}${openFolder === f.name ? ' sel' : ''}${members.every((w) => w.panel.minimized) ? ' min' : ''}`, 'data-folder': f.name, title: 'Folder: click to list its windows',
+      onclick: () => { if (openFolder === f.name) closePop(); else { openFolder = f.name; paintChips(); } } }, `\u25B8 ${f.name} (${members.length})`);
+    dropOnChip(btn, f.name);
+    return btn;
+  }
+  // The bubble above a folder chip: one row per member (click restores or raises it; the arrow takes it out of the folder),
+  // plus rename and dissolve. Rows can be dragged onto another folder chip to move the window there.
+  function paintPop(groups, anchor) {
+    pop?.remove(); pop = null;
+    const f = groups.folders.find((x) => x.name === openFolder);
+    if (!f || !anchor) { openFolder = null; return; }
+    const ro = isViewOnly();
+    const rows = f.ids.map((id) => wins.get(id)).filter(Boolean).map((w) => {
+      const row = el('div', { class: `frow${w.panel.minimized ? ' min' : ''}` },
+        el('button', { type: 'button', class: 'fgo', title: w.panel.minimized ? 'Restore' : 'Bring to front', disabled: ro && w.panel.minimized, onclick: () => {
+          if (w.panel.minimized) setMinimized(w.panel.id, false).catch((e) => ctx.toast(e.message, 'bad'));
+          else { if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); } focus(w); }
+          closePop(); paintChips();
+        } }, w.panel.title + (w.panel.minimized ? ' (minimized)' : '')),
+        ...(ro ? [] : [el('button', { type: 'button', class: 'fout', title: 'Take out of the folder (back to the main bar)', onclick: () => setFolder([w.panel.id], null) }, '\u2197')]));
+      draggable(row, w.panel.id);
+      return row;
+    });
+    const tools = ro ? [] : [el('div', { class: 'ftools' },
+      el('button', { type: 'button', onclick: () => {
+        const to = (window.prompt('Rename folder', f.name) || '').trim();
+        if (!to || to === f.name) return;
+        if (!FOLDER_RE.test(to)) return ctx.toast('A folder name is letters, digits, - and _', 'bad');
+        if (groups.folders.some((x) => x.name.toLowerCase() === to.toLowerCase())) return ctx.toast(`Folder ${to} already exists`, 'bad');
+        openFolder = to; setFolder(f.ids, to);
+      } }, 'Rename'),
+      el('button', { type: 'button', title: 'Members go back to the main bar; no window is closed', onclick: () => { closePop(); setFolder(f.ids, null); } }, 'Ungroup all'))];
+    pop = el('div', { class: 'folderpop', role: 'dialog', 'aria-label': `Folder ${f.name}` }, el('div', { class: 'fhead' }, f.name), ...rows, ...tools);
+    document.body.append(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - pop.offsetWidth - 4))}px`; pop.style.bottom = `${window.innerHeight - r.top + 4}px`;
+  }
+  document.addEventListener('pointerdown', (e) => { if (pop && !pop.contains(e.target) && !e.target.closest?.('.chip.folder')) { closePop(); paintChips(); } }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pop) { closePop(); paintChips(); } });
   function paintChips() {
-    // Taskbar: windows of this workspace, visible ones first, a separator, then the ones not on screen.
+    // Taskbar: windows of this workspace, visible ones first, a separator, then the ones not on screen. Folders sit after the loose windows.
     const mine = [...wins.values()].filter((w) => w.panel.sticky || wsOf(w.panel) === current);
     chips.parentElement.hidden = !mine.length;
-    const vis = mine.filter(onScreen); const off = mine.filter((w) => !onScreen(w));
-    chips.replaceChildren(...vis.map(chipFor), ...(vis.length && off.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...off.map(chipFor));
+    const groups = groupWindows(mine.map((w) => w.panel), current);
+    const loose = new Set(groups.loose); const looseWins = mine.filter((w) => loose.has(w.panel.id));
+    const vis = looseWins.filter(onScreen); const off = looseWins.filter((w) => !onScreen(w));
+    const folders = groups.folders.map(folderChip);
+    chips.replaceChildren(...vis.map(chipFor), ...(vis.length && off.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...off.map(chipFor), ...(folders.length && looseWins.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...folders);
+    if (openFolder) paintPop(groups, chips.querySelector('.chip.folder.sel'));
   }
   function paintDock() {
     const any = [...wins.values()].some((w) => w.panel.placement === 'dock' && shown(w));
@@ -370,7 +439,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   });
   try { const sw = localStorage.getItem('hatch.dockw'); if (sw) dock.style.width = sw; } catch { /* ignore */ }
 
-  function setWorkspace(name) { current = name || 'main'; for (const w of wins.values()) w.node.hidden = !shown(w); refit(); paintChips(); paintDock(); }
+  function setWorkspace(name) { closePop(); current = name || 'main'; for (const w of wins.values()) w.node.hidden = !shown(w); refit(); paintChips(); paintDock(); }
   // Leader h/j/k/l: move focus to the nearest visible window (or the terminal) in that direction.
   // Selection lives in direction.js (deterministic, and the opposite key retraces the path).
   let trail = [];
