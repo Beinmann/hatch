@@ -168,6 +168,7 @@ Use `hatch` for everyday interaction with the page. `hatch-ui` still works as a 
 ```sh
 hatch image screenshot.png --size 800x550
 hatch open README.md                 # images, text files, HTML pages, directories or http(s) URLs
+hatch widget open NAME --dock     # open the widget in the dock instead of as a floating window
 hatch widget examples              # bundled example widgets (hatch widget open NAME installs and opens one)
 hatch popup open progress
 hatch popup create my-clock --from clock
@@ -222,7 +223,7 @@ hatch export [FILE] | import FILE [--force]
 hatch upload-dir | doctor           (exit codes: 0 ok, 1 usage, 2 server unreachable)
 ```
 
-**MCP.** `claude mcp add hatch -- hatch-mcp` (after `./install.sh`; or `node /path/to/hatch/bin/mcp.js`) gives Claude the same actions as typed tools (`hatch_progress_get`, `hatch_progress_plan`, `hatch_progress_open`, `hatch_progress_set`, `hatch_progress_step`, `hatch_note`, `hatch_image`, `hatch_notify`, `hatch_ask`, `hatch_run`, `hatch_open_widget`, `hatch_copy`, `hatch_report`; `hatch_run` with `wait` returns the output tail too). It uses `HATCH_STATE`, else `~/.hatch`.
+**MCP.** `claude mcp add hatch -- hatch-mcp` (after `./install.sh`; or `node /path/to/hatch/bin/mcp.js`) gives Claude the same actions as typed tools (`hatch_progress_get`, `hatch_progress_plan`, `hatch_progress_open`, `hatch_progress_set`, `hatch_progress_step`, `hatch_note`, `hatch_image`, `hatch_notify`, `hatch_ask`, `hatch_run`, `hatch_open_widget` (optional `dock`), `hatch_copy`, `hatch_report`; `hatch_run` with `wait` returns the output tail too). It uses `HATCH_STATE`, else `~/.hatch`.
 
 Teach Claude about it by pasting `docs/claude-snippet.md` into your project's `CLAUDE.md`, or copy `.claude/skills/hatch/` into your project (or `~/.claude/skills/`) so it loads on demand.
 `hatch open http://localhost:3000` shows a dev server running on the box: the URL is rewritten to `/proxy/3000/`, which Hatch forwards to the box's own port (HTTP and WebSocket). Root-absolute links in HTML are rewritten; URLs built in JavaScript are not, so some single-page apps need `--direct` and a reachable address instead.

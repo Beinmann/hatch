@@ -63,8 +63,8 @@ const TOOLS = [
       for (;;) { const v = await api('GET', `/api/runs/${r.id}`); if (v.state === 'done') { const out = (await api('GET', `/api/runs/${r.id}/output?max=6000`, undefined, { raw: true })).trim(); return `exit code ${v.code}${out ? `\n--- output (last part) ---\n${out}` : ''}`; } if (Date.now() > until) return `still running after the timeout (run ${r.id}); it keeps going in its window`; await new Promise((res) => setTimeout(res, 400)); }
     } },
   { name: 'hatch_open_widget', description: 'Open an existing widget (a directory widgets/NAME with index.html in the state dir) as a window. Create widgets by writing their files first.',
-    inputSchema: { type: 'object', properties: { name: str('Widget name') }, required: ['name'] },
-    run: async (api, a) => { const p = await api('POST', '/api/panels', { type: 'widget', props: { name: String(a.name) } }); return `widget ${a.name} open as ${p.id}`; } },
+    inputSchema: { type: 'object', properties: { name: str('Widget name'), dock: { type: 'boolean', description: 'Open in the dock instead of as a floating window' } }, required: ['name'] },
+    run: async (api, a) => { const p = await api('POST', '/api/panels', { type: 'widget', props: { name: String(a.name) }, ...(a.dock ? { placement: 'dock' } : {}) }); return `widget ${a.name} open as ${p.id}`; } },
   { name: 'hatch_report', description: 'A markdown summary of the session: progress steps, runs with exit codes, open windows. Useful to hand work over or to recall the state.',
     inputSchema: { type: 'object', properties: {} }, run: async (api) => api('GET', '/api/report', undefined, { raw: true }) },
   { name: 'hatch_copy', description: 'Put text on the clipboard of the user\'s browser.',
