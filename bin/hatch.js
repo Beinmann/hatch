@@ -60,7 +60,8 @@ widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget list | open NAME [--dock] | close NAME | rm NAME | reload NAME   (open git [--name LABEL] [--dir PATH]: a git window for PATH or the current directory; one per directory per workspace, an existing one is brought forward)
   widget save [DIR] | restore [DIR]   write / apply the layout (name, position, size, placement) of this workspace's widgets in DIR/.hatch-widgets.json (default .);
                                     restore opens missing widgets, moves and resizes open ones, un-minimizes them, closes nothing
-  widget open board FILE.board.json  a board that autosaves straight to that file (created on the first save; relative to here)
+  widget boards                      list known board files (open or not); reopen one with widget open board FILE
+  widget open board [FILE.board.json]  a board (no FILE: the default board, ~/.hatch/boards/default.board.json) that autosaves straight to that file (created on the first save; relative to here). Boards always live in a file, so closing the window keeps it
   widget screenshot NAME [--out FILE.png] [--abstract] [--scale N]   PNG of an open board or widget window, drawn by the open browser tab (no headless browser; fails if no tab is open). NAME: window id, widget name, or board file name. Default 2x; --abstract replaces text with grey bars (layout and colors only). Prints the path, so an agent can read the PNG
   widget examples                   list the example widgets (also in the palette)
   widget generate "DESCRIPTION" [--name N]   ask \`claude -p\` to write a widget from a description, then open it
@@ -469,7 +470,7 @@ async function main(argv) {
         fs.writeFileSync(file, Buffer.from(r.png, 'base64'));
         return console.log(`${file} (${r.width}x${r.height} CSS px${o.scale === undefined ? ', 2x' : `, ${o.scale}x`}${r.abstract ? ', abstract' : ''})`);
       }
-      need(['new', 'add', 'open', 'close', 'rm', 'reload'].includes(sub), 'usage: widget new|add|list|open|close|rm|reload|save|restore|screenshot');
+      need(['new', 'add', 'open', 'close', 'rm', 'reload', 'boards'].includes(sub), 'usage: widget new|add|list|boards|open|close|rm|reload|save|restore|screenshot');
       checkName(name);
       // "top" is a terminal window running htop, not the old widget, so keys work
       if (sub === 'open' && name === 'top') { const p = await api('POST', '/api/examples/top/open', {}); return console.log(`top open as ${p.id}`); }
@@ -484,10 +485,15 @@ async function main(argv) {
       }
       if (sub === 'open' && name === 'files') { const p = await api('POST', `/api/examples/${name}/open`, { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
       // "board FILE": a board that autosaves to that file (the server pins the widget to it; relative paths are from here)
-      if (sub === 'open' && name === 'board' && rest[1] !== undefined) {
-        const file = path.resolve(rest[1]);
-        const p = await api('POST', '/api/examples/board/open', { file, ...dockOpt });
-        return console.log(`widget ${p.props.name} open as ${p.id} (board file ${file})`);
+      if (sub === 'open' && name === 'board') { // no FILE: the default board, a file in the state dir (the server says which)
+        const file = rest[1] !== undefined ? path.resolve(rest[1]) : undefined;
+        const p = await api('POST', '/api/examples/board/open', { ...(file && { file }), ...dockOpt });
+        const bound = (await api('GET', '/api/widgets')).find((w) => w.name === p.props.name)?.file || file;
+        return console.log(`widget ${p.props.name} open as ${p.id} (board file ${bound})`);
+      }
+      if (sub === 'boards') { // every board file this instance knows, newest first; reopen one with: widget open board FILE
+        const list = await api('GET', '/api/boards');
+        return say(o, list, list.length ? list.map((b) => `${b.open ? 'open  ' : 'closed'}  ${b.exists ? new Date(b.mtime).toISOString().slice(0, 16).replace('T', ' ') : '(unsaved)       '}  ${b.file}`).join('\n') : '(no board files yet; hatch widget open board)');
       }
       const target = path.join(l.widgets, name);
       if (sub === 'open' && !fs.existsSync(path.join(target, 'index.html'))) {
