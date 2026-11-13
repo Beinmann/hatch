@@ -7,7 +7,7 @@ export default makeEffect('fireflies', {
   still: 90,
   create(w, h, level) {
     const flies = Array.from({ length: countFor(w, h, 26000, level, 80) }, () => ({
-      x: rnd(0, w), y: rnd(0, h), dir: rnd(0, TAU), turn: 0, sp: rnd(8, 22), pulse: rnd(0.25, 0.7), ph: rnd(0, TAU), r: rnd(1.2, 2),
+      x: rnd(0, w), y: rnd(0, h), dir: rnd(0, TAU), turn: 0, sp: rnd(8, 22), pulse: rnd(0.1, 0.28), ph: rnd(0, TAU), r: rnd(1.2, 2),
     }));
     let T = 0;
     return {
@@ -22,7 +22,8 @@ export default makeEffect('fireflies', {
       },
       draw(ctx) {
         for (const f of flies) {
-          const s = Math.max(0, Math.sin(T * f.pulse * TAU + f.ph)); const g = s * s * s; // mostly dim, a slow bright pulse
+          // rare blinks: slow, randomized per-fly rates, and only the top of each sine counts so each fly spends most of its cycle dim
+          const s = Math.max(0, (Math.sin(T * f.pulse * TAU + f.ph) - 0.3) / 0.7); const g = s * s;
           const a = Math.min(1, (0.12 + 0.88 * g) * level.alpha); if (a < 0.03) continue;
           ctx.fillStyle = '#d6ff6a';
           ctx.globalAlpha = a * 0.1; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * 7, 0, TAU); ctx.fill();
