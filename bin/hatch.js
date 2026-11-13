@@ -64,7 +64,7 @@ panels
   files [DIR]                       file browser (open images and text files, download, drop to upload)
   edit FILE[:LINE]                  small text editor window (Ctrl+S saves); LINE puts the cursor there
   host list [--json] | stop ID | stop --all   list hosted pages; stop hosting one or all (their links then give 404; a file named list or stop: host ./list)
-  host FILE.html [--yes] [--no-open]  open the page full size in a new tab of the Hatch browser UI and print its URL (--no-open only prints; its folder is served read-only; the page is NOT sandboxed, so this warns and asks to confirm; --yes skips the question)
+  host FILE.html [--yes] [--no-open]  open the page full size in a new tab of the Hatch browser UI and print its link (no secret in it; --no-open only prints). The page runs sandboxed; its folder is served read-only to browsers logged in to Hatch, so this warns and asks to confirm (--yes skips the question)
   serve-dir [DIR] [PORT]            serve a folder over HTTP (python3) and show it in a window, e.g. a generated HTML report
   image PATH [--title T]            show an image
   open FILE|DIR|URL [--title T] [--direct]   detect image, HTML page (.html/.htm: rendered in a sandboxed window; edit its source with: hatch edit FILE), text, directory or URL; http://localhost:PORT goes through Hatch's proxy to the box's own port
@@ -510,9 +510,10 @@ async function main(argv) {
       }
       need(sub, 'usage: host FILE.html'); const f = path.resolve(sub); need(fs.existsSync(f) && fs.statSync(f).isFile(), `no such file: ${f}`);
       const folder = path.dirname(f);
-      if (o.yes) console.error(`Warning: ${f} is not sandboxed and gets full access to this Hatch; everything in ${folder} becomes readable to anyone with the link.`);
+      const warn = `Anyone logged in to this Hatch can read the whole folder ${folder} (everything in it except dotfiles), not only ${path.basename(f)}. Host only what you are fine sharing with them.`;
+      if (o.yes) console.error(`Warning: ${warn}`);
       else {
-        console.error(`Warning: hosting ${f}\n  - The page is not sandboxed: it runs with full access to this Hatch instance.\n  - The whole folder ${folder} becomes readable to anyone with the link.\n  - Host only files you trust.`);
+        console.error(`Hosting ${f}\nWarning: ${warn}\nThe page runs in a sandbox: its scripts cannot read the Hatch cookie or call the Hatch API.`);
         if (!process.stdin.isTTY || !process.stderr.isTTY) throw new CliError('there is no terminal to ask on; pass --yes to host this page anyway');
         const rl = (await import('node:readline/promises')).createInterface({ input: process.stdin, output: process.stderr });
         const answer = (await rl.question('Continue? [y/N] ')).trim().toLowerCase(); rl.close();
@@ -521,11 +522,11 @@ async function main(argv) {
       const h = await api('POST', '/api/host', { file: f, ...(ws && { ws }), ...(o['no-open'] && { open: false }) }); const c = readConfig(dir);
       // The address this CLI talks to ($HATCH_URL, else the local server), not the LAN address: behind a reverse proxy the browser's own address differs, which is why the UI builds the URL itself.
       const base = (process.env.HATCH_URL || `http://127.0.0.1:${c.port}`).replace(/\/+$/, '');
-      // A browser that already runs Hatch has the login cookie, so the link needs no token then; otherwise it carries it, as the main URL does.
-      console.log(`${base}${h.path}${h.opened ? '' : `?t=${c.token}`}`);
+      // The link never carries a secret: the page opens in a browser that is logged in to Hatch (the cookie is the login), otherwise the browser shows the login page first.
+      console.log(`${base}${h.path}`);
       if (h.opened) console.error(`Opened in ${h.opened} Hatch browser tab${h.opened === 1 ? '' : 's'} (if the browser blocked the pop-up, click "Open hosted page" there). Only one tab opens it per browser.`);
-      else console.error(o['no-open'] ? 'Not opened in the browser (--no-open).' : 'No Hatch browser tab received it; open the link above in a browser (it carries the token).');
-      console.error('The page is read-only; the folder it is in is served, dotfiles are not. Anyone with the link has full access to this Hatch: share it like the main URL.');
+      else console.error(o['no-open'] ? 'Not opened in the browser (--no-open).' : 'No Hatch browser tab received it; open the link above in a browser that is logged in to Hatch (log in first, then open the link).');
+      console.error('The page is read-only; the folder it is in is served, dotfiles are not. Only browsers logged in to this Hatch can open it. Absolute paths like /style.css in the page do not load: use relative ones.');
       return;
     }
     case 'files': {

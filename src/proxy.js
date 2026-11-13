@@ -17,7 +17,7 @@ export function parseProxyPath(urlPath) {
   return { port, rest: m[2] || '/' };
 }
 
-const stripHatchCookie = (c) => String(c || '').split(';').map((x) => x.trim()).filter((x) => x && !x.startsWith('hatch_token=')).join('; ');
+const stripHatchCookie = (c) => String(c || '').split(';').map((x) => x.trim()).filter((x) => x && !x.startsWith('hatch_token=') && !x.startsWith('hatch_session=')).join('; ');
 
 function upstreamHeaders(req, port) {
   const h = { ...req.headers, host: `127.0.0.1:${port}` };

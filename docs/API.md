@@ -1,7 +1,7 @@
 # HTTP API
 
 Everything the page and `hatch` do goes through this API, so scripts and Claude can call it directly.
-Authenticate with the token from `~/.hatch/config.json` (the state dir: `--state`, `HATCH_STATE`, else `~/.hatch`): header `x-token: TOKEN` (the page uses a cookie). JSON in, JSON out
+Authenticate with the token from `~/.hatch/config.json` (the state dir: `--state`, `HATCH_STATE`, else `~/.hatch`): header `x-token: TOKEN` (the page uses a session cookie from `/login`, see "Login" below; failed token checks are limited per client address, 429 with `Retry-After`). JSON in, JSON out
 unless noted. Errors are `{ "error": "message" }` with a meaningful status (400 bad input, 401 token, 403 Host or --root,
 404, 409 conflict, 413/415 size/type, 502 proxy). Source of truth: `src/server.js`; tests show every route in use.
 
@@ -49,7 +49,7 @@ repair the file or use PUT to replace it. Removing the file clears the checklist
 
 ## Files and images
 
-`POST /api/host` `{file}` (absolute path; returns `{id, path, opened}`: the `/host/ID/NAME` path that `hatch host` turns into a URL after its confirmation prompt; optional `ws` (only tabs showing that workspace) and `open: false` (no event); `opened` counts the full-access event streams that got an `open-hosted` event `{path, id}` (view-only streams never do; the browser opens `location.origin + path`, one tab per browser, with a click-to-open toast when pop-ups are blocked) (the API itself does not ask; hosted pages are not sandboxed); `GET /host/ID/...` serves that file's folder read-only), `GET /api/host` (hosted pages: `[{id, dir, entry, path}]`), `DELETE /api/host/ID` (stop hosting one; 404 for an unknown id) and `DELETE /api/host` (stop all; `{ok, stopped}`), all three full token only, `POST /api/upload` (raw image body), `GET /api/file?path=` (images only), `GET /api/fs/list|read|resolve|download`,
+`POST /api/host` `{file}` (absolute path; returns `{id, path, opened}`: the `/host/ID/NAME` path that `hatch host` turns into a URL after its confirmation prompt; optional `ws` (only tabs showing that workspace) and `open: false` (no event); `opened` counts the full-access event streams that got an `open-hosted` event `{path, id}` (view-only streams never do; the browser opens `location.origin + path`, one tab per browser, with a click-to-open toast when pop-ups are blocked) (the API itself does not ask). `GET|HEAD /host/ID/...` serves that file's folder read-only to a logged-in browser (session cookie or token; 401 otherwise), always with the sandbox CSP; an HTML page gets `<base href="/host-r/SECRET/ID/">` with a fresh per-load secret, and `GET|HEAD /host-r/SECRET/ID/...` serves the same folder without a cookie while the secret lives (10 minutes idle, 2 hours at most, ended by un-hosting or rotating the token; `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, CORS `*`; 404 for a wrong, expired or other page's secret), `GET /api/host` (hosted pages: `[{id, dir, entry, path}]`), `DELETE /api/host/ID` (stop hosting one; 404 for an unknown id) and `DELETE /api/host` (stop all; `{ok, stopped}`), all three full token only, `POST /api/upload` (raw image body), `GET /api/file?path=` (images only), `GET /api/fs/list|read|resolve|download`,
 `PUT /api/fs/write {path,text,mtime}`, `POST /api/fs/mkdir|newfile|rename|delete|upload` (upload: raw body, `?dir=&name=`).
 All confined by `hatch-server serve --root DIR` when given. File reads return a numeric `mtime`; pass it unchanged
 when saving to refuse changed or deleted files (409). Omit `mtime` for an unconditional write or explicit file creation.
@@ -124,3 +124,11 @@ only from the focused widget frame, and answers with `hatch-leader` so the SDK k
 ## Background effect
 
 `GET /api/fx` answers `{effect, intensity, effects}` (`effect` is `null` when off; `intensity` is 0..100 for the active effect, default 50); `POST /api/fx {effect?: "matrix"|"rain"|"goo"|"snow"|"starfield"|"aurora"|"fireflies"|"embers"|"waves"|"off", intensity?: 0..100}` saves it to `fx.json` in the state dir (400 for an unknown name, an intensity outside 0..100, an intensity with no effect active, or an empty body). Intensity is kept per effect; a body with only `intensity` changes the active effect. The SSE `snapshot` carries `fx: {effect, intensity}` and an `fx` event `{effect, intensity}` follows every change, including hand edits of the file; a changed intensity is applied by open pages without reloading the effect.
+
+## Login
+
+`GET /login` is the login page; `POST /login` (form field `token`) answers 303 to `/` with a `hatch_session` cookie (random 256-bit id, `HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000`, plus `Secure` behind `X-Forwarded-Proto: https`), or 401 with the same message for any wrong input. `GET /login?code=CODE` exchanges a single-use code (valid about 5 minutes) for a session and answers 302 to `/` (`Referrer-Policy: no-referrer`, `Cache-Control: no-store`). `GET /?t=TOKEN` (legacy) does the same with the token and redirects to the same path without the query. A `hatch_token` cookie that holds the raw token (legacy) is accepted and replaced by a session on the next page load. Full access only (never in a view-only mirror):
+
+- `GET /api/auth/sessions` lists `[{id, created, lastSeen, expires, hint}]` (`id` is the first 8 characters of the stored hash; ids are never returned); `DELETE /api/auth/sessions/ID` ends one (at least 4 characters of `id`; 404 unknown, 400 ambiguous or too short) and `DELETE /api/auth/sessions` ends all (`{ended}`).
+- `POST /api/auth/once` makes a single-use login code: `{code, expiresInSec}`; the link is `/login?code=CODE`.
+- `POST /api/auth/rotate-token` writes a new token to `config.json` (mode 0600), ends every session, code and hosted-page secret, and answers `{token, ended}`; the new token is shown only in this response.

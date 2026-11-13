@@ -51,7 +51,7 @@ test('a browser holding the view cookie can log in with the full link (and a vie
   try {
     const vt = /\?t=(\w+)/.exec(spawnSync('node', [HATCH, 'url', '--view', '--state', h.stateDir], { encoding: 'utf8' }).stdout)[1];
     const up = await fetch(`${h.base}/?t=${h.hatch.token}`, { redirect: 'manual', headers: { cookie: `hatch_token=${vt}` } });
-    assert.equal(up.status, 302); assert.match(up.headers.get('set-cookie'), new RegExp(h.hatch.token));
+    assert.equal(up.status, 302); assert.match(up.headers.get('set-cookie'), /hatch_session=[a-f0-9]{64}/); assert.doesNotMatch(up.headers.get('set-cookie'), new RegExp(`hatch_session=${h.hatch.token}`), 'the cookie holds a session id, not the token');
     const down = await fetch(`${h.base}/?t=${vt}`, { redirect: 'manual', headers: { cookie: `hatch_token=${h.hatch.token}` } });
     assert.equal(down.status, 200, 'a full session is not replaced by a view link');
   } finally { await h.close(); }
