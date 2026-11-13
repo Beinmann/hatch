@@ -71,6 +71,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | exec placeholders in widget sources | 057 | sources.js, server.js | yes | |
 | Git status widget (sections, per-project instances via `hatch widget open git`) | - | examples/widgets/git, server openGitFor | parser and server, not seen in a browser | read-only |
 | Board widget (PROTOTYPE: pan/zoom canvas, text cards, arrows, saved to data/board.json via exec sources) | - | examples/widgets/board, test/board.test.js | headless Chromium only (layout and interaction; text glyphs not visible there) | model in model.js is node-tested; no undo, plain text only |
+| Widget layout per directory (`hatch widget save|restore [DIR]`, .hatch-widgets.json) | - | src/widget-layout.js, bin/hatch.js, test/cli.test.js | CLI and server API, not seen in a browser | layout only; widgets not installed here are skipped with a warning; a saved minimized state is not re-applied |
 | ports metric, ports and pomodoro widgets | 051 | sources.js, examples/widgets | yes | |
 | Task runner, listening ports | 047 | src/discover.js | tests only | |
 | Session report | 046 | server /api/report, ui.js | CLI only | |

@@ -170,6 +170,8 @@ hatch image screenshot.png --size 800x550
 hatch open README.md                 # images, text files, HTML pages, directories or http(s) URLs
 ha w o git                       # short forms: `ha` is `hatch`, `w` is `widget`, `o` is `open` after `widget` (top-level `open` stays for files, folders and URLs)
 hatch widget open NAME --dock     # open the widget in the dock instead of as a floating window
+hatch widget save [DIR]         # write DIR/.hatch-widgets.json: name, position, size, placement of this workspace's widgets (layout only, no content)
+hatch widget restore [DIR]      # open the missing ones, move/resize the open ones, un-minimize them; closes nothing; a bad file only warns
 hatch widget examples              # bundled example widgets (hatch widget open NAME installs and opens one)
 hatch popup open progress
 hatch popup create my-clock --from clock
