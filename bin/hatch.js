@@ -60,6 +60,7 @@ widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget list | open NAME [--dock] | close NAME | rm NAME | reload NAME   (open git: the git window for the current directory's repository)
   widget save [DIR] | restore [DIR]   write / apply the layout (name, position, size, placement) of this workspace's widgets in DIR/.hatch-widgets.json (default .);
                                     restore opens missing widgets, moves and resizes open ones, un-minimizes them, closes nothing
+  widget open board FILE.board.json  a board that autosaves straight to that file (created on the first save; relative to here)
   widget examples                   list the example widgets (also in the palette)
   widget generate "DESCRIPTION" [--name N]   ask \`claude -p\` to write a widget from a description, then open it
                                     (alias: popup generate; set HATCH_CLAUDE to use another claude binary)
@@ -462,6 +463,12 @@ async function main(argv) {
       if (sub === 'open' && name === 'top') { const p = await api('POST', '/api/examples/top/open', {}); return console.log(`top open as ${p.id}`); }
       // "git" follows the shell: one widget per project, made by the server for this directory (the server does not know our cwd)
       if (sub === 'open' && name === 'git') { const p = await api('POST', '/api/examples/git/open', { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
+      // "board FILE": a board that autosaves to that file (the server pins the widget to it; relative paths are from here)
+      if (sub === 'open' && name === 'board' && rest[1] !== undefined) {
+        const file = path.resolve(rest[1]);
+        const p = await api('POST', '/api/examples/board/open', { file, ...dockOpt });
+        return console.log(`widget ${p.props.name} open as ${p.id} (board file ${file})`);
+      }
       const target = path.join(l.widgets, name);
       if (sub === 'open' && !fs.existsSync(path.join(target, 'index.html'))) {
         // Not installed: a bundled example of that name is copied in and opened by the server.

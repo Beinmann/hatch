@@ -79,3 +79,61 @@ test('board example: the save and load sources write the file in chunks and read
     assert.equal(bad.data.value.code, 1, 'unknown steps are refused');
   } finally { await h.close(); }
 });
+
+test('board file: open with a path pins load and save to that file (quotes in the path, new file, bad paths refused)', async () => {
+  const h = await startHatch();
+  const dir = path.join(h.dir, "it's a dir"); fs.mkdirSync(dir);
+  const file = path.join(dir, 'plan.board.json');
+  try {
+    const open = (f, extra = {}) => h.call('POST', '/api/examples/board/open', { file: f, ...extra });
+    const r0 = await open(file); assert.equal(r0.status, 200, JSON.stringify(r0.data));
+    const name = r0.data.props.name; assert.equal(name, 'board-plan');
+    const call = async (source, arg) => { const r = await h.call('POST', '/api/call', { widget: name, source, arg }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.value; };
+    assert.equal((await call('load')).json, null, 'new file: empty board');
+    const { board } = J(M.addCard(M.empty(), 10, 10, 'on disk'));
+    const parts = M.chunks(board);
+    await call('save', 'B ' + parts[0]); for (const p of parts.slice(1)) await call('save', 'A ' + p);
+    assert.ok(!fs.existsSync(file), 'not live before the commit step');
+    await call('save', 'C');
+    assert.deepEqual(J(M.sanitize(JSON.parse(fs.readFileSync(file, 'utf8')))), J(M.sanitize(board)), 'plain JSON in the chosen file');
+    assert.deepEqual(J(M.sanitize((await call('load')).json)), J(M.sanitize(board)));
+    assert.ok(!fs.existsSync(path.join(h.stateDir, 'widgets', 'board', 'data')), 'the default data dir is untouched');
+    // the same file again reuses the widget; another folder with the same file name gets its own
+    assert.equal((await open(file)).data.props.name, name);
+    const other = path.join(h.dir, 'plan.board.json');
+    assert.match((await open(other)).data.props.name, /^board-plan-[0-9a-f]{6}$/);
+    // refused: wrong suffix, relative, directory, missing folder, a regular file that is not a board, control characters
+    const plain = path.join(h.dir, 'notes.json'); fs.writeFileSync(plain, '{}');
+    const link = path.join(h.dir, 'sneaky.board.json'); fs.symlinkSync(plain, link);
+    const asDir = path.join(h.dir, 'd.board.json'); fs.mkdirSync(asDir);
+    for (const bad of [plain, 'rel.board.json', asDir, path.join(h.dir, 'nodir', 'x.board.json'), link, path.join(h.dir, 'a\nb.board.json'), path.join(h.dir, '.board.json')]) {
+      const r = await open(bad); assert.equal(r.status, 400, bad); assert.ok(r.data.error, bad);
+    }
+    assert.equal(fs.readFileSync(plain, 'utf8'), '{}');
+    // a malformed existing file reports a load error (the widget then keeps saving off)
+    const broken = path.join(h.dir, 'broken.board.json'); fs.writeFileSync(broken, '{nope');
+    const bn = (await open(broken)).data.props.name;
+    const lr = (await h.call('POST', '/api/call', { widget: bn, source: 'load' })).data.value; assert.match(lr.error, /not JSON/);
+  } finally { await h.close(); }
+});
+
+test('hatch widget open board FILE resolves a relative path from the caller and creates the board widget', async () => {
+  const { spawn } = await import('node:child_process');
+  // async: a sync spawn would freeze the in-process server the CLI talks to
+  const run = (args, opts) => new Promise((resolve) => { const c = spawn(process.execPath, args, opts); let stdout = ''; let stderr = ''; c.stdout.on('data', (d) => { stdout += d; }); c.stderr.on('data', (d) => { stderr += d; }); c.on('close', (status) => resolve({ status, stdout, stderr })); });
+  const h = await startHatch();
+  try {
+    const cwd = fs.mkdtempSync(path.join(h.dir, 'cwd-'));
+    const env = { ...process.env, HOME: h.dir }; for (const k of ['HATCH_STATE', 'HATCH_URL', 'HATCH_WORKSPACE']) delete env[k];
+    const bin = fileURLToPath(new URL('../bin/hatch.js', import.meta.url));
+    const r = await run([bin, '--state', h.stateDir, 'w', 'o', 'board', './plan.board.json'], { cwd, env });
+    assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /widget board-plan open as w-board-plan/);
+    const meta = JSON.parse(fs.readFileSync(path.join(h.stateDir, 'widgets', 'board-plan', 'widget.json'), 'utf8'));
+    assert.equal(meta.file, path.join(fs.realpathSync(cwd), 'plan.board.json'));
+    const bad = await run([bin, '--state', h.stateDir, 'widget', 'open', 'board', './plan.txt'], { cwd, env });
+    assert.equal(bad.status, 1); assert.match(bad.stderr, /\.board\.json/);
+    // plain `widget open board` keeps the default behaviour
+    const plainOpen = await run([bin, '--state', h.stateDir, 'widget', 'open', 'board'], { cwd, env });
+    assert.equal(plainOpen.status, 0, plainOpen.stderr); assert.match(plainOpen.stdout, /widget board open as w-board\b/);
+  } finally { await h.close(); }
+});
