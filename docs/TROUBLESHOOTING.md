@@ -6,7 +6,8 @@ Start with `hatch-server doctor` (node, python3, tmux, optional tools, state dir
 
 | Symptom | Cause and fix |
 |---|---|
-| Page shows "Token needed" / 401 | Open the URL printed by `hatch-server serve` (ends in `?t=...`), or run `hatch-server url` again. A browser keeps the token in a cookie; clear it if you changed the token. |
+| Page shows "You are not logged in" / 401 | Open `/login`, paste the token (`hatch-server token` prints it) or use the single-use link from `hatch-server url --once`. Sessions last 30 days and end with `hatch-server logout` or `rotate-token`. A hosted page (`/host/...`) gives the same 401 until this browser is logged in; if you are logged in and came from a link in another site, use the page's "Try again" link. |
+| 429 "too many failed logins" | Wrong tokens from your address locked it out for a short time (30 s, doubling up to 15 min); the server log has a `login locked` line. Wait, or log in from a browser that already has a session (those are never blocked). Behind a reverse proxy on the same box the proxy's `X-Forwarded-For` address is what is limited. |
 | `Host ... is not allowed` (403) | The DNS-rebinding guard. IP addresses and `localhost` always work; add other names, one per line, to `~/.hatch/allowed-hosts` (survives `hatch-server clear`), or to `allowedHosts` in `~/.hatch/config.json`, or to `HATCH_ALLOW_HOSTS`; restart Hatch afterwards. |
 | Banner "The terminal cannot start: ... tmux" | tmux is not installed or not on PATH for the server. Install it (`apt install tmux`) and press Reconnect. |
 | Terminal text is garbled after a reconnect | Press Reconnect; in tmux `Ctrl+B r` (if bound) or `tmux refresh-client` repaints. |

@@ -88,6 +88,8 @@ removing its files and its CLI case, palette entry and README bullet.
 
 ## Not done / known gaps
 
+Login: `/login`, hashed server-side sessions, rotate-token, single-use login links, per-address failed-login limit, hosted-page sandbox with per-load secrets (test/login.test.js, test/host-auth.test.js; the login page and a hosted multi-file page were seen in headless Chromium). See `docs/SECURITY.md`.
+
 Security pass (009) is mostly open: widget files and /sdk.js are served without the token, `/proxy/PORT` reaches any local
 port and proxied pages share Hatch's origin, run/term/exec commands are unrestricted. Never tried: a real phone, a real
 OS clipboard, drag-drop of real files, Claude Code reading a pasted image, Claude building a widget from the snippet.

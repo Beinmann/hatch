@@ -80,7 +80,7 @@ function notify({ text, level }) {
   if (store.get('sound', false)) beep();
 }
 
-// `hatch host`: open the page at this browser's own origin (works behind a reverse proxy; the login cookie covers the token).
+// `hatch host`: open the page at this browser's own origin (works behind a reverse proxy; the login cookie is what authorises it).
 // Every connected tab gets the event; they agree through localStorage which one acts (a visible tab first), so one browser opens one page.
 // A pop-up without a user click is often blocked: then a toast stays until you click its link (a click is allowed to open a window).
 function openHosted({ path: p, id }) {

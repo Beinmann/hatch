@@ -214,3 +214,15 @@ test('hatch-server CLI without a running server: sessions, logout and rotate-tok
   const rot = await run('rotate-token'); const fresh = rot.stdout.trim(); assert.notEqual(fresh, old); assert.equal(JSON.parse(fs.readFileSync(path.join(h.stateDir, 'config.json'), 'utf8')).token, fresh);
   assert.match((await run('sessions')).stdout, /no browser is logged in/);
 });
+
+test('ending a session closes its open event stream within about 5 seconds; a stream that used the x-token header keeps running', async () => {
+  const h = await startHatch();
+  try {
+    const id = sid(await fetch(`${h.base}/login`, form(h.hatch.token)));
+    const ended = (async (headers) => { const r = await fetch(`${h.base}/api/events`, { headers, signal: AbortSignal.timeout(9000) }); try { for await (const c of r.body) void c; return true; } catch { return false; } });
+    const sessionStream = ended({ cookie: `hatch_session=${id}` }); const tokenStream = ended({ 'x-token': h.hatch.token });
+    await sleep(400); h.hatch.sessions.revokeAll();
+    assert.equal(await sessionStream, true, 'the session stream ended by itself');
+    assert.equal(await tokenStream, false, 'the x-token stream was still open when the timeout aborted it');
+  } finally { await h.close(); }
+});
