@@ -115,6 +115,8 @@ PATCH either field to change it.
 restores it, applies supplied size/placement/workspace options, and raises it by default. Saved geometry stays
 unless supplied. `activation` identifies a repeated open so a visible window can be raised again.
 POST `/api/examples/NAME/open` accepts `w`, `h`, `maximized`, `autoFocus` and `ws` in its JSON body. For `board`, `file` (an absolute path ending in `.board.json`: an existing regular file or a new file in an existing folder; 400 otherwise) opens a board widget `board-NAME` whose `load` and `save` sources are pinned to that file; the same file reuses its widget.
+
+Board files are plain JSON (`{"version":1,"cards":[{"id":"c1","x":0,"y":0,"w":180,"h":100,"text":"..."}],"arrows":[],"view":{"x":0,"y":0,"zoom":1},"nextId":2}`; ids are `cN`, `nextId` above every used number). A card's `text` may contain checklist lines `- [ ] item` and `- [x] item` (also `*` bullets, indentation, `[X]`): the card shows them as checkboxes with a done/total count, a click toggles that line in `text` and autosaves, other lines stay plain text. An agent can present todos by writing such a file before `hatch widget open board FILE`, then read the file later to see what was ticked. Items that need discussion: leave the card text free-form and let the user add to it.
 `editor` in config.json picks what opens text files: `"auto"` or unset (vim in a terminal window when installed, else the built-in editor), `"builtin"`, or a command name such as `"nvim"`. `POST /api/panels` applies it to `editor` requests (binary or missing files and `builtin: true` stay in the built-in editor); the window is a `terminal` panel named `vim-FILE-HASH`.
 `imageSize` in config.json is a `WIDTHxHEIGHT` default for image windows (180–8192 wide, 90–8192 high).
 

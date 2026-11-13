@@ -28,6 +28,16 @@
   .card .x { position: absolute; right: 2px; top: -1px; height: 16px; border: 0; padding: 0 4px; line-height: 14px; opacity: .6; }
   .card .x:hover { opacity: 1; color: var(--accent, #6af); }
   .card textarea { flex: 1; min-height: 0; resize: none; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; padding: 4px 6px; user-select: text; cursor: text; }
+  .card .view { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px; white-space: pre-wrap; word-break: break-word; user-select: text; cursor: text; }
+  .card .view .ck { display: flex; gap: 5px; align-items: flex-start; white-space: normal; cursor: pointer; }
+  .card .view .ck input { margin: 2px 0 0; flex: none; cursor: pointer; }
+  .card .view .ck.done span { text-decoration: line-through; opacity: .55; }
+  .card .view .ln0 { min-height: 1.35em; }
+  .card .prog { position: absolute; left: 4px; top: 0; height: 14px; line-height: 14px; font-size: 10px; color: var(--muted, #888); pointer-events: none; }
+  .card.checks textarea { display: none; }
+  .card.checks.editing textarea { display: block; }
+  .card.checks.editing .view { display: none; }
+  .card:not(.checks) .view, .card:not(.checks) .prog { display: none; }
   .card .out { position: absolute; right: -7px; top: 50%; margin-top: -7px; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%;
     background: var(--bg, #1b1b1b); border: 2px solid var(--accent, #6af); cursor: crosshair; opacity: 0; }
   .card:hover .out, .card.sel .out { opacity: 1; }
@@ -36,7 +46,7 @@
 </style>
 </head>
 <body>
-<div id="bar"><span class="hint">PROTOTYPE. Double-click: new card. Drag the card top: move. Drag the right dot to another card: arrow. Click + Delete: remove. Wheel: zoom.</span>
+<div id="bar"><span class="hint">PROTOTYPE. Double-click: new card. Drag the card top: move. Drag the right dot to another card: arrow. Click + Delete: remove. Lines like \"- [ ] item\" in a card are checkboxes: click to tick. Wheel: zoom.</span>
   <span id="status" class="hint" style="flex:none"></span><button id="add">+ card</button><button id="reset">reset view</button></div>
 <div id="stage"><div id="world"><svg id="lines"><defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg></div></div>
 <script src="/sdk.js"></script>
@@ -72,18 +82,39 @@
   function place(el, c) { el.style.left = c.x + 'px'; el.style.top = c.y + 'px'; el.style.width = c.w + 'px'; el.style.height = c.h + 'px'; }
   function cardEl(c) {
     var el = mk('div', 'card'); el.dataset.id = c.id;
-    var top = mk('div', 'top'), x = mk('button', 'x', '×'), ta = mk('textarea'), out = mk('div', 'out'), rs = mk('div', 'rs');
+    var top = mk('div', 'top'), x = mk('button', 'x', '×'), ta = mk('textarea'), view = mk('div', 'view'), prog = mk('span', 'prog'), out = mk('div', 'out'), rs = mk('div', 'rs');
     x.title = 'delete card'; ta.value = c.text; ta.placeholder = 'text'; ta.spellcheck = false;
     x.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
     x.addEventListener('click', function () { board = M.removeCard(board, c.id); if (sel && sel.id === c.id) sel = null; render(); changed(); });
     ta.addEventListener('input', function () { board = M.setText(board, c.id, ta.value); changed(); });
-    ta.addEventListener('focus', function () { select('card', c.id); });
+    ta.addEventListener('focus', function () { el.classList.add('editing'); select('card', c.id); });
+    ta.addEventListener('blur', function () { el.classList.remove('editing'); render(); });
+    view.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    view.addEventListener('dblclick', function (e) { e.stopPropagation(); });
+    // a click on a checkbox row toggles that line; a click on any other line (or the empty area) opens the raw text for editing
+    view.addEventListener('click', function (e) {
+      var row = e.target.closest && e.target.closest('.ck');
+      if (row) { board = M.toggleCheck(board, c.id, +row.dataset.line); render(); changed(); return; }
+      el.classList.add('editing'); ta.focus();
+    });
     ta.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
     ta.addEventListener('dblclick', function (e) { e.stopPropagation(); });
     top.addEventListener('pointerdown', function (e) { dragCard(e, c.id); });
     out.addEventListener('pointerdown', function (e) { dragArrow(e, c.id); });
     rs.addEventListener('pointerdown', function (e) { resizeCard(e, c.id); });
-    top.appendChild(x); el.append(top, ta, out, rs); return el;
+    top.appendChild(x); top.appendChild(prog); el.append(top, view, ta, out, rs); return el;
+  }
+  // checklist view of a card: rebuilt from the text on every render (cheap), only shown when the text has checklist lines
+  function drawChecks(el, c) {
+    var p = M.progress(c.text), view = el.querySelector('.view'), prog = el.querySelector('.prog');
+    el.classList.toggle('checks', p.total > 0); prog.textContent = p.total ? p.done + '/' + p.total : '';
+    if (!p.total || el.classList.contains('editing') && document.activeElement === el.querySelector('textarea')) return;
+    view.textContent = '';
+    M.lines(c.text).forEach(function (l, i) {
+      if (!l.check) { view.appendChild(mk('div', 'ln0', l.text)); return; }
+      var row = mk('div', 'ck' + (l.check.checked ? ' done' : '')), box = document.createElement('input');
+      row.dataset.line = i; box.type = 'checkbox'; box.checked = l.check.checked; row.append(box, mk('span', '', l.check.label)); view.appendChild(row);
+    });
   }
   function render() {
     var live = new Set(board.cards.map(function (c) { return c.id; }));
@@ -92,6 +123,7 @@
       var el = els.get(c.id); if (!el) { el = cardEl(c); els.set(c.id, el); world.appendChild(el); }
       place(el, c); el.style.zIndex = i + 1; el.classList.toggle('sel', !!sel && sel.kind === 'card' && sel.id === c.id);
       var ta = el.querySelector('textarea'); if (ta.value !== c.text && document.activeElement !== ta) ta.value = c.text;
+      drawChecks(el, c);
     });
     drawLines(); applyView();
   }

@@ -137,3 +137,18 @@ test('hatch widget open board FILE resolves a relative path from the caller and 
     assert.equal(plainOpen.status, 0, plainOpen.stderr); assert.match(plainOpen.stdout, /widget board open as w-board\b/);
   } finally { await h.close(); }
 });
+
+test('checklist: lines parse, progress counts, toggleCheck flips one line and survives bad input', () => {
+  const text = 'Todo\n- [ ] one\n  * [x] two\n- [X] three\n-[ ] not a box\n- [] nor this';
+  assert.deepEqual(J(M.progress(text)), { done: 2, total: 3 });
+  assert.deepEqual(J(M.lines(text).map((l) => l.check)), [null, { checked: false, label: 'one' }, { checked: true, label: 'two' }, { checked: true, label: 'three' }, null, null]);
+  const { board, id } = J(M.addCard(M.empty(), 0, 0, text));
+  const b1 = J(M.toggleCheck(board, id, 1)); assert.equal(b1.cards[0].text.split('\n')[1], '- [x] one');
+  const b2 = J(M.toggleCheck(b1, id, 2)); assert.equal(b2.cards[0].text.split('\n')[2], '  * [ ] two');
+  assert.equal(b2.cards[0].text.split('\n')[3], '- [X] three');
+  assert.equal(J(M.toggleCheck(b2, id, 3)).cards[0].text.split('\n')[3], '- [ ] three');
+  for (const bad of [0, 4, 99, -1, NaN, undefined]) assert.deepEqual(J(M.toggleCheck(board, id, bad)), board);
+  assert.deepEqual(J(M.toggleCheck(board, 'nope', 1)), board);
+  assert.deepEqual(J(M.progress(undefined)), { done: 0, total: 0 });
+  assert.equal(M.toggleCheck(board, id, 1).cards.length, 1);
+});

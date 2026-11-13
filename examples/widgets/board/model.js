@@ -43,6 +43,28 @@
   const setText = (b, id, text) => patchCard(b, id, { text: String(text) });
   const removeCard = (b, id) => ({ ...b, cards: b.cards.filter((c) => c.id !== id), arrows: b.arrows.filter((a) => a.from !== id && a.to !== id) });
 
+  // Checklist lines inside a card's text: "- [ ] item" / "- [x] item" (also "*" bullets, indentation, capital X).
+  const CHECK_RE = /^(\s*[-*]\s+\[)([ xX])(\](?:\s|$))/;
+  /** Lines of a card text as [{text, check: null | {checked, label}}]; the index is the line number used by toggleCheck. */
+  function lines(text) {
+    return String(text == null ? '' : text).split('\n').map((t) => {
+      const m = CHECK_RE.exec(t);
+      return { text: t, check: m ? { checked: m[2] !== ' ', label: t.slice(m[0].length) } : null };
+    });
+  }
+  /** {done, total} of the checklist lines in a text; total 0 means the card is plain text. */
+  function progress(text) {
+    const l = lines(text).filter((x) => x.check);
+    return { done: l.filter((x) => x.check.checked).length, total: l.length };
+  }
+  /** Flips the checkbox on line `lineIndex` of a card's text. Anything that is not a checklist line leaves the board unchanged. */
+  function toggleCheck(b, id, lineIndex) {
+    const c = b.cards.find((k) => k.id === id); if (!c) return b;
+    const ls = c.text.split('\n'); const m = CHECK_RE.exec(ls[lineIndex] == null ? '' : ls[lineIndex]); if (!m) return b;
+    ls[lineIndex] = m[1] + (m[2] === ' ' ? 'x' : ' ') + ls[lineIndex].slice(m[1].length + 1);
+    return setText(b, id, ls.join('\n'));
+  }
+
   /** Adds an arrow unless it would be a self loop, duplicate, or touch an unknown card. Returns {board, id|null}. */
   function addArrow(b, from, to) {
     const has = (id) => b.cards.some((c) => c.id === id);
@@ -88,6 +110,6 @@
     const out = []; for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size)); return out;
   }
 
-  const api = { CARD_W, CARD_H, empty, sanitize, parse, serialize, addCard, moveCard, setText, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, cardAt, raise, chunks };
+  const api = { CARD_W, CARD_H, empty, sanitize, parse, serialize, addCard, moveCard, setText, lines, progress, toggleCheck, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, cardAt, raise, chunks };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ScratchModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
