@@ -20,6 +20,7 @@ import * as wsapi from '../src/workspaces.js';
 import * as transparency from '../src/transparency.js';
 import { setFx, readFx, FxError, EFFECTS } from '../src/fx.js';
 import { parseEvery } from '../src/schedules.js';
+import { groupWindows, resolveWindow, folderNameProblem, deletePatches, renamePatches, folderOf } from '../public/folders.js';
 import { LAYOUT_FILE, entriesFromPanels, writeLayout, readLayout } from '../src/widget-layout.js';
 
 // Server commands used to live under `hatch`. Forward them to `hatch-server` with a one-line notice so running setups,
@@ -106,6 +107,13 @@ ask the user (blocks until they answer in the browser; prints the answer)
   set transparency 0..100           make the terminal and panels see-through: 0 = opaque, 30 = default, 100 = fully transparent (saved in transparency.json)
   set window-transparency 0..100|default|follow    transparency of windows you did not set one by one (leader o); "default" = 0 (opaque, the built-in default), "follow" = same as the terminal/page transparency (saved in transparency.json). Above 80 is capped at 80
   set background-mode MODE          how it fits: fill (cover, default) | fit (contain) | stretch | center | tile (saved in background.json)
+folders (a named group in the taskbar: a minimized member goes back into its folder, not the main bar; per workspace, flat)
+  folder list                       folders of this workspace with their members
+  folder new NAME [WINDOW...]       put the windows in folder NAME (created with its first member; WINDOW = id from \`hatch panels\`, widget name or unique title)
+  folder add NAME WINDOW...         add windows to a folder (moves them out of any other folder)
+  folder remove WINDOW...           take windows out of their folder, back to the main bar
+  folder rename OLD NEW             rename a folder
+  folder delete NAME                dissolve a folder; its members go back to the main bar (no window is closed)
 workspaces (named sets of windows with their own terminal and background, in this one instance)
   workspace list                    names, window counts, which have a background
   workspace new NAME                create an empty workspace (switch to it in the page: palette, "workspace: switch")
@@ -840,6 +848,45 @@ async function main(argv) {
       if (!sub && o.intensity === undefined) { const f = readFx(fxDir); return say(o, { effect: f.effect, intensity: f.intensity, intensities: f.intensities, effects: EFFECTS }, `active: ${f.effect || 'none'}${f.effect ? ` (intensity ${f.intensity}, 0-100)` : ''}${f.problem ? ` (${f.problem})` : ''}\neffects: ${EFFECTS.join(', ')}, off`); }
       try { const f = setFx(fxDir, sub, o.intensity); return console.log(f.effect ? `fx ${f.effect} on in workspace ${fxWs}, intensity ${f.intensity}; \`hatch fx off\` turns it off. Open pages update by themselves.` : 'fx off'); }
       catch (e) { if (e instanceof FxError) throw new CliError(e.message); throw e; }
+    }
+    case 'folder': {
+      const usage = 'usage: folder list | new NAME [WINDOW...] | add NAME WINDOW... | remove WINDOW... | rename OLD NEW | delete NAME';
+      const fws = ws || 'main'; const enc = encodeURIComponent;
+      const panels = await api('GET', '/api/panels');
+      const find = (ref) => { try { return resolveWindow(panels, fws, ref); } catch (e) { throw new CliError(e.message); } };
+      const setFolder = (list, folder) => Promise.all(list.map((id) => api('PATCH', `/api/panels/${enc(id)}`, { folder })));
+      const known = (name) => groupWindows(panels, fws).folders.find((f) => f.name === name);
+      const badName = (name) => { const m = folderNameProblem(name); if (m) throw new CliError(`${JSON.stringify(name)}: ${m}`); };
+      if (!sub || sub === 'list') {
+        const { folders } = groupWindows(panels, fws); const by = new Map(panels.map((p) => [p.id, p]));
+        const view = folders.map((f) => ({ name: f.name, windows: f.ids.map((id) => ({ id, title: by.get(id).title, minimized: by.get(id).minimized === true })) }));
+        return say(o, view, view.length ? view.map((f) => `${f.name}  (${f.windows.length})\n${f.windows.map((w) => `  ${w.id}  ${w.title}${w.minimized ? '  minimized' : ''}`).join('\n')}`).join('\n') : `(no folders in workspace ${fws}; \`hatch folder new NAME WINDOW\` makes one)`);
+      }
+      if (sub === 'new' || sub === 'add') {
+        need(rest[0] && (sub === 'new' || rest[1]), usage); badName(rest[0]);
+        if (sub === 'new') need(!known(rest[0]), `folder ${rest[0]} already exists; add to it with \`folder add ${rest[0]} WINDOW\``);
+        if (sub === 'add') need(known(rest[0]), `no folder ${rest[0]} in workspace ${fws}; create it with \`folder new ${rest[0]} WINDOW\``);
+        const ids = rest.slice(1).map((r) => find(r).id);
+        await setFolder(ids, rest[0]);
+        return console.log(ids.length ? `${ids.length} window${ids.length === 1 ? '' : 's'} in folder ${rest[0]}` : `folders exist only while they hold a window; add one with \`folder add ${rest[0]} WINDOW\``);
+      }
+      if (sub === 'remove') {
+        need(rest.length, usage);
+        const ids = rest.map((r) => find(r)).filter((p) => folderOf(p)).map((p) => p.id);
+        await setFolder(ids, null);
+        return console.log(`${ids.length} window${ids.length === 1 ? '' : 's'} back in the main bar`);
+      }
+      if (sub === 'rename') {
+        need(rest[0] && rest[1], usage); badName(rest[1]); need(known(rest[0]), `no folder ${rest[0]} in workspace ${fws}`); need(!known(rest[1]), `folder ${rest[1]} already exists`);
+        await Promise.all(renamePatches(panels, fws, rest[0], rest[1]).map((u) => api('PATCH', `/api/panels/${enc(u.id)}`, { folder: u.folder })));
+        return console.log(`folder ${rest[0]} is now ${rest[1]}`);
+      }
+      if (sub === 'delete') {
+        need(rest[0], usage); need(known(rest[0]), `no folder ${rest[0]} in workspace ${fws}`);
+        const list = deletePatches(panels, fws, rest[0]); await setFolder(list.map((u) => u.id), null);
+        return console.log(`folder ${rest[0]} deleted; its ${list.length} window${list.length === 1 ? '' : 's'} went back to the main bar`);
+      }
+      throw new CliError(usage);
     }
     case 'workspace': {
       const usage = 'usage: workspace list | new NAME | rename OLD NEW | close NAME --confirm NAME | import STATE-DIR [NAME]';
