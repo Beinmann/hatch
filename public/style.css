@@ -70,7 +70,7 @@ html.has-fx #fx{display:block;position:absolute;inset:0;width:100%;height:100%;z
 #dropmsg[hidden],#reconnect[hidden]{display:none}
 #reconnect{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:var(--warn-soft);color:var(--fg);border:1px solid var(--warn);padding:6px 12px;border-radius:6px;display:flex;gap:10px;align-items:center;z-index:5}
 #split{width:5px;cursor:col-resize;background:var(--line)} #split:hover,#split.on{background:var(--accent)} #split[hidden]{display:none}
-#dock{position:relative;width:360px;min-width:120px;max-width:70vw;overflow-y:auto;background:var(--bg);padding:8px;display:flex;flex-direction:column;gap:8px} #dock[hidden]{display:none}
+#dock{position:relative;width:360px;min-width:120px;max-width:70vw;overflow-y:auto;background:var(--bg);padding:10px;display:flex;flex-direction:column;gap:8px} #dock[hidden]{display:none}
 /* dock scroll bar: wider and clearer than the slim default, painted only when the content overflows (the gutter is reserved by scrollbar-gutter:stable, so widgets never shift).
    Firefox gets colours and the thin width; Chromium gets a 10px ::-webkit-scrollbar (standard scrollbar-* properties would disable it, so they are reset to auto there). */
 #dock{scrollbar-color:color-mix(in srgb,var(--muted) 70%,transparent) color-mix(in srgb,var(--surface) 60%,transparent)}
@@ -84,9 +84,13 @@ html.has-fx #fx{display:block;position:absolute;inset:0;width:100%;height:100%;z
 /* dock scroll zone: transparent 28px area at the dock's right edge; wheel over it always scrolls the dock (see dock-strip.js).
    The dock's own scroll bar is hidden; the zone shows a faint position indicator on hover or while scrolling. */
 #dock{scrollbar-width:none;scrollbar-gutter:auto} #dock::-webkit-scrollbar{display:none}
-#dockstrip{position:relative;flex:none;width:28px;background:var(--bg)} #dockstrip[hidden]{display:none}
+#dockstrip{position:relative;flex:none;width:28px;background:var(--surface)} #dockstrip[hidden]{display:none}
 #dockstrip .thumb{position:absolute;left:11px;width:6px;border-radius:3px;background:color-mix(in srgb,var(--muted) 55%,transparent);opacity:0;transition:opacity .25s;pointer-events:none} #dockstrip .thumb[hidden]{display:none}
 #dockstrip:hover .thumb,#dockstrip.scrolling .thumb{opacity:1}
+/* dock look: always an opaque column in the surface colour with an inset divider (ignores the background image and the transparency setting, so even one small widget sits on a solid dock); widgets are one shade darker, like wells. Specificity matches the has-bg/has-tr rules above and comes later. */
+html #dock,html.has-bg #dock,html.has-tr #dock{background:var(--surface);box-shadow:inset 1px 0 0 var(--line)}
+html .win.docked,html.has-tr .win.docked,html.has-tr .win.docked iframe{background:var(--bg)}
+.win.docked .tb{background:var(--surface)}
 .win{background:var(--surface);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 4px 18px #0003;pointer-events:auto}
 .win.float{position:absolute}
 .win.docked{position:relative;box-shadow:none;flex:none}
@@ -94,7 +98,7 @@ html.has-fx #fx{display:block;position:absolute;inset:0;width:100%;height:100%;z
 .win .tb{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;border-bottom:1px solid var(--line);background:var(--bg);cursor:grab;user-select:none;touch-action:none}
 .win.docked .tb{cursor:grab}
 .win.dock-dragging{opacity:.55;border-style:dashed} .reordering,.reordering .tb{cursor:grabbing!important} .reordering iframe{pointer-events:none}
-.dock-drop{position:absolute;left:8px;right:8px;height:3px;margin-top:-1.5px;border-radius:2px;background:var(--accent);pointer-events:none;z-index:5}
+.dock-drop{position:absolute;left:10px;right:10px;height:3px;margin-top:-1.5px;border-radius:2px;background:var(--accent);pointer-events:none;z-index:5}
 .win .tb .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;font-size:13px}
 .win .tb button{padding:0 7px;line-height:20px;font-size:13px}
 .win .body{flex:1;min-height:0;overflow:auto;position:relative}
