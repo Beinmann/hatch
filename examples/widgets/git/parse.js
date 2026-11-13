@@ -92,8 +92,8 @@
 
   /** text: the source output. Returns { state: 'ok' | 'norepo' | 'nodir', ... } */
   function parse(text) {
-    const secs = { head: [], status: [], log: [], activity: [] }; let cur = 'head';
-    const st = { state: 'ok', home: '', top: '', branch: { head: '', oid: '', upstream: '', ahead: 0, behind: 0 }, conflicts: [], unstaged: [], staged: [], untracked: [], more: 0, commits: [], activity: [] };
+    const secs = { head: [], status: [], log: [], activity: [], commit: [] }; let cur = 'head';
+    const st = { state: 'ok', home: '', top: '', branch: { head: '', oid: '', upstream: '', ahead: 0, behind: 0 }, conflicts: [], unstaged: [], staged: [], untracked: [], more: 0, commits: [], activity: [], commit: { state: 'none' } };
     for (const line of String(text || '').split('\n')) {
       if (line === '@@nodir') { st.state = 'nodir'; continue; }
       if (line === '@@norepo') { st.state = 'norepo'; continue; }
@@ -102,6 +102,7 @@
       if (line === '@@status') { cur = 'status'; continue; }
       if (line === '@@log') { cur = 'log'; continue; }
       if (line === '@@activity') { cur = 'activity'; continue; }
+      if (line === '@@commit') { cur = 'commit'; continue; }
       if (cur !== 'head') secs[cur].push(line);
     }
     parseStatus(secs.status, st);
@@ -110,7 +111,59 @@
       st.commits.push({ hash: p[0], subject: p[1], ts: Number(p[2]) || 0, author: p[3], refs: parseRefs(p[4]) });
     }
     st.activity = parseActivity(secs.activity);
+    st.commit = parseCommitState(secs.commit);
     return st;
+  }
+
+  // ---- Commit button: a headless agent commits the working tree (see the `commit` source in widget.json) ----
+  /** Seconds a finished run stays visible, and milliseconds the "Confirm commit?" state waits for the second click. */
+  const COMMIT_SHOW_S = 120; const CONFIRM_MS = 4000;
+
+  /** The `@@commit` section of the status output: "running PID", "done RC TS" or "lost", then the agent's last stdout and
+   *  stderr line. Anything else (missing, hand-edited) is { state: 'none' }. */
+  function parseCommitState(lines) {
+    const [head = '', out = '', err = ''] = lines;
+    const p = head.trim().split(/\s+/);
+    if (p[0] === 'running') return { state: 'running' };
+    if (p[0] === 'lost') return { state: 'failed', rc: -1, ts: 0, text: 'The agent stopped before it finished (killed or the server restarted). Click Commit to run it again.' };
+    if (p[0] === 'done' && /^\d+$/.test(p[1] || '')) {
+      const rc = Number(p[1]); const ts = Number(p[2]) || 0; const text = (rc === 0 ? out || err : err || out).trim().slice(0, 300);
+      return { state: rc === 0 ? 'done' : 'failed', rc, ts, text: text || (rc === 0 ? 'Done.' : `claude exited with code ${rc}.`) };
+    }
+    return { state: 'none' };
+  }
+
+  /** Answer of the `commit` source (a one-shot call value {out, error}) -> { ok, text } */
+  function parseCommitCall(v) {
+    const out = String((v && v.out) || '').trim();
+    if (out === '@@started') return { ok: true, text: '' };
+    if (out === '@@running') return { ok: true, text: '' };   // someone else already started it; the status shows it
+    if (out === '@@noclaude') return { ok: false, text: 'Claude Code is not installed on the machine running Hatch (or `claude` is not on its PATH). Install it, make sure `claude` runs in the shell that started hatch-server, then try again.' };
+    if (out === '@@nodir') return { ok: false, text: 'The folder this widget points at no longer exists.' };
+    if (out === '@@norepo') return { ok: false, text: 'Not a git repository.' };
+    return { ok: false, text: String((v && v.error) || out || 'The commit agent could not be started.').slice(0, 300) };
+  }
+
+  /** Two-step button as a pure state machine. ui: { armedUntil: ms timestamp or 0 }; ev: 'click' | 'blur' | 'escape' | 'tick';
+   *  can: false while the tree is clean or a run is in progress (the button is disabled then, so it never stays armed).
+   *  Returns { ui, run }: `run` is true only for a click inside the confirm window. */
+  function commitStep(ui, ev, now, can) {
+    const armed = !!(ui && ui.armedUntil && now < ui.armedUntil);
+    if (!can) return { ui: { armedUntil: 0 }, run: false };
+    if (ev === 'click') return armed ? { ui: { armedUntil: 0 }, run: true } : { ui: { armedUntil: now + CONFIRM_MS }, run: false };
+    if (ev === 'blur' || ev === 'escape' || !armed) return { ui: { armedUntil: 0 }, run: false };
+    return { ui, run: false };   // tick inside the window
+  }
+
+  /** What the button and the line next to it show. `pending`: a start was requested and the status has not caught up yet. */
+  function commitView({ dirty, commit, armed, pending, now, error }) {
+    const running = pending || (commit && commit.state === 'running');
+    const b = running ? { label: 'Committing...', disabled: true } : !dirty ? { label: 'Commit', disabled: true, title: 'Nothing to commit' } : armed ? { label: 'Confirm commit?', disabled: false, confirm: true } : { label: 'Commit', disabled: false, title: 'Ask a headless Claude agent to commit the working tree (asks to confirm)' };
+    let status = null;
+    if (error) status = { kind: 'failed', text: error };
+    else if (running) status = { kind: 'running', text: 'agent is working...' };
+    else if (commit && (commit.state === 'done' || commit.state === 'failed') && (commit.rc === -1 || (now / 1000) - commit.ts < COMMIT_SHOW_S)) status = { kind: commit.state, text: commit.text };
+    return { button: b, status };
   }
 
   /** Home replaced by ~, then the middle replaced by an ellipsis when longer than `max` characters. */
@@ -232,6 +285,6 @@
   const splitPath = (p) => { const i = p.lastIndexOf('/'); return i < 0 ? { dir: '', name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) }; };
   const baseName = (p) => String(p || '').replace(/\/+$/, '').split('/').pop() || '/';
 
-  const api = { diffArg, parseDiff, parseNumstat, parseShow, parseFileDiff, statBars, rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
+  const api = { commitStep, commitView, parseCommitCall, parseCommitState, CONFIRM_MS, diffArg, parseDiff, parseNumstat, parseShow, parseFileDiff, statBars, rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GitParse = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

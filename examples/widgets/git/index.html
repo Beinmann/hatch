@@ -1,7 +1,8 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<!-- Status buffer in the spirit of magit/fugitive: head, changes by section, recent commits. Read-only.
+<!-- Status buffer in the spirit of magit/fugitive: head, changes by section, recent commits. Read-only, except the Commit
+     button, which asks a headless Claude agent to commit (two clicks; see the `commit` source in widget.json).
      The command in widget.json runs in the server's directory; `hatch widget open git` makes a copy for the current directory.
      Parsing lives in parse.js (also used by the tests). -->
 <style>
@@ -84,7 +85,17 @@
   .msg{padding:14px 4px;color:var(--fg,#eee);white-space:normal;line-height:1.6}
   .msg code{color:var(--accent,#4fd1c0)}
   .msg.bad{color:var(--bad)}
+  /* Commit button: outside #app so the 3 s re-render never replaces it while it waits for the second click */
+  #bar{display:flex;gap:8px;align-items:baseline;padding:6px 10px 0;min-width:0}
+  #bar[hidden]{display:none}
+  #bar button{flex:none;font:inherit;color:var(--accent,#4fd1c0);background:none;border:1px solid rgba(127,127,127,.4);border-radius:4px;padding:0 8px;cursor:pointer}
+  #bar button:hover:not(:disabled){background:rgba(127,127,127,.15)}
+  #bar button:disabled{opacity:.5;cursor:default}
+  #bar button.confirm{color:#111;background:var(--warn);border-color:var(--warn);font-weight:bold}
+  #bar .cs{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted,#888)}
+  #bar .cs.done{color:var(--ok)}#bar .cs.failed{color:var(--bad)}
 </style>
+<div id="bar" hidden><button id="commit" type="button"></button><span class="cs" id="cs"></span></div>
 <div id="app"><div class="msg">loading...</div></div>
 <script src="/sdk.js"></script>
 <script src="parse.js"></script>
@@ -267,9 +278,40 @@
     render();
   }
 
+  // ---- Commit button: first click arms it for a few seconds, a second click starts the agent (the `commit` source) ----
+  const bar = document.getElementById('bar'), cbtn = document.getElementById('commit'), cstat = document.getElementById('cs');
+  let cui = { armedUntil: 0 }, cpending = 0, cerror = '', cTimer = null;   // cpending: ms timestamp until which a just-started run is assumed running
+  function updateBar() {
+    const s = !detail && last && !last.error ? G.parse(last.out) : null;
+    bar.hidden = !(s && s.state === 'ok'); if (bar.hidden) return;
+    const now = Date.now();
+    const dirty = s.conflicts.length + s.unstaged.length + s.staged.length + s.untracked.length > 0;
+    if (cpending && (s.commit.state === 'running' || now > cpending)) cpending = 0;   // the status caught up, or the start never showed up
+    const v = G.commitView({ dirty, commit: s.commit, armed: cui.armedUntil > now, pending: cpending > now, now, error: cerror });
+    const step = G.commitStep(cui, 'tick', now, !v.button.disabled); cui = step.ui;
+    cbtn.textContent = v.button.label; cbtn.disabled = v.button.disabled; cbtn.className = v.button.confirm ? 'confirm' : ''; cbtn.title = v.button.title || '';
+    cstat.textContent = v.status ? v.status.text : ''; cstat.className = `cs ${v.status ? v.status.kind : ''}`; cstat.title = v.status ? v.status.text : '';
+    clearTimeout(cTimer); if (cui.armedUntil > now) cTimer = setTimeout(updateBar, cui.armedUntil - now + 20);
+  }
+  function commitEvent(ev) {
+    const s = last && !last.error ? G.parse(last.out) : null; if (!s || s.state !== 'ok') return;
+    const dirty = s.conflicts.length + s.unstaged.length + s.staged.length + s.untracked.length > 0;
+    const can = dirty && s.commit.state !== 'running' && !(cpending > Date.now());
+    const r = G.commitStep(cui, ev, Date.now(), can); cui = r.ui; cerror = '';
+    if (r.run) {
+      cpending = Date.now() + 8000;
+      hatch.call('commit').then((v) => { const c = G.parseCommitCall(v); if (!c.ok) { cpending = 0; cerror = c.text; } updateBar(); },
+        (e) => { cpending = 0; cerror = `Could not start the commit agent: ${e && e.message ? e.message : e}`; updateBar(); });
+    }
+    updateBar();
+  }
+  cbtn.addEventListener('click', () => commitEvent('click'));
+  cbtn.addEventListener('blur', () => commitEvent('blur'));
+
   // Re-render only when the markup changed, so the 3 s refresh never flickers; scroll position is restored anyway.
   function render() {
     if (!last) return;
+    updateBar();
     const html = detail ? detailView() : last.error ? `<div class="msg bad">${esc(last.error)}</div>` : view(G.parse(last.out), Date.now());
     if (html === shown) return;
     const y = window.scrollY; shown = html; app.innerHTML = html; window.scrollTo(0, y);
@@ -296,5 +338,6 @@
     if ((x = t.closest('.row[data-hash]'))) return openCommit(x.dataset.hash);
     if ((x = t.closest('.row[data-path]'))) openFile(x.dataset.mode, x.dataset.path, x.dataset.from, x.dataset.code);
   });
-  addEventListener('keydown', (e) => { if (e.key === 'Escape' && detail && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); back(); } });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !detail && cui.armedUntil) { commitEvent('escape'); return; }
+    if (e.key === 'Escape' && detail && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); back(); } });
 </script>

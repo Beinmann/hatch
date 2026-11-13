@@ -12,7 +12,7 @@ const CLI = fileURLToPath(new URL('../bin/hatch.js', import.meta.url));
 const ctx = vm.createContext({}); vm.runInContext(fs.readFileSync(path.join(DIR, 'parse.js'), 'utf8'), ctx);
 const raw = ctx.GitParse; // objects from the vm context have another realm's prototypes: round-trip through JSON for deepEqual
 const J = (f) => (...a) => JSON.parse(JSON.stringify(f(...a)));
-const G = { ...raw, parseShow: J(raw.parseShow), parseFileDiff: J(raw.parseFileDiff), parseDiff: J(raw.parseDiff), parseNumstat: J(raw.parseNumstat), statBars: J(raw.statBars), parse: (t) => JSON.parse(JSON.stringify(raw.parse(t))), splitPath: (p) => JSON.parse(JSON.stringify(raw.splitPath(p))) };
+const G = { ...raw, commitStep: J(raw.commitStep), parseShow: J(raw.parseShow), parseFileDiff: J(raw.parseFileDiff), parseDiff: J(raw.parseDiff), parseNumstat: J(raw.parseNumstat), statBars: J(raw.statBars), parse: (t) => JSON.parse(JSON.stringify(raw.parse(t))), splitPath: (p) => JSON.parse(JSON.stringify(raw.splitPath(p))) };
 const meta = JSON.parse(fs.readFileSync(path.join(DIR, 'widget.json'), 'utf8'));
 const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=Test User', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8' });
 const cli = (args, cwd, state) => new Promise((resolve) => {
@@ -283,3 +283,59 @@ test('widget open git: --name is any label, --dir picks the directory, one windo
   } finally { await h.close(); }
 });
 function os_tmp() { return fs.realpathSync(tmp()); }
+
+// ---- Commit button ----
+test('commitStep: first click arms, second click inside the window runs, expiry/blur/escape/disable disarm', () => {
+  const T = 4000; let r = G.commitStep({ armedUntil: 0 }, 'click', 1000, true);
+  assert.equal(r.run, false); assert.equal(r.ui.armedUntil, 1000 + T);
+  assert.equal(G.commitStep(r.ui, 'tick', 2000, true).ui.armedUntil, 1000 + T, 'still armed inside the window');
+  assert.deepEqual(G.commitStep(r.ui, 'click', 1000 + T - 1, true), { ui: { armedUntil: 0 }, run: true });
+  const late = G.commitStep(r.ui, 'click', 1000 + T, true); assert.equal(late.run, false); assert.equal(late.ui.armedUntil, 1000 + 2 * T, 'a click after the window only re-arms');
+  assert.equal(G.commitStep(r.ui, 'tick', 1000 + T, true).ui.armedUntil, 0);
+  for (const ev of ['blur', 'escape']) assert.deepEqual(G.commitStep(r.ui, ev, 2000, true), { ui: { armedUntil: 0 }, run: false });
+  assert.deepEqual(G.commitStep(r.ui, 'click', 2000, false), { ui: { armedUntil: 0 }, run: false }, 'never runs while clean or already running');
+  assert.equal(G.commitStep(undefined, 'click', 5, true).run, false);   // malformed ui state
+});
+
+test('commitView and the status section: disabled when clean or running, outcome lines, hand-edited state is harmless', () => {
+  const none = { state: 'none' };
+  assert.deepEqual(G.commitView({ dirty: false, commit: none, now: 0 }).button.disabled, true);
+  assert.equal(G.commitView({ dirty: true, commit: none, now: 0 }).button.label, 'Commit');
+  assert.equal(G.commitView({ dirty: true, commit: none, armed: true, now: 0 }).button.label, 'Confirm commit?');
+  const run = G.commitView({ dirty: true, commit: { state: 'running' }, now: 0 }); assert.equal(run.button.disabled, true); assert.equal(run.status.kind, 'running');
+  assert.equal(G.commitView({ dirty: true, commit: none, pending: true, now: 0 }).button.disabled, true);
+  const done = G.parseCommitState(['done 0 1000', 'Committed 2 files', '']);
+  assert.deepEqual(JSON.parse(JSON.stringify(done)), { state: 'done', rc: 0, ts: 1000, text: 'Committed 2 files' });
+  assert.equal(G.commitView({ dirty: false, commit: done, now: 1060e3 }).status.text, 'Committed 2 files');
+  assert.equal(G.commitView({ dirty: false, commit: done, now: 1e12 }).status, null, 'an old result fades out');
+  const bad = G.parseCommitState(['done 1 1000', '', 'Error: not logged in']); assert.equal(bad.state, 'failed'); assert.equal(bad.text, 'Error: not logged in');
+  assert.equal(G.parseCommitState(['lost']).state, 'failed');
+  for (const junk of [[], [''], ['done'], ['done x y'], ['running'].slice(1), ['???']]) assert.equal(G.parseCommitState(junk).state, 'none');
+  assert.equal(G.commitView({ dirty: true, commit: none, error: 'boom', now: 0 }).status.text, 'boom');
+  assert.equal(G.parseCommitCall({ out: '@@started' }).ok, true);
+  assert.match(G.parseCommitCall({ out: '@@noclaude' }).text, /not installed/);
+  assert.equal(G.parseCommitCall(null).ok, false); assert.equal(G.parseCommitCall({ error: 'x' }).text, 'x');
+  assert.equal(G.parse('').commit.state, 'none');
+});
+
+test('commit source with a stand-in claude: dir stays quoted, prompt is constant, runs once, outcome reaches the status', async () => {
+  const bin = fs.realpathSync(tmp()); const log = path.join(bin, 'args.log');
+  fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\nprintf '%s\\n' "$@" >"${log}"\nsleep 1\necho "Committed everything"\n`, { mode: 0o755 });
+  const d = path.join(makeRepo(), `it's a "dir" $(touch pwned)`); fs.mkdirSync(d); git(d, 'init', '-q'); fs.writeFileSync(path.join(d, 'x.txt'), 'x');
+  const tmpdir = fs.realpathSync(tmp()); const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TMPDIR: tmpdir };
+  const exec = (name) => execFileSync('/bin/sh', ['-c', src(name).cmd.replaceAll('{{cwd}}', `'${d.replaceAll("'", `'\\''`)}'`)], { encoding: 'utf8', env }).trim();
+  assert.equal(exec('commit'), '@@started');
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(exec('commit'), '@@running', 'a second start is refused while the first runs');
+  assert.equal(G.parse(exec('status')).commit.state, 'running');
+  for (let i = 0; i < 40 && G.parse(exec('status')).commit.state === 'running'; i++) await new Promise((r) => setTimeout(r, 100));
+  const c = G.parse(exec('status')).commit; assert.equal(c.state, 'done'); assert.equal(c.text, 'Committed everything');
+  const args = fs.readFileSync(log, 'utf8').split('\n');
+  assert.equal(args[0], '-p'); assert.ok(args.includes('--permission-mode') && args.includes('auto'));
+  assert.match(args[1], /^Commit the current state of the git repository at .*pwned\)/); assert.ok(args.some((a) => /private information/.test(a)));
+  assert.ok(!fs.existsSync(path.join(d, 'pwned')) && !fs.existsSync('pwned'), 'the dir name was not executed');
+  // not installed: a clear marker instead of a silent failure; no repo / no dir are reported too
+  const noClaude = { ...env, PATH: path.dirname(process.execPath) + ':/usr/bin:/bin' }; const real = (() => { try { return execFileSync('/bin/sh', ['-c', 'command -v claude'], { env: noClaude }).length > 0; } catch { return false; } })();
+  if (!real) assert.equal(execFileSync('/bin/sh', ['-c', src('commit').cmd.replaceAll('{{cwd}}', `'${d.replaceAll("'", `'\\''`)}'`)], { encoding: 'utf8', env: noClaude }).trim(), '@@noclaude');
+  assert.equal(execFileSync('/bin/sh', ['-c', src('commit').cmd.replaceAll('{{cwd}}', `'${tmp()}/missing'`)], { encoding: 'utf8', env }).trim(), '@@nodir');
+});
