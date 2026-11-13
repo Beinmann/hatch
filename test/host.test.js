@@ -87,9 +87,9 @@ test('hatch host CLI: refuses without a terminal or --yes, registers nothing; --
   try {
     const { site: s } = site(); const page = path.join(s, 'page.html');
     let r = await run(h.stateDir, ['host', page]);
-    assert.notEqual(r.status, 0); assert.match(r.stderr, /not sandboxed/); assert.match(r.stderr, /--yes/); assert.equal(r.stdout, '');
+    assert.notEqual(r.status, 0); assert.match(r.stderr, /Anyone logged in to this Hatch can read the whole folder/); assert.match(r.stderr, /--yes/); assert.equal(r.stdout, '');
     r = await run(h.stateDir, ['host', page, '--yes']);
-    assert.equal(r.status, 0, r.stderr); assert.match(r.stderr, /not sandboxed/); assert.match(r.stdout, /\/host\//);
+    assert.equal(r.status, 0, r.stderr); assert.match(r.stderr, /Anyone logged in to this Hatch can read the whole folder/); assert.match(r.stdout, /\/host\//); assert.doesNotMatch(r.stdout, /\?t=/);
   } finally { await h.close(); }
 });
 

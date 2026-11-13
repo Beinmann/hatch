@@ -35,6 +35,8 @@ import { createSessions } from './sessions.js';
 import { createLimiter, clientKey } from './rate-limit.js';
 import { loginPage, loginNeededPage, createCodes } from './login.js';
 import { rotateTokenFile } from './token.js';
+import { createHostSecrets, HOST_SECRET_RE } from './host-secrets.js';
+import { injectBase, MAX_PAGE_BYTES } from './host-inject.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -89,6 +91,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const sessions = createSessions({ file: path.join(stateDir, 'sessions.json'), warn: (m) => log(m) }); // login sessions (src/sessions.js)
   const limiter = createLimiter(loginLimit); // failed token checks per client address (src/rate-limit.js)
   const codes = createCodes(); // single-use login codes, memory only
+  const hostSecrets = createHostSecrets(); // per-load secrets for hosted pages' sub-resources (src/host-secrets.js)
   let lock = null; // server.lock (src/instance-guard.js), taken on the first listen
   let state; // assigned below; the bus snapshot reads it lazily
   const migration = wsapi.migrate(stateDir); // first start with workspaces: wraps the existing layout and background as `main`
@@ -348,9 +351,13 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     return { opened };
   }
 
-  // ---- hosted pages: `hatch host FILE.html` registers a file's folder; /host/ID/... serves it read-only (GET, token or view token) ----
-  // In memory on purpose: a restart forgets them and `hatch host` is simply run again. The page runs in Hatch's own origin, so only host files you trust.
+  // ---- hosted pages: `hatch host FILE.html` registers a file's folder; /host/ID/NAME serves it read-only to a logged-in browser ----
+  // The page is served with the sandbox CSP (opaque origin: no cookie, no access to Hatch's API or page). Its own css, scripts and images
+  // cannot send the login cookie, so the HTML gets a <base href="/host-r/SECRET/ID/"> with a short-lived per-load secret (src/host-secrets.js)
+  // and /host-r/ serves the same folder without a cookie. The address bar only ever shows /host/ID/NAME.
+  // In memory on purpose: a restart forgets them and `hatch host` is simply run again.
   const hosted = new Map(); // id -> { dir (real path), entry (file name) }
+  const HOSTED_HEADERS = { 'content-security-policy': PAGE_WINDOW_CSP, 'referrer-policy': 'no-referrer', 'cache-control': 'no-store' };
   function hostFile(file) {
     if (typeof file !== 'string' || !path.isAbsolute(file)) throw new HttpError(400, 'file must be an absolute path');
     try { fsapi.abs(file); } catch (e) { throw new HttpError(e.status || 403, e.message); }
@@ -365,17 +372,36 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const hostedList = () => [...hosted].map(([id, h]) => ({ id, dir: h.dir, entry: h.entry, path: `/host/${id}/${encodeURIComponent(h.entry)}` }));
   function unhost(id) {
     if (!hosted.delete(id)) throw new HttpError(404, `not hosted: no page with id ${id} (see \`hatch host list\`)`);
-    return { ok: true };
+    hostSecrets.dropId(id); return { ok: true };
+  }
+  function hostedTarget(p, skip) { // [id, ...path] after the first `skip` segments -> { h, f }
+    const [id, ...rest] = p.split('/').slice(skip);
+    const h = hosted.get(id);
+    if (!h) throw new HttpError(404, 'not found: this page is not hosted (run `hatch host FILE.html` again; hosting is forgotten when the server restarts)');
+    if (fsapi.getRoot()) { try { fsapi.abs(h.dir); } catch (e) { throw new HttpError(e.status || 403, e.message); } } // --root still confines what files can be read
+    const f = resolvePageFile(h.dir, rest.map(safeDecode).join('/') || h.entry);
+    if (!f) throw new HttpError(404, 'not found');
+    return { id, h, f };
   }
   function serveHosted(req, res, p) {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
-    const [id, ...rest] = p.split('/').slice(2); // ['', 'host', ID, ...path]
-    const h = hosted.get(id);
-    if (!h) throw new HttpError(404, 'not found: this page is not hosted (run `hatch host FILE.html` again; hosting is forgotten when the server restarts)');
-    const rel = rest.map(safeDecode).join('/') || h.entry;
-    const f = resolvePageFile(h.dir, rel);
-    if (!f) throw new HttpError(404, 'not found');
-    return serveFile(res, f, { 'referrer-policy': 'no-referrer' }, req);
+    const { id, f } = hostedTarget(p, 2); // ['', 'host', ID, ...path]
+    if (!/\.html?$/i.test(f)) return serveFile(res, f, HOSTED_HEADERS, req);
+    // an HTML page: handed out with a fresh secret in its <base>; a HEAD request gets the headers only (no secret is made for it)
+    if (req.method === 'HEAD') return serveFile(res, f, HOSTED_HEADERS, req);
+    let st; try { st = fs.statSync(f); fs.accessSync(f, fs.constants.R_OK); } catch { throw new HttpError(403, 'not readable by the server user'); }
+    if (st.size > MAX_PAGE_BYTES) throw new HttpError(413, `this page is larger than ${MAX_PAGE_BYTES / 1024 / 1024} MB; host a smaller HTML file`);
+    const { body } = injectBase(fs.readFileSync(f), `/host-r/${hostSecrets.issue(id)}/${id}/`);
+    res.writeHead(200, { 'content-type': TYPES[path.extname(f).toLowerCase()] || 'text/html; charset=utf-8', 'content-length': body.length, 'x-content-type-options': 'nosniff', ...HOSTED_HEADERS });
+    return res.end(body);
+  }
+  // /host-r/SECRET/ID/...: the sub-resources of a page that was just handed out; no cookie (a sandboxed page has none), the secret is the credential
+  function serveHostedResource(req, res, p) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
+    const [, , secret, id] = p.split('/'); // ['', 'host-r', SECRET, ID, ...path]
+    if (!hosted.has(id) || !HOST_SECRET_RE.test(secret) || !hostSecrets.check(secret, id)) throw new HttpError(404, 'not found');
+    const { f } = hostedTarget(p, 3);
+    return serveFile(res, f, { ...HOSTED_HEADERS, 'access-control-allow-origin': '*' }, req); // CORS: fetch() from the page's opaque origin
   }
 
   // ---- sessions and cookies ----
@@ -431,6 +457,9 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       if (!f) throw new HttpError(404, 'not found');
       return serveFile(res, f, { 'content-security-policy': PAGE_WINDOW_CSP, 'referrer-policy': 'no-referrer', 'access-control-allow-origin': '*', 'x-frame-options': 'SAMEORIGIN' }, req);
     }
+
+    // hosted pages' sub-resources: token-free, the per-load secret in the path is the credential (see serveHostedResource)
+    if (p.startsWith('/host-r/')) return serveHostedResource(req, res, p);
 
     // ---- login page and one-time login links (no auth: they are how a browser gets one) ----
     const key = clientKey(req);
@@ -552,7 +581,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         return json(res, 200, { path: r.path, name: r.name, url: `/files/uploads/${r.name}`, bytes: r.bytes });
       }
       if (p === '/api/host' && m === 'GET') return json(res, 200, hostedList());
-      if (p === '/api/host' && m === 'DELETE') { const n = hosted.size; hosted.clear(); return json(res, 200, { ok: true, stopped: n }); }
+      if (p === '/api/host' && m === 'DELETE') { const n = hosted.size; hosted.clear(); hostSecrets.clear(); return json(res, 200, { ok: true, stopped: n }); }
       { const hm = /^\/api\/host\/([^/]+)$/.exec(p); if (hm && m === 'DELETE') return json(res, 200, unhost(hm[1])); }
       if (p === '/api/host' && m === 'POST') {
         // Tell the browser UIs (full access only, and only tabs showing the command's workspace) to open the page at their own origin, so a reverse proxy works.
@@ -833,7 +862,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       }
       if (p === '/api/auth/once' && m === 'POST') return json(res, 200, codes.issue());
       if (p === '/api/auth/rotate-token' && m === 'POST') {
-        const next = rotateTokenFile(stateDir); cfg.token = next; const ended = sessions.revokeAll(); codes.clear(); log(`token rotated: ${ended} session${ended === 1 ? '' : 's'} ended`);
+        const next = rotateTokenFile(stateDir); cfg.token = next; const ended = sessions.revokeAll(); codes.clear(); hostSecrets.clear(); log(`token rotated: ${ended} session${ended === 1 ? '' : 's'} ended`);
         return json(res, 200, { token: next, ended });
       }
       throw new HttpError(404, `no such API route: ${m} ${p}`);
@@ -908,7 +937,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       configGuard.start();
       return actual;
     },
-    async close() { sessions.flush(); configGuard.stop(); lock?.release(); lock = null; gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
+    async close() { sessions.flush(); hostSecrets.close(); configGuard.stop(); lock?.release(); lock = null; gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
     baseUrl,
     get configGuardRunning() { return configGuard.running; },
   };
