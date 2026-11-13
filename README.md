@@ -169,8 +169,11 @@ Use `hatch` for everyday interaction with the page. `hatch-ui` still works as a 
 ```sh
 hatch image screenshot.png --size 800x550
 hatch open README.md                 # images, text files, HTML pages, directories or http(s) URLs
-ha w open git                    # short forms: `ha` is `hatch`, `w` is `widget` (top-level `open` stays for files, folders and URLs)
+ha w o git                       # short forms: `ha` is `hatch`, `w` is `widget`, `o` is `open` after `widget` (top-level `open` stays for files, folders and URLs)
 hatch widget open NAME --dock     # open the widget in the dock instead of as a floating window
+hatch widget open board ./plan.board.json   # a board that autosaves straight to that file (plain JSON; created on first save)
+hatch widget save [DIR]         # write DIR/.hatch-widgets.json: name, position, size, placement of this workspace's widgets (layout only, no content)
+hatch widget restore [DIR]      # open the missing ones, move/resize the open ones, un-minimize them; closes nothing; a bad file only warns
 hatch widget examples              # bundled example widgets (hatch widget open NAME installs and opens one)
 hatch popup open progress
 hatch popup create my-clock --from clock
@@ -200,6 +203,7 @@ The header keeps secondary tools in the command palette. It opens immediately wi
 | Leader, then s | Show or hide the dock column (also palette: Toggle dock; Zen mode hides it too and restores it as it was) |
 | Leader, then m / q / u | Minimize, close, restore from the dock |
 | Leader, then Tab | Next window |
+| Hold Alt alone | Peek: hides everything but the terminal while held (after ~0.2 s, so Alt+key chords never flash); release restores it all untouched. Any other key ends it. Key (Alt, Shift, Ctrl, Meta or off) is in Settings |
 | Ctrl+Shift+G | Fold or unfold progress strip |
 | Ctrl+Shift+F / Z / 1..9 | Terminal find / Zen mode / workspaces |
 

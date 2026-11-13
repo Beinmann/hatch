@@ -20,6 +20,7 @@ import * as wsapi from '../src/workspaces.js';
 import * as transparency from '../src/transparency.js';
 import { setFx, readFx, FxError, EFFECTS } from '../src/fx.js';
 import { parseEvery } from '../src/schedules.js';
+import { LAYOUT_FILE, entriesFromPanels, writeLayout, readLayout } from '../src/widget-layout.js';
 
 // Server commands used to live under `hatch`. Forward them to `hatch-server` with a one-line notice so running setups,
 // service files and old agent instructions keep working. (`hatch doctor` is also a page command and stays here.)
@@ -55,8 +56,11 @@ progress
 widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget new NAME [--from example]  scaffold widgets/NAME: from an example (cpu, log-tail, ...) or, without --from, a minimal one
   widget add NAME [DIR|FILE] [--dock]  register and open (a single HTML file becomes index.html)
-  (short forms: ha for hatch, w for widget: ha w open git; top-level open is for files, folders and URLs)
+  (short forms: ha for hatch, w for widget, o for open: ha w o git; top-level open is for files, folders and URLs)
   widget list | open NAME [--dock] | close NAME | rm NAME | reload NAME   (open git: the git window for the current directory's repository)
+  widget save [DIR] | restore [DIR]   write / apply the layout (name, position, size, placement) of this workspace's widgets in DIR/.hatch-widgets.json (default .);
+                                    restore opens missing widgets, moves and resizes open ones, un-minimizes them, closes nothing
+  widget open board FILE.board.json  a board that autosaves straight to that file (created on the first save; relative to here)
   widget examples                   list the example widgets (also in the palette)
   widget generate "DESCRIPTION" [--name N]   ask \`claude -p\` to write a widget from a description, then open it
                                     (alias: popup generate; set HATCH_CLAUDE to use another claude binary)
@@ -258,6 +262,39 @@ async function migrateCommand(o, dirArg) {
   else console.log(`\n${mg.nextSteps({ target: r.target, source: r.source }).join('\n')}`);
 }
 
+/** `widget save [DIR]` / `widget restore [DIR]`: the layout of this workspace's widgets in DIR/.hatch-widgets.json (layout only). */
+async function widgetLayout(api, o, sub, dirArg, ws) {
+  const dir = path.resolve(dirArg || '.');
+  need(fs.existsSync(dir) && fs.statSync(dir).isDirectory(), `not a directory: ${dir}`);
+  if (sub === 'save') {
+    const entries = entriesFromPanels(await api('GET', '/api/panels'), ws);
+    const file = writeLayout(dir, entries);
+    return console.log(`saved ${entries.length} widget${entries.length === 1 ? '' : 's'} of workspace ${ws} to ${file}`);
+  }
+  const r = readLayout(dir);
+  need(!r.error, r.error);
+  for (const w of r.warnings) console.error(`hatch: ${LAYOUT_FILE}: ${w}`);
+  const installed = new Set((await api('GET', '/api/widgets')).map((w) => w.name));
+  const examples = new Set((await api('GET', '/api/examples')).map((e) => e.name));
+  const open = new Set((await api('GET', '/api/panels')).filter((p) => p.type === 'widget' && (p.ws || 'main') === ws).map((p) => p.props?.name));
+  let opened = 0; let updated = 0; let skipped = 0;
+  for (const e of r.entries) {
+    const geo = {}; for (const k of ['x', 'y', 'w', 'h', 'placement']) if (e[k] !== undefined) geo[k] = e[k];
+    const wasOpen = open.has(e.name);
+    try {
+      if (!wasOpen) {
+        if (installed.has(e.name)) await api('POST', '/api/panels', { type: 'widget', props: { name: e.name }, autoFocus: false });
+        else if (examples.has(e.name)) await api('POST', `/api/examples/${encodeURIComponent(e.name)}/open`, { autoFocus: false });
+        else { console.error(`hatch: widget ${e.name} is not installed here (hatch widget list), skipped`); skipped++; continue; }
+      }
+      // PATCH after open: positions and the un-minimize apply the same way for new and already open windows; nothing is closed
+      await api('PATCH', `/api/panels/w-${e.name}`, { ...geo, minimized: false });
+      if (wasOpen) updated++; else opened++;
+    } catch (err) { console.error(`hatch: widget ${e.name} not restored: ${err.message}`); skipped++; }
+  }
+  console.log(`restored from ${path.join(dir, LAYOUT_FILE)}: ${opened} opened, ${updated} updated, ${skipped} skipped`);
+}
+
 async function main(argv) {
   // `diff` hands everything after it to git untouched (flags like --stat or --cached are not ours to parse)
   const firstPos = firstCommandIndex(argv);
@@ -266,7 +303,7 @@ async function main(argv) {
   const o = parse(diffArgs ? argv.slice(0, di + 1) : argv);
   const [cmd0, rawSub, ...rest] = o._;
   const rawCmd = cmd0 === 'w' ? 'widget' : cmd0; // `w` is short for `widget`
-  const sub = rawCmd === 'popup' && rawSub === 'create' ? 'new' : rawSub;
+  const sub = rawCmd === 'popup' && rawSub === 'create' ? 'new' : (rawCmd === 'widget' && rawSub === 'o' ? 'open' : rawSub); // `widget o` is short for `widget open`
   const cmd = rawCmd === 'popup' ? 'widget' : rawCmd;
   if (rawCmd === 'popup' && (!sub || o.help)) return console.log(COMMAND_HELP.popup);
   if (cmd === 'agent' && !sub) return console.log(COMMAND_HELP.agent);
@@ -419,12 +456,19 @@ async function main(argv) {
         const p = await api('POST', '/api/panels', { type: 'widget', props: { name: gname }, ...dockOpt });
         return console.log(`generated ${wdir}\nwidget ${gname} open as ${p.id}`);
       }
-      need(['new', 'add', 'open', 'close', 'rm', 'reload'].includes(sub), 'usage: widget new|add|list|open|close|rm|reload');
+      if (sub === 'save' || sub === 'restore') return widgetLayout(api, o, sub, rest[0], ws || 'main');
+      need(['new', 'add', 'open', 'close', 'rm', 'reload'].includes(sub), 'usage: widget new|add|list|open|close|rm|reload|save|restore');
       checkName(name);
       // "top" is a terminal window running htop, not the old widget, so keys work
       if (sub === 'open' && name === 'top') { const p = await api('POST', '/api/examples/top/open', {}); return console.log(`top open as ${p.id}`); }
       // "git" follows the shell: one widget per project, made by the server for this directory (the server does not know our cwd)
       if (sub === 'open' && (name === 'git' || name === 'files')) { const p = await api('POST', `/api/examples/${name}/open`, { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
+      // "board FILE": a board that autosaves to that file (the server pins the widget to it; relative paths are from here)
+      if (sub === 'open' && name === 'board' && rest[1] !== undefined) {
+        const file = path.resolve(rest[1]);
+        const p = await api('POST', '/api/examples/board/open', { file, ...dockOpt });
+        return console.log(`widget ${p.props.name} open as ${p.id} (board file ${file})`);
+      }
       const target = path.join(l.widgets, name);
       if (sub === 'open' && !fs.existsSync(path.join(target, 'index.html'))) {
         // Not installed: a bundled example of that name is copied in and opened by the server.

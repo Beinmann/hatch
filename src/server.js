@@ -21,6 +21,7 @@ import { createWatches, checkWatches } from './watches.js';
 import { createSchedules, checkSchedules } from './schedules.js';
 import { createRuns } from './runs.js';
 import * as discover from './discover.js';
+import { resolveBoardFile, boardFileMeta, boardWidgetName } from './board-file.js';
 import { widgetStatus, recordShipped, staleMessage, gitProjectMeta, staleProjectCopies } from './update-widgets.js';
 import * as gitapi from './git.js';
 import { setFx, readFx, FxError, EFFECTS } from './fx.js';
@@ -332,12 +333,27 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
     state.rescan(); return state.createPanel({ type: 'widget', props: { name }, ...windowOptions });
   }
+  /** One board widget per board file: `board-<name>` with load and save pinned to that file (see board-file.js). */
+  function openBoardFor(options) {
+    let file;
+    try { file = resolveBoardFile(options.file); } catch (e) { throw new HttpError(e.status || 400, e.message); }
+    const fileOf = (n) => { if (!fs.existsSync(path.join(l.widgets, n))) return undefined; try { return JSON.parse(fs.readFileSync(path.join(l.widgets, n, 'widget.json'), 'utf8')).file ?? null; } catch { return null; } };
+    const name = boardWidgetName(file, fileOf);
+    const target = path.join(l.widgets, name);
+    if (!fs.existsSync(target)) fs.cpSync(path.join(EXAMPLES, 'board'), target, { recursive: true });
+    const metaFile = path.join(target, 'widget.json');
+    atomicWrite(metaFile, `${JSON.stringify(boardFileMeta(JSON.parse(fs.readFileSync(path.join(EXAMPLES, 'board', 'widget.json'), 'utf8')), file), null, 2)}\n`);
+    const windowOptions = {};
+    for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
+    state.rescan(); return state.createPanel({ type: 'widget', props: { name }, ...windowOptions });
+  }
   /** Copies an example into widgets/ (keeping an existing copy) and opens it as a window. */
   function openExample(name, options = {}) {
     if (!exampleList().some((e) => e.name === name)) throw new HttpError(404, `no example widget ${name}`);
     if (name === 'top') return openTop(options);
     if (name === 'git' && options?.dir !== undefined) return openGitFor(options);
     if (name === 'files' && options?.dir !== undefined) return openFilesFor(options);
+    if (name === 'board' && options?.file !== undefined) return openBoardFor(options);
     if (name === 'trash') return state.listPanels().find((q) => q.type === 'trash') || state.createPanel({ type: 'trash', title: 'Trash' }); // one trash window is enough
     const dir = path.join(l.widgets, name);
     if (!fs.existsSync(dir)) { fs.cpSync(path.join(EXAMPLES, name), dir, { recursive: true }); recordShipped(stateDir, name); }

@@ -72,11 +72,14 @@ removing its files and its CLI case, palette entry and README bullet.
 | Git status widget (sections, per-project instances via `hatch widget open git`) | - | examples/widgets/git, server openGitFor | parser and server, not seen in a browser | read-only |
 | Files widget (`hatch widget open files`: read-only browser, hjkl/arrows/mouse, hidden toggle, image/text/metadata preview) | - | examples/widgets/files, server openFilesFor, sources.js maxBytes | model, source commands and server tested; seen in headless Chromium (keys, preview, images decode, permission message; text glyphs not visible there) | read-only; images over 2 MB and text past 64 KB are not shown in full; lists at most 3000 entries |
 | Board widget (PROTOTYPE: pan/zoom canvas, text cards, arrows, saved to data/board.json via exec sources) | - | examples/widgets/board, test/board.test.js | headless Chromium only (layout and interaction; text glyphs not visible there) | model in model.js is node-tested; no undo, plain text only |
+| Board widget (PROTOTYPE: pan/zoom canvas, text cards, arrows, saved to data/board.json via exec sources) | - | examples/widgets/board, test/board.test.js | headless Chromium only (layout and interaction; text glyphs not visible there) | model in model.js is node-tested; no undo, plain text only; `hatch widget open board FILE.board.json` autosaves to that file (server and CLI tested, not seen in a browser): a file over 64 KB cannot be loaded back (exec output limit) and a changed file is not reloaded while the widget is open; per-file copies are not refreshed by `update-widgets` |
+| Widget layout per directory (`hatch widget save|restore [DIR]`, .hatch-widgets.json) | - | src/widget-layout.js, bin/hatch.js, test/cli.test.js | CLI and server API, not seen in a browser | layout only; widgets not installed here are skipped with a warning; a saved minimized state is not re-applied |
 | ports metric, ports and pomodoro widgets | 051 | sources.js, examples/widgets | yes | |
 | Task runner, listening ports | 047 | src/discover.js | tests only | |
 | Session report | 046 | server /api/report, ui.js | CLI only | |
 | Maximize | 034 | windows.js | yes | |
 | Show desktop (leader Shift+d): minimize all, again restores the same formation | - | show-desktop.js, windows.js, app.js | planning and change detection | not browser-tested |
+| Peek: hold Alt alone to see only the terminal (key in Settings; other keys end it) | - | peek.js, style.css, app.js | state machine (timing, cancel, reset) | seen in headless Chromium: hold, release, Alt+b, other key, blur; not Firefox or Windows menu-bar behaviour |
 | Tile / minimize-all / close-all | 025 | app.js | tile only | |
 | Phone layout + extra keys bar | 015 | style.css, app.js | emulated | |
 | Font size memory | 028 | app.js | no | |
