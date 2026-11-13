@@ -61,6 +61,7 @@ widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget save [DIR] | restore [DIR]   write / apply the layout (name, position, size, placement) of this workspace's widgets in DIR/.hatch-widgets.json (default .);
                                     restore opens missing widgets, moves and resizes open ones, un-minimizes them, closes nothing
   widget open board FILE.board.json  a board that autosaves straight to that file (created on the first save; relative to here)
+  widget screenshot NAME [--out FILE.png] [--abstract] [--scale N]   PNG of an open board or widget window, drawn by the open browser tab (no headless browser; fails if no tab is open). NAME: window id, widget name, or board file name. Default 2x; --abstract replaces text with grey bars (layout and colors only). Prints the path, so an agent can read the PNG
   widget examples                   list the example widgets (also in the palette)
   widget generate "DESCRIPTION" [--name N]   ask \`claude -p\` to write a widget from a description, then open it
                                     (alias: popup generate; set HATCH_CLAUDE to use another claude binary)
@@ -157,7 +158,7 @@ hatch widget open NAME --dock opens it in the dock column instead of as a floati
 
 function parse(argv) {
   const o = { _: [] };
-  const flags = new Set(['json', 'help', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus', 'dry-run', 'yes', 'no-open', 'all', 'dock']);
+  const flags = new Set(['json', 'help', 'no-enter', 'text', 'direct', 'wait', 'open', 'always', 'force', 'full', 'fullscreen', 'no-focus', 'dry-run', 'yes', 'no-open', 'all', 'dock', 'abstract']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--') { o._.push(...argv.slice(i + 1)); break; }
@@ -459,7 +460,16 @@ async function main(argv) {
         return console.log(`generated ${wdir}\nwidget ${gname} open as ${p.id}`);
       }
       if (sub === 'save' || sub === 'restore') return widgetLayout(api, o, sub, rest[0], ws || 'main');
-      need(['new', 'add', 'open', 'close', 'rm', 'reload'].includes(sub), 'usage: widget new|add|list|open|close|rm|reload|save|restore');
+      if (sub === 'screenshot') {
+        need(name, 'usage: widget screenshot NAME [--out FILE.png] [--abstract] [--scale N]');
+        need(o.scale === undefined || (Number(o.scale) >= 0.25 && Number(o.scale) <= 4), '--scale must be a number from 0.25 to 4');
+        need(o.out === undefined || (typeof o.out === 'string' && o.out), '--out needs a file name: hatch widget screenshot NAME --out board.png');
+        const r = await api('POST', '/api/screenshot', { name, abstract: !!o.abstract, ...(o.scale !== undefined && { scale: Number(o.scale) }), ...(ws && { ws }) });
+        const file = path.resolve(o.out || `${String(name).replace(/[^\w.-]+/g, '_')}${o.abstract ? '-abstract' : ''}.png`);
+        fs.writeFileSync(file, Buffer.from(r.png, 'base64'));
+        return console.log(`${file} (${r.width}x${r.height} CSS px${o.scale === undefined ? ', 2x' : `, ${o.scale}x`}${r.abstract ? ', abstract' : ''})`);
+      }
+      need(['new', 'add', 'open', 'close', 'rm', 'reload'].includes(sub), 'usage: widget new|add|list|open|close|rm|reload|save|restore|screenshot');
       checkName(name);
       // "top" is a terminal window running htop, not the old widget, so keys work
       if (sub === 'open' && name === 'top') { const p = await api('POST', '/api/examples/top/open', {}); return console.log(`top open as ${p.id}`); }

@@ -26,6 +26,22 @@ export default {
       if (!declared().includes(String(m.source))) return reply({ error: `widget.json does not declare source "${m.source}"` });
       ctx.callSource(name, String(m.source), m.arg === undefined ? undefined : String(m.arg)).then((value) => reply({ value }), (e) => reply({ error: e.message }));
     };
+    // Screenshots: the widget renders its own DOM (the sandbox hides it from this page) and answers with a PNG blob.
+    const shots = new Map(); let shotId = 1;
+    const capture = ({ abstract = false, scale = 2 } = {}) => new Promise((resolve, reject) => {
+      const rid = shotId++;
+      const timer = setTimeout(() => { shots.delete(rid); reject(new Error('the widget did not answer; does it load /sdk.js, and is the window open (not minimized)?')); }, 20000);
+      shots.set(rid, (m) => { clearTimeout(timer); if (m.error) reject(new Error(m.error)); else resolve(m); });
+      post({ type: 'hatch-screenshot', rid, abstract, scale });
+    });
+    const unregister = ctx.registerScreenshot?.(panel.id, capture);
+    const download = async (abstract) => {
+      try {
+        const r = await capture({ abstract });
+        const a = el('a', { href: URL.createObjectURL(r.png), download: `${name}${abstract ? '-abstract' : ''}.png` });
+        document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      } catch (err) { ctx.toast?.(`screenshot failed: ${err.message}`, 'bad'); }
+    };
     const onMessage = (e) => {
       if (e.source !== frame.contentWindow) return;
       const m = e.data || {};
@@ -40,6 +56,8 @@ export default {
       else if (m.type === 'subscribe') subscribe(String(m.source));
       else if (m.type === 'call') call(m);
       else if (m.type === 'unsubscribe') { streams.get(m.source)?.(); streams.delete(m.source); }
+      else if (m.type === 'hatch-screenshot-result') shots.get(m.rid)?.(m), shots.delete(m.rid);
+      else if (m.type === 'screenshot-save') download(!!m.abstract);
       else if (m.type === 'log') console.log(`[widget ${name}]`, m.text);
       else if (m.type === 'resize' && Number.isFinite(m.w) && Number.isFinite(m.h)) ctx.patch(panel.id, { w: Math.round(m.w), h: Math.round(m.h) }).catch(() => {});
     };
@@ -64,7 +82,7 @@ export default {
     };
     load();
     return {
-      el: root, focus() { frame.focus(); }, update() {}, destroy() { removeEventListener('message', onMessage); closeAll(); frame.src = 'about:blank'; },
+      el: root, focus() { frame.focus(); }, update() {}, destroy() { unregister?.(); removeEventListener('message', onMessage); closeAll(); frame.src = 'about:blank'; },
       widgetChanged(info) { if (info.name === name) load(); },
     };
   },

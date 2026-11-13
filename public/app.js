@@ -122,7 +122,22 @@ function subscribeSource(widget, source, fn) {
   return () => { set.delete(fn); if (!set.size) { srcHandlers.delete(key); api('POST', '/api/sub', { cid, widget, source, on: false }).catch(() => {}); } };
 }
 
+const screenshotters = new Map(); // panel id -> capture(opts) of an open widget window (see panels/widget.js)
+// The server asked this tab for a PNG of a widget window; the answer (or the reason it failed) goes back over a POST.
+async function answerScreenshot(d) {
+  const reply = (body) => api('POST', `/api/screenshot/${d.id}`, body).catch((e) => toast(`screenshot not delivered: ${e.message}`, 'bad'));
+  const cap = screenshotters.get(d.panel);
+  if (!cap) return reply({ error: 'that window is not open in this tab (is it in another workspace?)' });
+  try {
+    const r = await cap({ abstract: d.abstract, scale: d.scale });
+    const bytes = new Uint8Array(await r.png.arrayBuffer()); let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    await reply({ png: btoa(bin), width: r.width, height: r.height });
+  } catch (e) { await reply({ error: e.message }); }
+}
+
 const ctx = {
+  registerScreenshot: (id, fn) => { screenshotters.set(id, fn); return () => { if (screenshotters.get(id) === fn) screenshotters.delete(id); }; },
   typePath: (p) => typePath(p),
   uploadImage: (blob, name) => uploadImage(blob, name),
   openFile: (p, line) => term.openFileHook?.(p, line),
@@ -235,6 +250,7 @@ function connectEvents() {
     if (d.removed) widgets.delete(d.name); else widgets.set(d.name, d);
     wm.widgetChanged(d);
   });
+  es.addEventListener('screenshot', (e) => answerScreenshot(JSON.parse(e.data)));
   es.addEventListener('ask', (e) => { pendingAsks.push(JSON.parse(e.data)); if (pendingAsks.length === 1) showAsk(); });
   es.addEventListener('ask-done', (e) => dropAsk(JSON.parse(e.data).id));
   es.addEventListener('copy', (e) => { const d = JSON.parse(e.data); clipboardIn(d.text, d.label); });
