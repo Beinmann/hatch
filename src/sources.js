@@ -7,6 +7,7 @@ import { ports as listPorts } from './discover.js';
 
 const MIN_MS = 500;
 const EXEC_MAX = 64 * 1024;
+const EXEC_MAX_CAP = 4 * 1024 * 1024; // a source may ask for more output ("maxBytes"), up to this
 const FILE_MAX = 256 * 1024;
 const TAIL_KEEP = 200;
 
@@ -85,7 +86,7 @@ export function checkSource(d) {
   const kind = d.kind;
   const everyMs = Math.max(MIN_MS, Number.isFinite(d.everyMs) ? d.everyMs : 1000);
   if (kind === 'metric') { if (!METRICS.includes(d.id)) return { error: `unknown metric ${d.id}; known: ${METRICS.join(', ')}` }; return { def: { kind, id: d.id, path: d.path, everyMs } }; }
-  if (kind === 'exec') { if (typeof d.cmd !== 'string' || !d.cmd) return { error: 'exec sources need cmd' }; return { def: { kind, cmd: d.cmd, json: !!d.json, everyMs, timeoutMs: Math.min(30000, d.timeoutMs || 10000), ...(d.arg === 'any' && { arg: 'any' }) } }; }
+  if (kind === 'exec') { if (typeof d.cmd !== 'string' || !d.cmd) return { error: 'exec sources need cmd' }; return { def: { kind, cmd: d.cmd, json: !!d.json, everyMs, timeoutMs: Math.min(30000, d.timeoutMs || 10000), ...(Number.isFinite(d.maxBytes) && d.maxBytes > EXEC_MAX && { maxBytes: Math.min(EXEC_MAX_CAP, Math.floor(d.maxBytes)) }), ...(d.arg === 'any' && { arg: 'any' }) } }; }
   if (kind === 'tail' || kind === 'file') { if (typeof d.path !== 'string' || !d.path) return { error: `${kind} sources need path` }; return { def: { kind, path: d.path, everyMs: Math.max(MIN_MS, d.everyMs || 500) } }; }
   return { error: `unknown source kind ${kind}; use metric, exec, tail or file` };
 }
@@ -101,7 +102,7 @@ export const ANY_ARG_RE = /^[^\x00-\x08\x0a-\x1f\x7f]{1,4000}$/;
  *  (environment, never part of the shell text, so it cannot inject commands). */
 function runExec(def, arg, done) {
   const env = arg === undefined ? process.env : { ...process.env, HATCH_ARG: arg };
-  execCb(def.cmd, { timeout: def.timeoutMs, maxBuffer: EXEC_MAX, shell: '/bin/sh', env }, (err, stdout, stderr) => {
+  execCb(def.cmd, { timeout: def.timeoutMs, maxBuffer: def.maxBytes || EXEC_MAX, shell: '/bin/sh', env }, (err, stdout, stderr) => {
     const out = String(stdout || '').trim();
     const v = { out, code: err ? (err.code ?? 1) : 0, ...(err && { error: err.killed ? `timed out after ${def.timeoutMs} ms` : String(stderr || err.message).trim().slice(0, 500) }) };
     if (def.json && !err) { try { v.json = JSON.parse(out); } catch (e) { v.error = `output is not JSON: ${e.message}`; } }

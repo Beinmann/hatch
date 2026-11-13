@@ -462,7 +462,7 @@ async function main(argv) {
       // "top" is a terminal window running htop, not the old widget, so keys work
       if (sub === 'open' && name === 'top') { const p = await api('POST', '/api/examples/top/open', {}); return console.log(`top open as ${p.id}`); }
       // "git" follows the shell: one widget per project, made by the server for this directory (the server does not know our cwd)
-      if (sub === 'open' && name === 'git') { const p = await api('POST', '/api/examples/git/open', { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
+      if (sub === 'open' && (name === 'git' || name === 'files')) { const p = await api('POST', `/api/examples/${name}/open`, { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
       // "board FILE": a board that autosaves to that file (the server pins the widget to it; relative paths are from here)
       if (sub === 'open' && name === 'board' && rest[1] !== undefined) {
         const file = path.resolve(rest[1]);

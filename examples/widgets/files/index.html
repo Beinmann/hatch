@@ -1,0 +1,182 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- Read-only file browser: a list on the left, a preview on the right. It lists and reads files only through the `ls` and
+     `peek` sources in widget.json (a widget iframe cannot touch the filesystem). Nothing here writes, renames or deletes.
+     Keys: j/k or arrows move, l/Enter/Right enter a folder, h/Left/Backspace go up, . toggles hidden files, g/G first/last, r reloads.
+     Pure logic lives in model.js (also used by the tests). -->
+<style>
+  html,body{height:100%;margin:0;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.5 var(--mono,monospace)}
+  #app{display:flex;flex-direction:column;height:100%;outline:none}
+  .bar{display:flex;gap:8px;align-items:center;padding:4px 8px;border-bottom:1px solid rgba(127,127,127,.25);min-width:0}
+  .bar button{background:none;border:1px solid rgba(127,127,127,.4);color:inherit;border-radius:3px;font:inherit;cursor:pointer;padding:0 6px}
+  .bar button:hover{border-color:var(--accent,#4fd1c0)}
+  .bar .path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+  .bar .path bdi{direction:ltr}
+  .bar .tag{color:var(--muted,#888);white-space:nowrap}
+  .main{flex:1;display:flex;min-height:0}
+  #list{flex:0 0 46%;overflow:auto;min-width:0}
+  #pv{flex:1;overflow:auto;border-left:1px solid rgba(127,127,127,.25);padding:8px;min-width:0}
+  .row{display:flex;gap:8px;padding:0 8px;white-space:nowrap;cursor:default;align-items:baseline}
+  .row:hover{background:rgba(127,127,127,.12)}
+  .row.sel{background:color-mix(in srgb,var(--accent,#4fd1c0) 25%,transparent)}
+  .row .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .row .s{flex:none;color:var(--muted,#888)}
+  .row.d .n{color:var(--accent,#4fd1c0);font-weight:bold}
+  .row.hid .n{opacity:.65}
+  .msg{color:var(--muted,#888);padding:8px}
+  .msg.bad{color:#f87171}
+  #pv img{max-width:100%;max-height:70vh;object-fit:contain;background:repeating-conic-gradient(rgba(127,127,127,.2) 0 25%,transparent 0 50%) 0 0/16px 16px}
+  #pv pre{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit}
+  #pv h4{margin:0 0 6px;font:inherit;font-weight:bold;word-break:break-all}
+  .kv{display:flex;gap:8px}.kv .k{flex:none;width:9ch;color:var(--muted,#888)}.kv .v{min-width:0;word-break:break-all}
+  .note{color:var(--muted,#888);margin:6px 0}
+</style>
+<div id="app" tabindex="0">
+  <div class="bar"><button id="up" title="Parent folder (h)">&uarr;</button><span class="path" id="path"><bdi></bdi></span><span class="tag" id="tag"></span></div>
+  <div class="main"><div id="list"></div><div id="pv"></div></div>
+</div>
+<script src="/sdk.js"></script>
+<script src="model.js"></script>
+<script>
+(() => {
+  const M = window.FilesModel;
+  const $ = (id) => document.getElementById(id);
+  const listEl = $('list'), pv = $('pv'), pathEl = $('path').firstElementChild, tag = $('tag');
+  const text = (el, t) => { el.textContent = t; return el; };
+  const mk = (tagName, cls, t) => { const e = document.createElement(tagName); if (cls) e.className = cls; if (t !== undefined) e.textContent = t; return e; };
+
+  let cwd = null;            // real path of the folder shown
+  let entries = [];          // everything in it (unsorted), as parsed
+  let truncated = false;
+  let showHidden = false;
+  let sel = -1;              // index into the current listing
+  let err = null;            // message instead of a list
+  let lsId = 0, pkId = 0, timer = null;
+
+  const current = () => M.listing(entries, showHidden);
+
+  function setMsg(el, t, bad) { el.replaceChildren(mk('div', 'msg' + (bad ? ' bad' : ''), t)); }
+
+  function renderBar() {
+    pathEl.textContent = cwd || '';
+    tag.textContent = (showHidden ? 'hidden shown' : '') + (truncated ? ` · first ${M.LIST_LIMIT} only` : '');
+  }
+  function renderList() {
+    renderBar();
+    if (err) { setMsg(listEl, err, true); return; }
+    const list = current();
+    if (!list.length) { setMsg(listEl, entries.length ? 'only hidden files here (press . to show)' : 'empty folder'); return; }
+    const frag = document.createDocumentFragment();
+    list.forEach((e, i) => {
+      const r = mk('div', 'row' + (e.isDir ? ' d' : '') + (e.name.startsWith('.') ? ' hid' : '') + (i === sel ? ' sel' : ''));
+      r.dataset.i = i; r.title = e.name + (e.link ? ' -> ' + e.link : '');
+      r.append(mk('span', 'n', e.name + (e.isDir ? '/' : '') + (e.broken ? ' (broken link)' : '')), mk('span', 's', e.isDir ? '' : M.formatSize(e.size)));
+      frag.append(r);
+    });
+    listEl.replaceChildren(frag);
+    listEl.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  // ---- preview ----
+  function kv(k, v) { const r = mk('div', 'kv'); r.append(mk('span', 'k', k), mk('span', 'v', v)); return r; }
+  function metaBlock(e, p) {
+    const f = document.createDocumentFragment();
+    f.append(kv('size', p ? `${M.formatSize(p.size)} (${p.size} bytes)` : M.formatSize(e.size)));
+    f.append(kv('type', (p && (p.desc || p.fileType)) || (e.isDir ? 'folder' : e.type)));
+    if (p?.mtime || e.mtime) f.append(kv('modified', M.formatTime(p?.mtime || e.mtime)));
+    if (p?.mode) f.append(kv('mode', p.mode));
+    if (e.link) f.append(kv('link to', e.link));
+    return f;
+  }
+  function showPreview(e, p) {
+    const f = document.createDocumentFragment();
+    f.append(mk('h4', '', e.name));
+    f.append(metaBlock(e, p));
+    if (p.kind === 'image') {
+      const img = document.createElement('img'); img.alt = e.name; img.src = p.dataUrl;
+      img.onerror = () => { img.replaceWith(mk('div', 'note', 'The browser could not decode this image.')); };
+      f.append(mk('div', 'note', ''), img);
+    } else if (p.kind === 'text') {
+      if (p.truncated) f.append(mk('div', 'note', 'Large file: showing the first 64 KB.'));
+      f.append(text(mk('pre'), p.text || '(empty file)'));
+    } else if (p.kind === 'bigimage') f.append(mk('div', 'note', 'Image over 2 MB: no inline preview.'));
+    else if (p.kind === 'special') f.append(mk('div', 'note', 'Not a regular file (device, socket or pipe): not read.'));
+    else f.append(mk('div', 'note', 'Binary file: no preview.'));
+    pv.replaceChildren(f);
+  }
+  function loadPreview() {
+    const list = current(); const e = list[sel];
+    const id = ++pkId;
+    if (!e) { pv.replaceChildren(); return; }
+    const full = M.joinPath(cwd, e.name);
+    if (e.isDir) { const f = document.createDocumentFragment(); f.append(mk('h4', '', e.name + '/'), metaBlock(e, null), mk('div', 'note', 'Folder: l or Enter opens it.')); pv.replaceChildren(f); return; }
+    if (!M.pathOk(full)) { setMsg(pv, 'This file name has a control character in it, so the browser cannot pass it safely; use a terminal.', true); return; }
+    setMsg(pv, 'loading...');
+    hatch.call('peek', full).then((v) => {
+      if (id !== pkId) return;
+      if (v.error && !v.out) return setMsg(pv, v.error, true);
+      const p = M.parsePeek(v.out);
+      if (p.state === 'err') return setMsg(pv, p.error, true);
+      showPreview(e, p);
+    }, (x) => { if (id === pkId) setMsg(pv, x.message, true); });
+  }
+  const previewSoon = () => { clearTimeout(timer); pkId++; timer = setTimeout(loadPreview, 120); }; // holding j must not fire a call per row
+
+  // ---- navigation ----
+  // A failed open (permission denied, folder gone) keeps the current list and says why in the preview pane; only a failed
+  // first open, with nothing to show yet, puts the message in the list.
+  function fail(msg, dir) {
+    if (cwd === null && dir && dir !== '/') open(M.parentOf(dir)); // the start folder is gone or unreadable: begin at the nearest folder that opens
+    else if (cwd === null) { err = msg; renderList(); } else { clearTimeout(timer); pkId++; setMsg(pv, msg, true); }
+  }
+  function open(dir, select) {
+    const id = ++lsId; pkId++;
+    if (!M.pathOk(dir)) return fail('This folder name has a control character in it, so the browser cannot open it; use a terminal.', dir);
+    hatch.call('ls', dir).then((v) => {
+      if (id !== lsId) return;
+      if (v.error && !v.out) return fail(v.error, dir);
+      const r = M.parseLs(v.out);
+      if (r.state === 'err') return fail(`Cannot open this folder: ${r.error}`, dir);
+      err = null; cwd = r.real; entries = r.entries; truncated = r.truncated;
+      const list = current(); const i = select ? M.indexOfName(list, select) : 0;
+      sel = i >= 0 ? i : list.length ? 0 : -1;
+      renderList(); previewSoon();
+    }, (x) => { if (id === lsId) fail(x.message, dir); });
+  }
+  const up = () => { if (cwd && cwd !== '/') open(M.parentOf(cwd), M.baseName(cwd)); };
+  const enter = () => {
+    const e = current()[sel]; if (!e) return;
+    if (e.isDir) open(M.joinPath(cwd, e.name)); else { clearTimeout(timer); loadPreview(); }
+  };
+  const go = (d) => { const n = M.move(sel, d, current().length); if (n === sel) return; sel = n; renderList(); previewSoon(); };
+  const toggleHidden = () => {
+    const name = current()[sel]?.name; showHidden = !showHidden;
+    const list = current(); const i = M.indexOfName(list, name); sel = i >= 0 ? i : list.length ? 0 : -1;
+    renderList(); previewSoon();
+  };
+
+  addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    const k = e.key; const n = current().length;
+    const acted = ({
+      j: () => go(1), ArrowDown: () => go(1), k: () => go(-1), ArrowUp: () => go(-1),
+      h: up, ArrowLeft: up, Backspace: up, l: enter, ArrowRight: enter, Enter: enter,
+      '.': toggleHidden, g: () => go(-n), Home: () => go(-n), G: () => go(n), End: () => go(n),
+      PageDown: () => go(10), PageUp: () => go(-10), r: () => cwd && open(cwd, current()[sel]?.name),
+    })[k];
+    if (acted) { e.preventDefault(); acted(); }
+  });
+  listEl.addEventListener('click', (e) => {
+    const r = e.target.closest('.row'); if (!r) return;
+    sel = Number(r.dataset.i); renderList(); previewSoon(); $('app').focus();
+  });
+  listEl.addEventListener('dblclick', (e) => { if (e.target.closest('.row')) enter(); });
+  $('up').addEventListener('click', up);
+
+  hatch.ready(() => {
+    $('app').focus();
+    hatch.call('start').then((v) => open((v.out || '').trim() || '/'), (x) => { err = x.message; renderList(); });
+  });
+})();
+</script>

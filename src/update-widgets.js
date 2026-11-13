@@ -68,9 +68,9 @@ export const staleMessage = (name) => `The shipped ${name} widget changed since 
 const GIT = 'git';
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 /** widget.json for a git widget of the project at `dir`: the shipped one with {{cwd}} pinned (shell-quoted) to it. */
-export function gitProjectMeta(shippedMeta, dir, title) {
+export function gitProjectMeta(shippedMeta, dir, title, from = GIT) {
   const quoted = `'${dir.replace(/'/g, `'\\''`)}'`;
-  return { ...shippedMeta, title, dir, from: GIT, sources: (shippedMeta.sources || []).map((src) => ({ ...src, cmd: src.cmd.replaceAll('{{cwd}}', () => quoted) })) };
+  return { ...shippedMeta, title, dir, from, sources: (shippedMeta.sources || []).map((src) => ({ ...src, cmd: src.cmd.replaceAll('{{cwd}}', () => quoted) })) };
 }
 export function projectGitCopies(stateDir) {
   const root = path.join(stateDir, 'widgets'); if (!fs.existsSync(root)) return [];
