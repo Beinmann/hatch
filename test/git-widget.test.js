@@ -78,13 +78,13 @@ test('widget open git: one instance per project, titled, quoted dir, reused; col
   try {
     const repo = makeRepo();
     const odd = path.join(fs.realpathSync(tmp()), "it's $HOME `x`"); fs.mkdirSync(odd); git(odd, 'init', '-q');
-    let r = await cli(['widget', 'open', 'git'], path.join(repo, 'src'), s); assert.equal(r.status, 0, r.stderr);
+    let r = await cli(['widget', 'open', 'git'], repo, s); assert.equal(r.status, 0, r.stderr);
     const name = `git-${path.basename(repo)}`.replace(/[^\w-]+/g, '-'); assert.match(r.stdout, new RegExp(`${name} open as w-${name}`));
     const m = JSON.parse(fs.readFileSync(path.join(s, 'widgets', name, 'widget.json'), 'utf8'));
     assert.equal(m.title, `Git: ${path.basename(repo)}`); assert.equal(m.dir, repo); assert.ok(m.sources[0].cmd.startsWith(`cd '${repo}' `)); assert.ok(fs.existsSync(path.join(s, 'widgets', name, 'parse.js')));
     assert.equal((await h.call('GET', '/api/panels')).data.find((p) => p.id === `w-${name}`).title, `Git: ${path.basename(repo)}`);
     fs.writeFileSync(path.join(s, 'widgets', name, 'marker'), 'keep');
-    r = await cli(['widget', 'open', 'git'], repo, s); assert.match(r.stdout, new RegExp(`${name} open as`)); assert.ok(fs.existsSync(path.join(s, 'widgets', name, 'marker')), 'reused, not recreated');
+    r = await cli(['widget', 'open', 'git'], repo, s); assert.match(r.stdout, /already exists/); assert.ok(fs.existsSync(path.join(s, 'widgets', name, 'marker')), 'reused, not recreated');
     assert.equal((await h.call('GET', '/api/panels')).data.filter((p) => p.type === 'widget').length, 1);
     r = await cli(['widget', 'open', 'git'], odd, s); assert.equal(r.status, 0, r.stderr);
     const oddName = r.stdout.match(/widget (\S+) open/)[1];
@@ -252,3 +252,34 @@ test('the diff and show sources accept any path as a call argument, other source
   } finally { await h.close(); }
 });
 const widgetMeta2 = (sources) => ({ files: { 'index.html': 'x' }, meta: { sources } });
+
+test('widget open git: --name is any label, --dir picks the directory, one window per realpath per workspace', async () => {
+  const h = await startHatch(); const s = h.stateDir;
+  try {
+    const repo = makeRepo(); const link = path.join(fs.realpathSync(tmp()), 'ln'); fs.symlinkSync(repo, link);
+    const panels = async () => (await h.call('GET', '/api/panels')).data.filter((p) => p.type === 'widget');
+    let r = await cli(['widget', 'open', 'git', '--name', 'Release 1: "main" / ünï', '--dir', repo], os_tmp(), s); assert.equal(r.status, 0, r.stderr);
+    let list = await panels(); assert.equal(list.length, 1); assert.equal(list[0].title, 'Release 1: "main" / ünï');
+    const id = list[0].id;
+    // same dir via symlink and via a relative path, different name: no second window, note names the existing one, exit 0
+    await h.call('PATCH', `/api/panels/${id}`, { minimized: true });
+    r = await cli(['widget', 'open', 'git', '--name', 'other', '--dir', link], os_tmp(), s); assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /already exists/); assert.ok(r.stdout.includes('Release 1: "main" / ünï'));
+    r = await cli(['widget', 'open', 'git'], repo, s); assert.match(r.stdout, /already exists/);
+    r = await cli(['widget', 'open', 'git', '--dir', '.'], repo, s); assert.match(r.stdout, /already exists/);
+    list = await panels(); assert.equal(list.length, 1); assert.equal(list[0].title, 'Release 1: "main" / ünï', 'not renamed');
+    assert.ok(!list[0].minimized, 'brought back from minimized');
+    // a subdirectory is another directory; default label is Git: <folder>
+    r = await cli(['widget', 'open', 'git', '--dir', path.join(repo, 'src')], repo, s); assert.equal(r.status, 0, r.stderr); assert.doesNotMatch(r.stdout, /already/);
+    list = await panels(); assert.equal(list.length, 2); assert.ok(list.some((p) => p.title === 'Git: src'));
+    // the same directory may be open once in each workspace
+    r = await cli(['--ws', 'two', 'widget', 'open', 'git', '--name', 'second', '--dir', repo], repo, s); assert.equal(r.status, 0, r.stderr); assert.doesNotMatch(r.stdout, /already/);
+    r = await cli(['--ws', 'two', 'widget', 'open', 'git', '--dir', link], repo, s); assert.match(r.stdout, /already exists.*second/);
+    list = await panels(); assert.equal(list.length, 3); assert.deepEqual(list.filter((p) => p.title === 'second').map((p) => p.ws), ['two']);
+    assert.equal(new Set(list.map((p) => p.props.name)).size, 3);
+    // blank names and bad dirs are refused
+    assert.equal((await h.call('POST', '/api/examples/git/open', { dir: repo, label: '  ' })).status, 400);
+    r = await cli(['widget', 'open', 'git', '--dir', path.join(repo, 'nope')], repo, s); assert.notEqual(r.status, 0);
+  } finally { await h.close(); }
+});
+function os_tmp() { return fs.realpathSync(tmp()); }
