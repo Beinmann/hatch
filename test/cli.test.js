@@ -377,3 +377,27 @@ test('hatch page commands do not print the deprecation notice and exit 2 when th
   const r = await ui(['panels'], { cwd: tmp() });
   assert.equal(r.status, 2); assert.doesNotMatch(r.stderr, /moved to/);
 });
+
+test('host: prints the HATCH_URL based link, mentions the opened tabs, --no-open only prints', async () => {
+  const { readSse } = await import('./helpers.js');
+  const h = await startHatch(); const s = h.stateDir; const d = tmp(); fs.writeFileSync(path.join(d, 'p.html'), '<h1>x</h1>');
+  try {
+    const env = { HATCH_URL: 'https://proxy.example/hatch/' };
+    let r = await ui(['host', path.join(d, 'p.html'), '--yes'], { state: s, env });
+    assert.equal(r.status, 0, r.stderr); assert.match(r.stdout.trim(), /^https:\/\/proxy\.example\/hatch\/host\/[0-9a-f]{10}\/p\.html\?t=/, 'no tab received it: the link keeps the token');
+    assert.match(r.stderr, /No Hatch browser tab/);
+    const got = readSse(`${h.base}/api/events?cid=c1`, { 'x-token': h.hatch.token }, (e) => e.some((x) => x.event === 'open-hosted'), 4000);
+    await new Promise((x) => setTimeout(x, 300));
+    r = await ui(['host', path.join(d, 'p.html'), '--yes'], { state: s, env });
+    assert.match(r.stdout.trim(), /^https:\/\/proxy\.example\/hatch\/host\/[0-9a-f]{10}\/p\.html$/, 'cookie flow: no token in the link');
+    assert.match(r.stderr, /Opened in 1 Hatch browser tab/);
+    assert.equal((await got).filter((x) => x.event === 'open-hosted').length, 1);
+    const got2 = readSse(`${h.base}/api/events?cid=c2`, { 'x-token': h.hatch.token }, (e) => e.some((x) => x.event === 'open-hosted'), 1200);
+    await new Promise((x) => setTimeout(x, 300));
+    r = await ui(['host', path.join(d, 'p.html'), '--yes', '--no-open'], { state: s, env });
+    assert.match(r.stdout.trim(), /\?t=/); assert.match(r.stderr, /--no-open/);
+    assert.equal((await got2).filter((x) => x.event === 'open-hosted').length, 0);
+    r = await ui(['host', path.join(d, 'p.html'), '--yes', '--no-open'], { state: s });
+    assert.match(r.stdout.trim(), /^http:\/\/127\.0\.0\.1:\d+\/host\//, 'without HATCH_URL the local server address');
+  } finally { await h.close(); }
+});

@@ -437,7 +437,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       if (p === '/api/info') return json(res, 200, { ...info(), viewOnly: viewing });
       if (p === '/api/events') {
         const cid = url.searchParams.get('cid') || ''; streamsOf.set(cid, (streamsOf.get(cid) || 0) + 1);
-        return bus.subscribe(req, res, () => { const n = (streamsOf.get(cid) || 1) - 1; if (n > 0) streamsOf.set(cid, n); else { streamsOf.delete(cid); dropClient(cid); } });
+        return bus.subscribe(req, res, () => { const n = (streamsOf.get(cid) || 1) - 1; if (n > 0) streamsOf.set(cid, n); else { streamsOf.delete(cid); dropClient(cid); } }, { cid, full: levelOf(req) === 'full' });
       }
       if (p === '/api/sub' && m === 'POST') {
         // Widget data rides the one /api/events stream: browsers allow only ~6 connections per origin, and a stream per
@@ -486,7 +486,12 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       if (p === '/api/host' && m === 'GET') return json(res, 200, hostedList());
       if (p === '/api/host' && m === 'DELETE') { const n = hosted.size; hosted.clear(); return json(res, 200, { ok: true, stopped: n }); }
       { const hm = /^\/api\/host\/([^/]+)$/.exec(p); if (hm && m === 'DELETE') return json(res, 200, unhost(hm[1])); }
-      if (p === '/api/host' && m === 'POST') return json(res, 200, hostFile((await readJson(req)).file));
+      if (p === '/api/host' && m === 'POST') {
+        // Tell the browser UIs (full access only, and only tabs showing the command's workspace) to open the page at their own origin, so a reverse proxy works.
+        const b = await readJson(req); const h = hostFile(b.file); const ws = typeof b.ws === 'string' && b.ws ? b.ws : null;
+        const opened = b.open === false ? 0 : bus.emit('open-hosted', { path: h.path, id: crypto.randomBytes(6).toString('hex') }, (c) => c?.full && (!ws || (presence.get(c.cid) || 'main') === ws));
+        return json(res, 200, { ...h, opened });
+      }
       if (p === '/api/file' && m === 'GET') return serveImage(res, url.searchParams.get('path') || '');
 
       if (p === '/api/fs/list' && m === 'GET') return json(res, 200, fsapi.list(url.searchParams.get('path') || cwd));

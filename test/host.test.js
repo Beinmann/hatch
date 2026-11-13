@@ -149,3 +149,23 @@ test('hatch host list / stop CLI; a file named list needs ./list', async () => {
     assert.match((await run(h.stateDir, ['host', 'list'])).stdout, /nothing hosted/);
   } finally { await h.close(); }
 });
+
+test('POST /api/host sends open-hosted to full clients only, honours ws and open:false', async () => {
+  const { readSse } = await import('./helpers.js');
+  const { site: s } = site(); const h = await startHatch();
+  try {
+    const view = 'v'.repeat(32); const cfgFile = path.join(h.stateDir, 'config.json');
+    fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')), viewToken: view }));
+    const none = (e) => e.some((x) => x.event === 'open-hosted');
+    const full = readSse(`${h.base}/api/events?cid=f1`, { 'x-token': h.hatch.token }, none, 1500);
+    const watch = readSse(`${h.base}/api/events?cid=v1`, { 'x-token': view }, none, 1500);
+    await new Promise((r) => setTimeout(r, 300));
+    const file = path.join(s, 'page.html');
+    assert.equal((await h.call('POST', '/api/host', { file, open: false })).data.opened, 0);
+    assert.equal((await h.call('POST', '/api/host', { file, ws: 'elsewhere' })).data.opened, 0, 'no tab shows that workspace');
+    const r = await h.call('POST', '/api/host', { file }); assert.equal(r.data.opened, 1, 'the view-only stream is not counted');
+    const got = (await full).filter((x) => x.event === 'open-hosted').map((x) => JSON.parse(x.data));
+    assert.equal(got.length, 1); assert.equal(got[0].path, r.data.path); assert.match(got[0].id, /^[0-9a-f]{12}$/);
+    assert.equal((await watch).filter((x) => x.event === 'open-hosted').length, 0);
+  } finally { await h.close(); }
+});
