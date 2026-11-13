@@ -750,9 +750,11 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       }
 
       if (p === '/api/fx') {
-        if (m === 'GET') { const f = readFx(stateDir); return json(res, 200, { effect: f.effect, intensity: f.intensity, effects: EFFECTS }); }
-        if (m === 'POST') { // the file is the source of truth; the watcher then pushes the change to every open page
-          try { const b = await readJson(req); const f = setFx(stateDir, b.effect, b.intensity); state.rescan(); return json(res, 200, { ...f, effects: EFFECTS }); }
+        // effects belong to one workspace: ?ws=NAME (GET) or "ws" in the body (POST); none means main
+        const fxDir = (name) => { try { return name && name !== 'main' ? wsapi.workspaceDir(stateDir, wsapi.findWorkspace(stateDir, String(name), [])) : stateDir; } catch (e) { if (e instanceof wsapi.WorkspaceError) throw new HttpError(e.status || 404, e.message); throw e; } };
+        if (m === 'GET') { const f = readFx(fxDir(url.searchParams.get('ws'))); return json(res, 200, { effect: f.effect, intensity: f.intensity, effects: EFFECTS }); }
+        if (m === 'POST') { // the file is the source of truth; the watcher then pushes the change to the pages
+          try { const b = await readJson(req); const f = setFx(fxDir(b.ws), b.effect, b.intensity); state.rescan(); return json(res, 200, { ...f, effects: EFFECTS }); }
           catch (e) { if (e instanceof FxError) throw new HttpError(400, e.message); throw e; }
         }
       }
