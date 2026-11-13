@@ -31,6 +31,10 @@ import { createLimits } from './limits.js';
 import { parseProxyPath, proxyHttp, proxyUpgrade } from './proxy.js';
 import { acquireLock } from './instance-guard.js';
 import { createConfigGuard } from './config-guard.js';
+import { createSessions } from './sessions.js';
+import { createLimiter, clientKey } from './rate-limit.js';
+import { loginPage, loginNeededPage, createCodes } from './login.js';
+import { rotateTokenFile } from './token.js';
 
 const PUBLIC = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -71,7 +75,7 @@ function tokenOk(given, token) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-export function createHatch({ tmuxStatus = false, viewOnly = false, root = null, stateDir, port = 0, host = '0.0.0.0', session, cwd = process.cwd(), attach = null, tmuxBin = 'tmux', procRoot = '/proc', pollState = false, findBin = which, limitsProbe, configGuard: guardOpts } = {}) {
+export function createHatch({ tmuxStatus = false, viewOnly = false, root = null, stateDir, port = 0, host = '0.0.0.0', session, cwd = process.cwd(), attach = null, tmuxBin = 'tmux', procRoot = '/proc', pollState = false, findBin = which, limitsProbe, configGuard: guardOpts, loginLimit } = {}) {
   stateDir = path.resolve(stateDir);
   fsapi.setRoot(root || process.env.HATCH_ROOT || null); // module-level: one Hatch per process
   const configWarnings = [];
@@ -82,6 +86,9 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const log = (m) => { try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${m}\n`); } catch { /* logging must never break the server */ } };
 
   const configGuard = createConfigGuard({ stateDir, current: () => ({ port: cfg.port, host }), log, ...guardOpts }); // repairs port/host in config.json if another writer clobbers them
+  const sessions = createSessions({ file: path.join(stateDir, 'sessions.json'), warn: (m) => log(m) }); // login sessions (src/sessions.js)
+  const limiter = createLimiter(loginLimit); // failed token checks per client address (src/rate-limit.js)
+  const codes = createCodes(); // single-use login codes, memory only
   let lock = null; // server.lock (src/instance-guard.js), taken on the first listen
   let state; // assigned below; the bus snapshot reads it lazily
   const migration = wsapi.migrate(stateDir); // first start with workspaces: wraps the existing layout and background as `main`
@@ -247,14 +254,16 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   // only ever gets the view-only subset of the API. config.json is re-read for it, so a new view token works without a restart.
   const readEditorPref = () => { try { return JSON.parse(fs.readFileSync(l.config, 'utf8')).editor; } catch { return undefined; } }; // read per call so a hand edit applies at once
   const readViewToken = () => { try { const t = JSON.parse(fs.readFileSync(l.config, 'utf8')).viewToken; return typeof t === 'string' && t.length >= 16 ? t : null; } catch { return null; } };
+  const sessionOk = (req) => sessions.check(parseCookies(req.headers.cookie).hatch_session);
   const levelOf = (req) => {
+    if (sessionOk(req)) return 'full';
     const given = [req.headers['x-token'], parseCookies(req.headers.cookie).hatch_token];
     if (given.some((g) => tokenOk(g, cfg.token))) return 'full';
     const vt = given.some((g) => g) ? readViewToken() : null;
     return vt && given.some((g) => tokenOk(g, vt)) ? 'view' : null;
   };
   const isAuthed = (req) => !!levelOf(req);
-  // Streams opened with a view token are re-checked every 5 s: `hatch-server url --revoke-view` ends them (full-token streams are never cut).
+  // Long-lived streams are re-checked every 5 s: ending a session, rotating the token or `hatch-server url --revoke-view` closes the ones that relied on it.
   const viewStreams = new Set();
   const trackView = (req, res) => { const e = { req, res }; viewStreams.add(e); res.on('close', () => viewStreams.delete(e)); };
   const viewWatch = setInterval(() => { for (const e of [...viewStreams]) if (!levelOf(e.req)) { viewStreams.delete(e); try { e.res.end(); e.req.destroy(); } catch { /* gone */ } } }, 5000);
@@ -369,6 +378,27 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     return serveFile(res, f, { 'referrer-policy': 'no-referrer' }, req);
   }
 
+  // ---- sessions and cookies ----
+  const COOKIE_BASE = 'Path=/; HttpOnly; SameSite=Strict';
+  const CLEAR_COOKIE = `hatch_token=; ${COOKIE_BASE}; Max-Age=0`; // the old cookie held the raw token
+  // The Host check has already passed when this runs, so X-Forwarded-Proto from the reverse proxy is believed. A client that lies about it only
+  // makes its own cookie Secure, which a browser then refuses to keep over plain HTTP.
+  const isHttps = (req) => String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https';
+  const sessionCookie = (req, id) => `hatch_session=${id}; ${COOKIE_BASE}; Max-Age=${Math.floor(30 * 24 * 3600)}${isHttps(req) ? '; Secure' : ''}`;
+  const clientHint = (req) => `${clientKey(req).replace(/^via-proxy:/, '')}; ${String(req.headers['user-agent'] || 'no user agent').slice(0, 80)}`;
+  const cleanLocation = (p) => (p.startsWith('/') && !p.startsWith('//') ? p : '/'); // the path only: no query, so no secret stays in the history
+  function startSession(req, res, status, location, keepSession = false) {
+    const cookie = keepSession ? [] : [sessionCookie(req, sessions.create(clientHint(req)).id)];
+    res.writeHead(status, { 'set-cookie': [...cookie, CLEAR_COOKIE], location, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+    return res.end();
+  }
+  function countFail(key, what) { const lock = limiter.fail(key); if (lock) log(`login locked: ${key} may not try again for ${Math.ceil(lock / 1000)} s after repeated failures (${what})`); }
+  function tooMany(res, waitMs, api) {
+    const secs = Math.max(1, Math.ceil(waitMs / 1000)); const msg = `too many failed logins from this address; try again in ${secs} s`;
+    res.writeHead(429, { 'retry-after': secs, 'content-type': api ? 'application/json' : 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(api ? JSON.stringify({ error: msg }) : loginPage(msg));
+  }
+
   // ---- routing ----
   async function route(req, res, url) {
     const p = url.pathname; const m = req.method;
@@ -402,27 +432,65 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       return serveFile(res, f, { 'content-security-policy': PAGE_WINDOW_CSP, 'referrer-policy': 'no-referrer', 'access-control-allow-origin': '*', 'x-frame-options': 'SAMEORIGIN' }, req);
     }
 
+    // ---- login page and one-time login links (no auth: they are how a browser gets one) ----
+    const key = clientKey(req);
+    if (p === '/login') {
+      const page = (status, note) => { res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'content-security-policy': PAGE_CSP, 'x-frame-options': 'SAMEORIGIN', 'x-content-type-options': 'nosniff' }); res.end(m === 'HEAD' ? undefined : loginPage(note)); };
+      if (m !== 'GET' && m !== 'HEAD' && m !== 'POST') throw new HttpError(405, 'method not allowed');
+      const code = m === 'POST' ? null : url.searchParams.get('code');
+      if (m === 'POST' || code !== null) {
+        const wait = limiter.wait(key); if (wait) return tooMany(res, wait, false);
+        let given = null;
+        if (m === 'POST') given = new URLSearchParams((await readBody(req, 4096)).toString('utf8')).get('token');
+        if (m === 'POST' ? tokenOk(given, cfg.token) : codes.use(code)) { limiter.success(key); log(`login: new session from ${key} (${m === 'POST' ? 'token' : 'one-time link'})`); return startSession(req, res, m === 'POST' ? 303 : 302, '/'); }
+        countFail(key, m === 'POST' ? 'login form' : 'login link');
+        return page(401, m === 'POST' ? 'That token did not work.' : 'That login link did not work: it was already used or has expired. Run `hatch-server url --once` for a new one.');
+      }
+      return page(200, '');
+    }
+
     // ---- auth ----
-    const level = levelOf(req); const authed = !!level;
+    // Order: a live session cookie; else the long-lived token (x-token header, legacy hatch_token cookie, ?t= link, which are rate limited per
+    // client address: after repeated failures they are not even compared until the lockout ends); a session is never asked of the limiter.
+    const cookies = parseCookies(req.headers.cookie);
     const qt = url.searchParams.get('t');
-    const qLevel = qt ? (tokenOk(qt, cfg.token) ? 'full' : (readViewToken() && tokenOk(qt, readViewToken()) ? 'view' : null)) : null;
-    // the ?t= link logs in when nobody is logged in, or when it carries a higher level than the cookie (view cookie, full link)
-    if (qLevel && (!authed || (qLevel === 'full' && level !== 'full')) && m === 'GET' && !p.startsWith('/api/')) {
-      res.writeHead(302, { 'set-cookie': `hatch_token=${qLevel === 'full' ? cfg.token : qt}; Path=/; SameSite=Strict; HttpOnly; Max-Age=31536000`, location: p === '/' ? '/' : p, 'cache-control': 'no-store' });
+    const hasSession = sessionOk(req);
+    let level = null; let qLevel = null; let failed = false;
+    if (hasSession) level = 'full';
+    else {
+      const presented = !!(req.headers['x-token'] || cookies.hatch_token || qt);
+      const wait = presented ? limiter.wait(key) : 0;
+      if (wait) return tooMany(res, wait, p.startsWith('/api/'));
+      level = levelOf(req);
+      qLevel = qt ? (tokenOk(qt, cfg.token) ? 'full' : (readViewToken() && tokenOk(qt, readViewToken()) ? 'view' : null)) : null;
+      failed = presented && !level && !qLevel;
+    }
+    const navigation = m === 'GET' && !p.startsWith('/api/');
+    // The ?t= link (legacy: nothing prints it any more) logs in and goes on to the clean URL. A full token starts a session; a view token keeps
+    // its old cookie. Wrong ones count as failed logins.
+    if (qLevel === 'full' && navigation) { limiter.success(key); log(`login: new session from ${key} (?t= link)`); return startSession(req, res, 302, cleanLocation(p), hasSession); }
+    if (qLevel === 'view' && !level && navigation) {
+      res.writeHead(302, { 'set-cookie': `hatch_token=${qt}; ${COOKIE_BASE}; Max-Age=31536000`, location: cleanLocation(p), 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
       return res.end();
     }
-    if (!authed) {
+    // A browser that still holds the old cookie (the raw token) is moved to a session on its next page load and the raw cookie is deleted.
+    if (!hasSession && level === 'full' && !req.headers['x-token'] && cookies.hatch_token && navigation && String(req.headers.accept || '').includes('text/html')) {
+      const id = sessions.create(clientHint(req)).id; res.setHeader('set-cookie', [sessionCookie(req, id), CLEAR_COOKIE]);
+    }
+    if (!level) {
+      if (failed) countFail(key, 'token');
       // failed logins are logged (at most 10 a minute) so attempts from the network can be seen in the server log
       const now = Date.now(); authFails.stamps = authFails.stamps.filter((x) => now - x < 60000);
       if (authFails.stamps.length < 10) { authFails.stamps.push(now); log(`auth failed: ${req.method} ${p.slice(0, 80).replace(/[\x00-\x1f]/g, ' ')} from ${String(req.socket.remoteAddress || '?').replace(/^::ffff:/, '')} (${req.headers['user-agent'] ? String(req.headers['user-agent']).replace(/[\x00-\x1f]/g, ' ').slice(0, 60) : 'no user agent'})`); }
-      if (p.startsWith('/api/')) throw new HttpError(401, 'missing or wrong token: open the URL printed by `hatch-server serve` (it ends in ?t=...)');
-      res.writeHead(401, { 'content-type': 'text/html; charset=utf-8' });
-      return res.end('<!doctype html><title>Hatch</title><body style="font:16px system-ui;padding:2em"><h1>Hatch</h1><p>Token needed. Open the URL printed by <code>hatch-server serve</code> (it ends in <code>?t=...</code>).</p>');
+      const stale = cookies.hatch_token ? { 'set-cookie': CLEAR_COOKIE } : {}; // a cookie that no longer matches (rotated or revoked token) is dropped, not counted again
+      if (p.startsWith('/api/')) { res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store', ...stale }); return res.end(JSON.stringify({ error: 'missing or wrong token: log in at /login in the browser, or send the token from `hatch-server token` in the x-token header' })); }
+      res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', ...stale });
+      return res.end(p.startsWith('/host/') ? loginNeededPage(url.pathname) : loginPage('You are not logged in.', { retry: '' }));
     }
 
     // View-only mirror: nothing that changes state or reads the box's files is allowed; watching is.
     const viewing = viewOnly || level === 'view';
-    if (level === 'view' && (p === '/api/events' || p === '/api/term/stream' || p.startsWith('/api/source/') || /^\/api\/(runs|pterm)\/[^/]+\/stream$/.test(p))) trackView(req, res);
+    if ((p === '/api/events' || p === '/api/term/stream' || p.startsWith('/api/source/') || /^\/api\/(runs|pterm)\/[^/]+\/stream$/.test(p))) trackView(req, res);
     if (viewing && !viewAllowed(m, p)) throw new HttpError(403, viewOnly ? 'this Hatch is view-only (started with --view-only)' : 'this link is view-only: use the full URL to change anything');
     const extraWatch = viewing && /^\/api\/pterm\/([\w-]+)\/stream$/.exec(p);
     if (extraWatch && !extra.has(extraWatch[1]) && !state.listPanels().some((panel) => panel.type === 'terminal' && panel.props.name === extraWatch[1])) throw new HttpError(404, 'no existing terminal window with that name');
@@ -755,6 +823,19 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         const def = widgetSource(g[1], g[2]);
         return sse(req, res, (fn) => sources.subscribe(def, fn));
       }
+      // ---- login administration (`hatch-server sessions|logout|rotate-token|url --once` call these; full access only, never in a view-only mirror) ----
+      if (p === '/api/auth/sessions' && m === 'GET') return json(res, 200, sessions.list());
+      if (p === '/api/auth/sessions' && m === 'DELETE') return json(res, 200, { ended: sessions.revokeAll() });
+      if ((g = /^\/api\/auth\/sessions\/([a-f0-9]{1,64})$/.exec(p)) && m === 'DELETE') {
+        let ended; try { ended = sessions.revoke(g[1]); } catch (e) { throw new HttpError(400, e.message); }
+        if (!ended) throw new HttpError(404, `no session with id ${g[1]} (see \`hatch-server sessions\`)`);
+        return json(res, 200, { ended });
+      }
+      if (p === '/api/auth/once' && m === 'POST') return json(res, 200, codes.issue());
+      if (p === '/api/auth/rotate-token' && m === 'POST') {
+        const next = rotateTokenFile(stateDir); cfg.token = next; const ended = sessions.revokeAll(); codes.clear(); log(`token rotated: ${ended} session${ended === 1 ? '' : 's'} ended`);
+        return json(res, 200, { token: next, ended });
+      }
       throw new HttpError(404, `no such API route: ${m} ${p}`);
     }
 
@@ -799,15 +880,21 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   });
 
   // WebSocket upgrades are only accepted for the proxy, with the same Host and token checks as everything else.
+  function upgradeLevel(req) { // same order and limits as route(): a session first, then the rate-limited token
+    if (sessionOk(req)) return 'full';
+    const key = clientKey(req); const presented = !!(req.headers['x-token'] || parseCookies(req.headers.cookie).hatch_token);
+    if (presented && limiter.wait(key)) return null;
+    const level = levelOf(req); if (!level && presented) countFail(key, 'token'); return level;
+  }
   server.on('upgrade', (req, socket, head) => {
     const u = new URL(req.url, 'http://x'); let prox = parseProxyPath(u.pathname);
     if (prox) prox = { ...prox, rest: prox.rest + u.search };
-    if (!prox || !hostAllowed(req.headers.host, allowedHosts) || viewOnly || levelOf(req) !== 'full' || prox.port === server.address()?.port) { socket.on('error', () => {}); socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return; }
+    if (!prox || !hostAllowed(req.headers.host, allowedHosts) || viewOnly || upgradeLevel(req) !== 'full' || prox.port === server.address()?.port) { socket.on('error', () => {}); socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return; }
     proxyUpgrade(req, socket, head, prox);
   });
 
   return {
-    viewOnly, server, state, term, bus, sources, token: cfg.token, session: cfg.session, config: cfg,
+    viewOnly, server, state, term, bus, sources, get token() { return cfg.token; }, sessions, session: cfg.session, config: cfg,
     async listen(at = port) { // `at` lets the caller retry on another port after EADDRINUSE; the same server object can listen again
       lock ||= acquireLock(stateDir, { host }); // before binding or writing config.json: refuses when a live server owns this state dir
       await new Promise((resolve, reject) => { const fail = (e) => { server.off('listening', resolve); reject(e); }; server.once('error', fail); server.listen(at, host, () => { server.off('error', fail); resolve(); }); });
@@ -821,7 +908,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       configGuard.start();
       return actual;
     },
-    async close() { configGuard.stop(); lock?.release(); lock = null; gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
+    async close() { sessions.flush(); configGuard.stop(); lock?.release(); lock = null; gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
     baseUrl,
     get configGuardRunning() { return configGuard.running; },
   };

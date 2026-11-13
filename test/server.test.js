@@ -15,8 +15,8 @@ test('token is enforced; ?t= sets a cookie; wrong Host is rejected', async () =>
     assert.equal((await fetch(`${h.base}/api/health`, { headers: { 'x-token': 'wrong-wrong-wrong-wrong' } })).status, 401);
     assert.equal((await h.call('GET', '/api/health')).status, 200);
     const r = await fetch(`${h.base}/?t=${h.hatch.token}`, { redirect: 'manual' });
-    assert.equal(r.status, 302); assert.match(r.headers.get('set-cookie'), /hatch_token=.*SameSite=Strict/);
-    const page = await fetch(`${h.base}/`, { headers: { cookie: `hatch_token=${h.hatch.token}` } });
+    assert.equal(r.status, 302); assert.match(r.headers.get('set-cookie'), /hatch_session=[a-f0-9]{64}.*SameSite=Strict/);
+    const page = await fetch(`${h.base}/`, { headers: { cookie: /(hatch_session=[a-f0-9]+)/.exec(r.headers.get('set-cookie'))[1] } });
     assert.equal(page.status, 200); assert.match(await page.text(), /<title>Hatch<\/title>/);
     assert.equal((await fetch(`${h.base}/`)).status, 401);
     const bad = await fetch(`${h.base}/api/health`, { headers: { 'x-token': h.hatch.token, host: 'evil.example' } }).catch((e) => e);
@@ -335,9 +335,9 @@ test('the page is served with a Content-Security-Policy, framing protection and 
   } finally { await h.close(); }
 });
 
-test('failed logins are logged with the address, rate limited, and the token never appears in the log', async () => {
+test('failed logins are logged with the address (at most 10 a minute), and neither the token nor attempts appear in the log', async () => {
   const fsm = await import('node:fs'); const pth = await import('node:path');
-  const h = await startHatch();
+  const h = await startHatch({ loginLimit: { max: 100 } }); // the lockout has its own test (login.test.js)
   try {
     for (let i = 0; i < 15; i++) await fetch(`${h.base}/api/health`, { headers: { 'x-token': 'wrong-wrong-wrong-wrong' } });
     await fetch(`${h.base}/?t=not-the-token-at-all-nope`);

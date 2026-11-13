@@ -19,8 +19,13 @@ usage:
   hatch-server agent init [--target claude|codex|both]     add persistent project instructions (same as hatch agent init)
   hatch-server clear [--state DIR] [--yes]   delete everything in the state dir except allowed-hosts (widgets, notes, trash, token) to recover from a bad state; asks first, refuses while a server uses it
   hatch-server update-widgets [NAME... | --all] [--state DIR]   refresh example widgets this instance already uses from the shipped copies (keeps data/, saves changed files as .bak); works while the server runs
-  hatch-server url [--state DIR]       print the URL with the token again
-  hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it
+  hatch-server url [--state DIR]       print the address to open (no token in it; log in with the token, see below)
+  hatch-server url --once              print a single-use login link (valid about 5 minutes; needs a running server)
+  hatch-server token [--state DIR]     print the login token, to paste into the login page
+  hatch-server sessions                list browser logins (id, created, last seen, client)
+  hatch-server logout ID | --all       end one login (the id from \`sessions\`) or all of them
+  hatch-server rotate-token            make a new token, end every login, print the new token once
+  hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it (view links may go away in a later version)
   hatch-server doctor [--state DIR]    check node, python3, tmux, state dir, server
   hatch-server service [--state DIR] [--port N] [--host H]   print a systemd user unit that starts hatch-server serve (nothing is installed)
   hatch-server --help | --version
@@ -30,7 +35,7 @@ serve defaults: host 0.0.0.0 (reachable from your LAN), port 7070 (the next free
 state dir: --state DIR, else HATCH_STATE, else ~/.hatch (one instance per user, one token, workspaces for projects). The current directory is never searched: a project-local .hatch is ignored (hatch migrate imports it).
 A plain serve|start creates ~/.hatch silently the first time. An explicit --state DIR / HATCH_STATE that points at a missing or invalid dir is confirmed first (--yes creates it without asking; with no terminal to ask on it fails unless --yes is given).
 A second instance needs its own --state DIR and --port N.
-Put .hatch/ in your .gitignore if you keep one in a project. The token is a convenience, not security: use only on isolated networks.`;
+Put .hatch/ in your .gitignore if you keep one in a project. Open the address, log in at /login with the token (hatch-server token) and the browser keeps a 30-day session cookie. Plain HTTP exposes token and cookie to the network: see docs/SECURITY.md.`;
 
 function parse(argv) {
   const o = { _: [] };
@@ -43,11 +48,19 @@ function parse(argv) {
     else if (a === '--tmux-status') o['tmux-status'] = 'true';
     else if (a === '--yes') o.yes = 'true';
     else if (a === '--all') o.all = 'true';
-    else if (a === '--view' || a === '--revoke-view') o[a.slice(2)] = 'true';
+    else if (a === '--view' || a === '--revoke-view' || a === '--once') o[a.slice(2)] = 'true';
     else if (a.startsWith('--')) { const [k, v] = a.slice(2).split(/=(.*)/s); o[k] = v ?? argv[++i]; if (o[k] === undefined) fail(`--${k} needs a value`); }
     else o._.push(a);
   }
   return o;
+}
+// Login administration goes through the running server (the only writer of sessions.json while it runs); null when no server runs.
+async function admin(dir, method, route) {
+  const { liveOwner } = await import('../src/instance-guard.js');
+  if (!liveOwner(dir)) return null;
+  const { makeClient } = await import('../src/find.js');
+  try { return await makeClient(dir)(method, route); }
+  catch (e) { fail(/\b403\b/.test(e.message) ? `the running server is view-only and refuses this. Stop it (\`hatch-server stop\`) and run the command again.` : e.message); }
 }
 function fail(m, code = 1) { console.error(`hatch-server: ${m}`); process.exit(code); }
 
@@ -141,7 +154,44 @@ if (cmd === 'url') {
     if (!c.viewToken) { c.viewToken = (await import('node:crypto')).randomBytes(16).toString('hex'); save(c); }
     console.log(`http://${lanAddress()}:${c.port}/?t=${c.viewToken}`); console.log('Watch-only: this link can see the terminal and windows but cannot type, run, or read files.'); process.exit(0);
   }
-  console.log(`http://${lanAddress()}:${c.port}/?t=${c.token}`); process.exit(0);
+  if (process.argv.includes('--once')) {
+    const r = await admin(dir, 'POST', '/api/auth/once');
+    if (!r) fail('the server is not running: a single-use login link is kept in the running server\'s memory. Start it (`hatch-server start`) and run this again.');
+    console.log(`http://${lanAddress()}:${c.port}/login?code=${r.code}`);
+    console.error(`Single-use link: works once, expires in ${Math.round(r.expiresInSec / 60)} minutes. Open it in the browser you want to log in; it leaves no code in the address bar.`);
+    process.exit(0);
+  }
+  console.log(`http://${lanAddress()}:${c.port}/`);
+  console.error('Log in with the token (`hatch-server token` prints it) or use `hatch-server url --once` for a single-use link.');
+  process.exit(0);
+}
+if (cmd === 'token') { console.log(readConfig(findStateDir({ state: o.state })).token); process.exit(0); }
+if (cmd === 'sessions' || cmd === 'logout' || cmd === 'rotate-token') {
+  const dir = findStateDir({ state: o.state });
+  const { createSessions } = await import('../src/sessions.js');
+  const offline = () => createSessions({ file: path.join(dir, 'sessions.json'), warn: (m) => console.error(`hatch-server: ${m}`) }); // no server running: nobody else writes the file
+  const day = (t) => new Date(t).toISOString().slice(0, 16).replace('T', ' ');
+  if (cmd === 'sessions') {
+    const list = (await admin(dir, 'GET', '/api/auth/sessions')) ?? offline().list();
+    if (!list.length) { console.log('no browser is logged in'); process.exit(0); }
+    const rows = [['ID', 'CREATED', 'LAST SEEN', 'EXPIRES', 'CLIENT'], ...list.map((x) => [x.id, day(x.created), day(x.lastSeen), day(x.expires), x.hint || ''])];
+    const w = [0, 1, 2, 3].map((c) => Math.max(...rows.map((r) => r[c].length)));
+    console.log(rows.map((r) => [...r.slice(0, 4).map((v, c) => v.padEnd(w[c])), r[4]].join('  ')).join('\n')); process.exit(0);
+  }
+  if (cmd === 'logout') {
+    const id = o._[1];
+    if (!id && o.all !== 'true') fail('usage: hatch-server logout ID | hatch-server logout --all (ids are shown by `hatch-server sessions`)');
+    if (id && !/^[a-f0-9]{4,64}$/.test(id)) fail(`${id} is not a session id: use the ID column of \`hatch-server sessions\` (at least 4 characters)`);
+    const route = id ? `/api/auth/sessions/${id}` : '/api/auth/sessions';
+    let r = await admin(dir, 'DELETE', route);
+    if (!r) { try { const n = id ? offline().revoke(id) : offline().revokeAll(); if (id && !n) fail(`no session with id ${id} (see \`hatch-server sessions\`)`); r = { ended: n }; } catch (e) { fail(e.message); } }
+    console.log(`ended ${r.ended} login${r.ended === 1 ? '' : 's'}`); process.exit(0);
+  }
+  let r = await admin(dir, 'POST', '/api/auth/rotate-token');
+  if (!r) { try { const { rotateTokenFile } = await import('../src/token.js'); r = { token: rotateTokenFile(dir), ended: offline().revokeAll() }; } catch (e) { fail(e.message); } }
+  console.log(r.token);
+  console.error(`New token written to ${path.join(dir, 'config.json')} (mode 0600); ${r.ended} login${r.ended === 1 ? '' : 's'} ended. Every browser must log in again; \`hatch\` and Claude pick the new token up from that file. A watch-only link is not affected (\`url --revoke-view\`).`);
+  process.exit(0);
 }
 if (cmd === 'service') {
   const exe = path.resolve(process.argv[1]); const choice = chooseStateDir({ state: o.state }); const state = choice.dir; const wd = path.dirname(state);
@@ -197,10 +247,11 @@ const stop = async () => { await hatch.close(); process.exit(0); };
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
 const shown = host === '0.0.0.0' || host === '::' ? lanAddress() : host;
 console.log(`Hatch ${hatch.config.session ? '' : ''}is running (tmux session "${hatch.session}", state ${stateDir})`);
-console.log(`\n  http://${shown}:${actual}/?t=${hatch.token}\n`);
-console.log(host === '0.0.0.0' || host === '::'
-  ? `Listening on all interfaces: anyone on this network with the URL can run commands on this box. Use --host 127.0.0.1 to limit it.`
-  : `Listening on ${host} only.`);
+console.log(`\n  http://${shown}:${actual}/\n`);
+console.log('Log in with the token: `hatch-server token` prints it (paste it at /login), `hatch-server url --once` makes a single-use login link.');
+const loopbackHost = ['127.0.0.1', '::1', 'localhost'].includes(host);
+console.log(loopbackHost ? `Listening on ${host} only.`
+  : `Listening on ${host === '0.0.0.0' || host === '::' ? 'all interfaces' : host} over plain HTTP: anyone on this network who learns the token can run commands on this box, and the token and login cookie can be read on the wire. Use --host 127.0.0.1 with Tailscale or an HTTPS reverse proxy (docs/SECURITY.md).`);
 if (hatch.viewOnly) console.log('VIEW-ONLY: this page mirrors the terminal and panels; it cannot type, run, read files or change anything.');
 if (o.root) console.log(`File access (browser, editor, downloads, uploads) is confined to ${path.resolve(o.root)}. Terminal, run and widget commands are NOT confined.`);
 console.log('Inside tmux, Claude can drive the page with `hatch` (see README). Ctrl+C stops the server; the tmux session keeps running.');
