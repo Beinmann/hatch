@@ -144,7 +144,7 @@
 </head>
 <body>
 <div id="bar"><span id="crumbs"><b>Root</b></span><span class="hint">PROTOTYPE. Double-click or + card: pick a node type (Enter = sticky note). Board card: double-click opens it; cut/paste moves cards between levels. Drag a card top (or the paper) to move. Drag the right dot to another card: arrow. Click + Delete: remove. "- [ ] item" lines are checkboxes. Left-drag background: select a rectangle. Middle-drag: pan. Wheel: scroll, Shift+wheel: sideways, Ctrl+wheel: zoom.</span>
-  <span id="status" class="hint" style="flex:none"></span><button id="cut" title="Cut the selected cards (Ctrl+X); paste them at any level with Ctrl+V" disabled>cut</button><button id="paste" title="Paste the cut cards here (Ctrl+V)" disabled>paste</button><button id="wrapbtn" title="Move the selected cards into a new nested board" disabled>into board</button><button id="add">+ card</button><button id="tidy" title="Arrange the cards by their arrows: left to right, no overlap, unconnected cards in a grid below (key: T)">tidy</button><button id="undo" title="Put the cards back where they were before the last tidy (Ctrl+Z)" hidden>undo</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
+  <span id="status" class="hint" style="flex:none"></span><button id="cut" title="Cut the selected cards (Ctrl+X); paste them at any level with Ctrl+V" disabled>cut</button><button id="paste" title="Paste the cut cards here (Ctrl+V)" disabled>paste</button><button id="wrapbtn" title="Move the selected cards into a new nested board" disabled>into board</button><button id="add">+ card</button><button id="tidy" title="Arrange the cards by their arrows: left to right, no overlap, unconnected cards in a grid below (key: T)">tidy</button><button id="undo" title="Undo the last change (Ctrl+Z); every edit counts, also tidy" hidden>undo</button><button id="redo" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" hidden>redo</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
 <div id="stage"><div id="world"><svg id="lines"><defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg></div></div>
 <script src="/sdk.js"></script>
 <script src="model.js"></script>
@@ -152,7 +152,7 @@
 <script>
   // Visual board, PROTOTYPE. The board (cards, arrows, pan/zoom) lives in the widget's data/board.json, or in the *.board.json file given to `hatch widget open board FILE` (the server then pins load and save to it). It is read with the
   // "load" source and written in chunks through the "save" source (hatch.call arguments are short). model.js has the pure logic.
-  var M = window.ScratchModel, BL = window.BoardLayout, undoStack = [], board = M.empty(), curId = '', stack = [], titles = ['Root'], clipboard = null, busy = false, sel = null, multi = new Set(); // sel: {kind:'card'|'arrow', id}
+  var M = window.ScratchModel, BL = window.BoardLayout, hist = M.historyNew(), board = M.empty(), curId = '', stack = [], titles = ['Root'], clipboard = null, busy = false, sel = null, multi = new Set(); // sel: {kind:'card'|'arrow', id}
   var stage = document.getElementById('stage'), world = document.getElementById('world'), lines = document.getElementById('lines'),
       statusEl = document.getElementById('status'), els = new Map(), loaded = false, saveTimer = null, saving = Promise.resolve(), dirty = false;
   stage.style.pointerEvents = 'none'; // edits wait for the file to be read, or the late answer would replace them
@@ -193,12 +193,12 @@
     clr.title = 'change color'; dot.title = 'cycle: todo, now, done'; cp.title = 'copy the code'; fname.placeholder = 'file name'; fname.spellcheck = false; urlin.placeholder = 'https://... (page, or image address)'; urlin.spellcheck = false;
     [x, clr, dot, cp, fname, urlin].forEach(function (b) { b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); b.addEventListener('dblclick', function (e) { e.stopPropagation(); }); });
     x.addEventListener('click', function () { requestDelete([c.id]); });
-    clr.addEventListener('click', function () { var k = cardOf(c.id); board = M.patchCard(board, c.id, { color: M.cycle(M.NOTE_COLORS, k.color || 'a') }); render(); changed(); });
-    dot.addEventListener('click', function () { var k = cardOf(c.id); board = M.patchCard(board, c.id, { state: M.cycle(M.MILESTONE_STATES, k.state || 'todo') }); render(); changed(); });
-    fname.addEventListener('input', function () { board = M.patchCard(board, c.id, { name: fname.value }); changed(); });
-    urlin.addEventListener('input', function () { board = M.patchCard(board, c.id, { url: urlin.value }); changed(); });
+    clr.addEventListener('click', function () { var k = cardOf(c.id); record(); board = M.patchCard(board, c.id, { color: M.cycle(M.NOTE_COLORS, k.color || 'a') }); render(); changed(); });
+    dot.addEventListener('click', function () { var k = cardOf(c.id); record(); board = M.patchCard(board, c.id, { state: M.cycle(M.MILESTONE_STATES, k.state || 'todo') }); render(); changed(); });
+    fname.addEventListener('input', function () { record('name:' + c.id); board = M.patchCard(board, c.id, { name: fname.value }); changed(); });
+    urlin.addEventListener('input', function () { record('url:' + c.id); board = M.patchCard(board, c.id, { url: urlin.value }); changed(); });
     cp.addEventListener('click', function () { copyText(cardOf(c.id).text); cp.textContent = 'copied'; setTimeout(function () { cp.textContent = 'copy'; }, 1200); });
-    ta.addEventListener('input', function () { board = M.setText(board, c.id, ta.value); changed(); });
+    ta.addEventListener('input', function () { record('text:' + c.id); board = M.setText(board, c.id, ta.value); changed(); });
     ta.addEventListener('focus', function () { el.classList.add('editing'); select('card', c.id); });
     // focus moving to another field of the same card (file name, address) keeps the card in edit mode
     function leave(e) { if (e.relatedTarget && el.contains(e.relatedTarget)) return; el.classList.remove('editing'); render(); }
@@ -208,8 +208,8 @@
     // a click on a checkbox row toggles that line, on the status chip cycles it; a click on any other line (or the empty area) opens the raw text for editing
     view.addEventListener('click', function (e) {
       var row = e.target.closest && e.target.closest('.ck');
-      if (row) { board = M.toggleCheck(board, c.id, +row.dataset.line); render(); changed(); return; }
-      if (e.target.closest && e.target.closest('.chip')) { var k = cardOf(c.id); board = M.patchCard(board, c.id, { status: M.cycle(M.STATUSES, k.status || 'active') }); render(); changed(); return; }
+      if (row) { record(); board = M.toggleCheck(board, c.id, +row.dataset.line); render(); changed(); return; }
+      if (e.target.closest && e.target.closest('.chip')) { var k = cardOf(c.id); record(); board = M.patchCard(board, c.id, { status: M.cycle(M.STATUSES, k.status || 'active') }); render(); changed(); return; }
       if (e.target.closest && e.target.closest('a')) return; // a real link: let the browser open it
       if (type === 'board' && !(e.target.closest && e.target.closest('.bt'))) return; // only the title is text; a double-click opens the board
       el.classList.add('editing'); ta.focus();
@@ -321,11 +321,21 @@
     });
     if (tmp) { var t = line(tmp.x1, tmp.y1, tmp.x2, tmp.y2, 'tmp'); lines.appendChild(t); }
   }
-  // ---- tidy: layered auto-layout (layout.js). Each run first saves the old positions on a small undo stack (Ctrl+Z / undo button).
-  function pushUndo() { undoStack.push(BL.snapshot(board)); if (undoStack.length > 20) undoStack.shift(); syncUndo(); }
-  function syncUndo() { document.getElementById('undo').hidden = !undoStack.length; }
-  function tidy() { if (!board.cards.length) return; pushUndo(); board = BL.layout(board); render(); changed(); fitView(); }
-  function undo() { if (!undoStack.length) return; board = BL.restore(board, undoStack.pop()); syncUndo(); render(); changed(); }
+  // ---- undo / redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y): whole-board snapshots, see model.js. record() goes right BEFORE every edit;
+  // a key makes repeats (typing) one step. Pan and zoom are not steps. Leaving a board clears the history.
+  function record(key) { hist = M.historyPush(hist, board, key); syncUndo(); }
+  function syncUndo() { document.getElementById('undo').hidden = !hist.past.length; document.getElementById('redo').hidden = !hist.future.length; }
+  function stepHistory(r) {
+    if (!r) return; hist = r.history; board = r.board;
+    var live = new Set(board.cards.map(function (c) { return c.id; })); // the selection may point at a card the step removed
+    if (sel && (sel.kind === 'card' ? !live.has(sel.id) : !board.arrows.some(function (a) { return a.id === sel.id; }))) sel = null;
+    multi = new Set(Array.from(multi).filter(function (i) { return live.has(i); }));
+    syncUndo(); render(); changed();
+  }
+  function undo() { stepHistory(M.historyUndo(hist, board)); }
+  function redo() { stepHistory(M.historyRedo(hist, board)); }
+  // ---- tidy: layered auto-layout (layout.js)
+  function tidy() { if (!board.cards.length) return; record(); board = BL.layout(board); render(); changed(); fitView(); }
   // bring the whole board into view after a layout, without zooming in past 1
   function fitView() {
     if (!board.cards.length) return; var r = stage.getBoundingClientRect(), pad = 30, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -349,13 +359,13 @@
     ids.slice().forEach(function (i) { M.groupMembers(board, i).forEach(function (m) { if (ids.indexOf(m) < 0) ids.push(m); }); }); // a frame takes what is inside it along
     var tilted = ids.map(function (i) { return els.get(i); }).filter(Boolean); tilted.forEach(function (el) { el.classList.add('dragging'); });
     var orig = ids.map(function (i) { var k = board.cards.filter(function (c) { return c.id === i; })[0]; return k && { id: i, x: k.x, y: k.y }; }).filter(Boolean);
-    track(e, function (ev) { var p = worldPt(ev); moved = true; orig.forEach(function (o) { board = M.moveCard(board, o.id, o.x + p.x - start.x, o.y + p.y - start.y); }); render(); },
+    track(e, function (ev) { var p = worldPt(ev); if (!moved) record(); moved = true; orig.forEach(function (o) { board = M.moveCard(board, o.id, o.x + p.x - start.x, o.y + p.y - start.y); }); render(); },
       function () { tilted.forEach(function (el) { el.classList.remove('dragging'); }); if (moved) changed(); });
   }
   function resizeCard(e, id) {
     if (e.button !== 0) return; e.stopPropagation(); e.preventDefault();
     var c = board.cards.filter(function (k) { return k.id === id; })[0], start = worldPt(e), w0 = c.w, h0 = c.h, moved = false, min = M.TYPES[M.typeOf(c)].min;
-    track(e, function (ev) { var p = worldPt(ev); moved = true; board = M.patchCard(board, id, { w: Math.max(min[0], Math.round(w0 + p.x - start.x)), h: Math.max(min[1], Math.round(h0 + p.y - start.y)) }); render(); },
+    track(e, function (ev) { var p = worldPt(ev); if (!moved) record(); moved = true; board = M.patchCard(board, id, { w: Math.max(min[0], Math.round(w0 + p.x - start.x)), h: Math.max(min[1], Math.round(h0 + p.y - start.y)) }); render(); },
       function () { if (moved) changed(); });
   }
   function dragArrow(e, id) {
@@ -368,10 +378,10 @@
         mark(null);
         var p = worldPt(ev), r = stage.getBoundingClientRect(), onSelf = !target && M.cardAt(board, p.x, p.y),
             inside = ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
-        if (target) { var a = M.addArrow(board, id, target.id); board = a.board; if (a.id) { sel = { kind: 'arrow', id: a.id }; changed(); } }
+        if (target) { var a = M.addArrow(board, id, target.id); if (a.id) { record(); board = a.board; sel = { kind: 'arrow', id: a.id }; changed(); } }
         // released on empty canvas after a real drag (not a click on the handle): a new card there, connected, as one step
         else if (!onSelf && inside && Math.hypot(ev.clientX - sx, ev.clientY - sy) >= 8) {
-          var n = M.addCardLinked(board, id, p.x, p.y); if (n) { board = n.board; sel = { kind: 'card', id: n.id }; render(); changed(); var el = els.get(n.id); el.classList.add('editing'); el.querySelector('textarea').focus(); return; }
+          var n = M.addCardLinked(board, id, p.x, p.y); if (n) { record(); board = n.board; sel = { kind: 'card', id: n.id }; render(); changed(); var el = els.get(n.id); el.classList.add('editing'); el.querySelector('textarea').focus(); return; }
         }
         render();
       });
@@ -415,7 +425,7 @@
     applyView(); changed();
   }, { passive: false });
   function newCardAt(p, type) {
-    var r = M.addCard(board, p.x, p.y, '', type || M.DEFAULT_TYPE); board = r.board; sel = { kind: 'card', id: r.id }; render(); changed();
+    record(); var r = M.addCard(board, p.x, p.y, '', type || M.DEFAULT_TYPE); board = r.board; sel = { kind: 'card', id: r.id }; render(); changed();
     var el = els.get(r.id); el.classList.add('editing'); el.querySelector('textarea').focus();
   }
   // type picker: one button per node type, the sticky note (the default) first and focused, so Enter alone adds a note
@@ -444,14 +454,15 @@
   document.addEventListener('pointerdown', function (e) { if (menu && !menu.contains(e.target)) closePicker(); }, true);
   addEventListener('keydown', function (e) {
     if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') && e.target.type !== 'checkbox') { if (e.key === 'Escape') e.target.blur(); return; }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
     if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 't') { e.preventDefault(); tidy(); return; }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) { cutSelection(); e.preventDefault(); return; }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) { pasteHere(); e.preventDefault(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && multi.size) requestDelete(Array.from(multi));
     else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) {
       if (sel.kind === 'card') requestDelete([sel.id]);
-      else { board = M.removeArrow(board, sel.id); sel = null; render(); changed(); }
+      else { record(); board = M.removeArrow(board, sel.id); sel = null; render(); changed(); }
     }
   });
   document.getElementById('add').addEventListener('click', function (e) {
@@ -459,7 +470,7 @@
     openPicker(b.left, b.bottom + 2, M.toWorld(board.view, r.width / 2, r.height / 2));
   });
   document.getElementById('tidy').addEventListener('click', tidy);
-  document.getElementById('undo').addEventListener('click', undo);
+  document.getElementById('undo').addEventListener('click', undo); document.getElementById('redo').addEventListener('click', redo);
   document.getElementById('reset').addEventListener('click', function () { board = M.setView(board, { x: 0, y: 0, zoom: 1 }); applyView(); changed(); });
 
   // ---- nested boards
@@ -478,7 +489,7 @@
   }
   // the title-bar path button shows the file of the open level
   function reportPath() { if (hatch.setPath) hatch.call('path', curId).then(function (r) { if (r && r.out) hatch.setPath(r.out); }).catch(function () {}); }
-  function afterNav() { undoStack = []; syncUndo(); sel = null; multi = new Set(); els.forEach(function (el) { el.remove(); }); els.clear(); render(); drawCrumbs(); reportPath(); stage.focus(); }
+  function afterNav() { hist = M.historyNew(); syncUndo(); sel = null; multi = new Set(); els.forEach(function (el) { el.remove(); }); els.clear(); render(); drawCrumbs(); reportPath(); stage.focus(); }
   function enterBoard(cardId) {
     var c = cardOf(cardId); if (!c || M.typeOf(c) !== 'board' || busy) return;
     if (M.wouldCycle(pathIds(), c.childId)) { setStatus('this board is already open above: a board cannot contain itself'); return; }
@@ -517,20 +528,20 @@
       return confirmBox('Delete ' + (boards.length > 1 ? 'these board cards' : 'the board "' + title(boards[0]) + '"') + ' with ' + total + ' card' + (total === 1 ? '' : 's') + ' inside? The inner boards are no longer reachable from here.', 'Delete');
     }).then(function (ok) {
       if (!ok) return;
-      ids.forEach(function (id) { board = M.removeCard(board, id); }); multi = new Set(); sel = null; render(); changed();
+      record(); ids.forEach(function (id) { board = M.removeCard(board, id); }); multi = new Set(); sel = null; render(); changed();
     });
   }
   var CLIP_KEY = 'hatch-board-clipboard';
   function storeClip() { try { if (clipboard) localStorage.setItem(CLIP_KEY, JSON.stringify(clipboard)); else localStorage.removeItem(CLIP_KEY); } catch (e) {} }
   function cutSelection() {
     var ids = selectedIds(); if (!ids.length) return;
-    clipboard = M.clip(board, ids); storeClip(); board = M.removeCards(board, ids); sel = null; multi = new Set(); render(); changed(); setStatus('cut ' + ids.length + ' card' + (ids.length === 1 ? '' : 's') + ': paste at any level');
+    clipboard = M.clip(board, ids); storeClip(); record(); board = M.removeCards(board, ids); sel = null; multi = new Set(); render(); changed(); setStatus('cut ' + ids.length + ' card' + (ids.length === 1 ? '' : 's') + ': paste at any level');
   }
   // paste puts the cut cards (with the arrows between them) at the middle of the view; a cut can be pasted once, so a board is never in two places
   function pasteHere() {
     if (!clipboard) return;
     var r = stage.getBoundingClientRect(), p = M.toWorld(board.view, r.width / 2 - 60, r.height / 2 - 40), res = M.paste(board, clipboard, p.x, p.y, pathIds());
-    board = res.board;
+    if (res.ids.length) record(); board = res.board;
     clipboard = res.refused.length ? M.clip({ cards: clipboard.cards, arrows: clipboard.arrows }, res.refused) : null; storeClip();
     multi = new Set(res.ids); sel = null; if (res.ids.length === 1) { sel = { kind: 'card', id: res.ids[0] }; multi = new Set(); }
     render(); changed(); setStatus(res.refused.length ? 'a board cannot be pasted into itself or its own inner boards: it stays in the clipboard' : 'pasted');
@@ -539,7 +550,7 @@
     var ids = selectedIds(); if (!ids.length) return;
     var r = M.wrap(board, ids, 'Board'); if (!r) return;
     saveBoard(r.board.cards.filter(function (k) { return k.id === r.id; })[0].childId, r.child); // the new inner board is written first
-    board = r.board; sel = { kind: 'card', id: r.id }; multi = new Set(); render(); changed(); setStatus('moved ' + ids.length + ' card' + (ids.length === 1 ? '' : 's') + ' into a new board');
+    record(); board = r.board; sel = { kind: 'card', id: r.id }; multi = new Set(); render(); changed(); setStatus('moved ' + ids.length + ' card' + (ids.length === 1 ? '' : 's') + ' into a new board');
   }
   document.getElementById('cut').addEventListener('click', cutSelection);
   document.getElementById('paste').addEventListener('click', pasteHere);
@@ -552,7 +563,7 @@
       if (r && r.error) throw new Error(r.error);
       board = M.sanitize(r && r.json); loaded = true; reportPath();
       // a board written by an AI often has no positions (or a pile at the origin): lay it out once, undoable; arranged boards stay as they are
-      var auto = BL.onLoad(r && r.json, board); if (auto.changed) { undoStack.push(BL.snapshot(board)); syncUndo(); board = auto.board; fitView(); changed(); } stage.style.pointerEvents = ''; setStatus(board.cards.length ? 'loaded' : 'empty board'); render();
+      var auto = BL.onLoad(r && r.json, board); if (auto.changed) { record(); board = auto.board; fitView(); changed(); } stage.style.pointerEvents = ''; setStatus(board.cards.length ? 'loaded' : 'empty board'); render();
     }).catch(function (e) { setStatus('load failed: ' + e.message + ' (saving is off so the file is not overwritten)'); hatch.log('load failed: ' + e.message); });
   });
   render();

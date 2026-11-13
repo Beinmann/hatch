@@ -236,3 +236,37 @@ test('addCardLinked: one new card plus an arrow from the source, nothing for an 
   assert.equal(M.addCardLinked(board, 'nope', 0, 0), null);
   assert.equal(board.cards.length, 1); // the input is not changed
 });
+
+test('history: undo and redo whole-board snapshots, redo cleared by a new edit, view kept', () => {
+  let b = M.empty(), h = M.historyNew();
+  const edit = (f, key, now) => { h = J(M.historyPush(h, b, key, now)); b = J(f(b)); };
+  edit((x) => M.addCard(x, 100, 100, 'a').board, null, 0);
+  edit((x) => M.addCard(x, 300, 100, 'b').board, null, 0);
+  assert.equal(b.cards.length, 2);
+  b = J(M.setView(b, { x: 50, y: 60, zoom: 2 }));
+  let r = J(M.historyUndo(h, b)); h = r.history; b = r.board;
+  assert.equal(b.cards.length, 1); assert.deepEqual(b.view, { x: 50, y: 60, zoom: 2 });
+  r = J(M.historyRedo(h, b)); h = r.history; b = r.board;
+  assert.equal(b.cards.length, 2);
+  r = J(M.historyUndo(h, b)); h = r.history; b = r.board;
+  edit((x) => M.addCard(x, 0, 0, 'c').board, null, 0); // a new edit drops the redo branch
+  assert.equal(M.historyRedo(h, b), null);
+  assert.equal(M.historyUndo(M.historyNew(), b), null);
+});
+
+test('history: a typing burst with the same key is one step, a pause or another key starts a new one', () => {
+  let b = J(M.addCard(M.empty(), 0, 0, '').board), h = M.historyNew();
+  const type = (t, key, now) => { h = J(M.historyPush(h, b, key, now)); b = J(M.setText(b, 'c1', t)); };
+  type('h', 'text:c1', 0); type('he', 'text:c1', 200); type('hel', 'text:c1', 600);
+  assert.equal(h.past.length, 1);
+  type('hell', 'text:c1', 5000); assert.equal(h.past.length, 2);
+  type('hello', 'text:c2', 5100); assert.equal(h.past.length, 3);
+  const r = J(M.historyUndo(h, b)); assert.equal(r.board.cards[0].text, 'hell');
+});
+
+test('history: bounded to HISTORY_LIMIT steps, oldest dropped', () => {
+  let b = M.empty(), h = M.historyNew();
+  for (let i = 0; i < M.HISTORY_LIMIT + 30; i++) { h = M.historyPush(h, b, null, i); b = M.addCard(b, i, 0, '').board; }
+  assert.equal(h.past.length, M.HISTORY_LIMIT);
+  assert.equal(h.past[0].cards.length, 30);
+});

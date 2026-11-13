@@ -197,6 +197,28 @@
     return { board: setChildSummary(r.board, r.id, child), child, id: r.id };
   }
 
+  // ---- undo / redo: whole-board snapshots (boards are small and never mutated, so a snapshot is just the old object).
+  // The history is a plain value too: every function returns a new one. The view (pan/zoom) is not part of an undo step.
+  const HISTORY_LIMIT = 100, COALESCE_MS = 1000;
+  const historyNew = () => ({ past: [], future: [], key: null, at: 0 });
+  /** Call BEFORE changing `board`. With a `key` (e.g. 'text:c3'), a repeat of the same key within COALESCE_MS of the last one adds no step,
+   *  so a typing burst is one step; a gesture (drag) just records once when it starts. Clears redo. `now` only for tests. */
+  function historyPush(h, board, key = null, now = Date.now()) {
+    if (key && h.key === key && now - h.at < COALESCE_MS) return { ...h, at: now, future: [] };
+    return { past: [...h.past, board].slice(-HISTORY_LIMIT), future: [], key, at: now };
+  }
+  /** Steps back: {history, board} with `board` being the previous snapshot (current view kept), or null when there is nothing to undo. */
+  function historyUndo(h, board) {
+    if (!h.past.length) return null;
+    const prev = h.past[h.past.length - 1];
+    return { history: { past: h.past.slice(0, -1), future: [...h.future, board], key: null, at: 0 }, board: { ...prev, view: board.view } };
+  }
+  function historyRedo(h, board) {
+    if (!h.future.length) return null;
+    const next = h.future[h.future.length - 1];
+    return { history: { past: [...h.past, board], future: h.future.slice(0, -1), key: null, at: 0 }, board: { ...next, view: board.view } };
+  }
+
   // ---- code snippet tint: a tiny tokenizer (comments, strings, numbers, keywords, calls); good enough for a glance, not a parser
   const KEYWORDS = new Set('const let var function return if else for while do switch case break continue new class import export from default async await try catch throw typeof in of def lambda pass None True False null true false self echo then fi done elif'.split(' '));
   const TOKEN_RE = /(\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)|(\b\d[\d_.]*\b)|([A-Za-z_$][\w$]*)(?=\()|([A-Za-z_$][\w$]*)/g;
@@ -229,6 +251,6 @@
     const out = []; for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size)); return out;
   }
 
-  const api = { addCardLinked, tokenize, splitQuote, imageUrl, linkUrl, cycle, CARD_W, CARD_H, TYPES, TYPE_ORDER, DEFAULT_TYPE, STATUSES, MILESTONE_STATES, NOTE_COLORS, BOARD_ID_RE, typeOf, groupMembers, newBoardId, boardSummary, setChildSummary, wouldCycle, clip, removeCards, paste, wrap, empty, sanitize, parse, serialize, addCard, moveCard, setText, lines, progress, toggleCheck, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, cardAt, raise, chunks };
+  const api = { historyNew, historyPush, historyUndo, historyRedo, HISTORY_LIMIT, addCardLinked, tokenize, splitQuote, imageUrl, linkUrl, cycle, CARD_W, CARD_H, TYPES, TYPE_ORDER, DEFAULT_TYPE, STATUSES, MILESTONE_STATES, NOTE_COLORS, BOARD_ID_RE, typeOf, groupMembers, newBoardId, boardSummary, setChildSummary, wouldCycle, clip, removeCards, paste, wrap, empty, sanitize, parse, serialize, addCard, moveCard, setText, lines, progress, toggleCheck, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, cardAt, raise, chunks };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ScratchModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
