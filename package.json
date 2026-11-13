@@ -5,6 +5,6 @@
   "type": "module",
   "license": "MIT",
   "engines": { "node": ">=20" },
-  "bin": { "hatch": "bin/hatch.js", "hatch-server": "bin/hatch-server.js", "hatch-ui": "bin/ui.js", "hatch-mcp": "bin/mcp.js" },
+  "bin": { "hatch": "bin/hatch.js", "ha": "bin/hatch.js", "hatch-server": "bin/hatch-server.js", "hatch-ui": "bin/ui.js", "hatch-mcp": "bin/mcp.js" },
   "scripts": { "test": "node --test \"test/*.test.js\"", "start": "node bin/hatch-server.js serve" }
 }

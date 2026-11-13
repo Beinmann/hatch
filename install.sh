@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Install Hatch: puts `hatch`, `hatch-server`, `hatch-mcp` (and the deprecated `hatch-ui`) on your PATH as symlinks to this checkout.
+# Install Hatch: puts `hatch` (and its short alias `ha`), `hatch-server`, `hatch-mcp` (and the deprecated `hatch-ui`) on your PATH as symlinks to this checkout.
 # Usage: ./install.sh [--prefix DIR] [--uninstall]     (default prefix: ~/.local, links go to DIR/bin)
 set -eu
 
@@ -18,7 +18,7 @@ done
 here="$(cd "$(dirname "$0")" && pwd -P)"
 bindir="$prefix/bin"
 # name:target pairs
-links="hatch:$here/bin/hatch.js hatch-server:$here/bin/hatch-server.js hatch-ui:$here/bin/ui.js hatch-mcp:$here/bin/mcp.js"
+links="hatch:$here/bin/hatch.js ha:$here/bin/hatch.js hatch-server:$here/bin/hatch-server.js hatch-ui:$here/bin/ui.js hatch-mcp:$here/bin/mcp.js"
 # the short alias `ui` was dropped; only our own old link (pointing at bin/ui.js) is removed
 old_ui="$here/bin/ui.js"
 
