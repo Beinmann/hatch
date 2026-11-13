@@ -3,6 +3,8 @@
 import { Terminal } from './xterm.mjs';
 import { isViewOnly } from './util.js';
 import { FitAddon } from './addon-fit.mjs';
+import { Unicode11Addon } from './addon-unicode11.mjs';
+import { emojiWidthProvider } from './emoji-width.js';
 import { streamSlots } from './stream-slots.js';
 
 const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -32,12 +34,16 @@ function themeFromCss() {
 export function initTerminal({ host, api, toast, onCopy = () => {}, onBell = () => {}, onOpenFile = () => {}, onClipboard = () => {}, onStatus, reconnectUi, shortcuts = () => false, fontSize = 14, onFontSize = () => {}, base = '/api/term', initialCmd = null, onEnded = null }) {
   const css = getComputedStyle(document.documentElement);
   const term = new Terminal({
-    allowTransparency: true,
-    cursorBlink: true, fontSize, scrollback: 5000, fontFamily: css.getPropertyValue('--mono') || 'monospace',
+    allowTransparency: true, allowProposedApi: true, // proposed API: the Unicode width tables
+    cursorBlink: true, fontSize, scrollback: 5000, fontFamily: `${css.getPropertyValue('--mono') || 'monospace'}, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji'`,
     theme: themeFromCss(),
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
+  // tmux and the programs in it count emoji and CJK as two columns (Unicode 11+ widths); xterm defaults to Unicode 6 and draws them in one.
+  // The addon only registers its width table; emojiWidthProvider adds the joining rules (VS16, skin tones, ZWJ, flags).
+  let widths; new Unicode11Addon().activate({ unicode: { register: (p) => { widths = p; } } });
+  term.unicode.register(emojiWidthProvider(widths)); term.unicode.activeVersion = '11-emoji';
   term.open(host);
   fit.fit();
   term.onBell(() => onBell());
