@@ -18,6 +18,7 @@ import trashPanel from './panels/trash.js';
 import { initLimits } from './limits.js';
 import { createPalette } from './palette.js';
 import { calc, formatResult } from './calc.js';
+import { createPeek, DEFAULT_PEEK, peekKeyOrNull } from './peek.js';
 import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget } from './leader.js';
 
 const $ = (id) => document.getElementById(id);
@@ -566,7 +567,7 @@ function setWorkspaceBackground() {
 }
 
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a docked window\'s title bar', 'Reorder the dock (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+Shift+Space', 'Focus the terminal from anywhere (windows, popups, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Hold Alt alone', 'Peek: hides everything but the terminal while held (after about 0.2 s, so Alt+key chords do not flash); release brings everything back. Any other key ends it. Key is configurable in Settings'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a docked window\'s title bar', 'Reorder the dock (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+Shift+Space', 'Focus the terminal from anywhere (windows, popups, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -695,6 +696,18 @@ addEventListener('keydown', (e) => {
   if (chordMatches(leaderChord, e)) { e.preventDefault(); e.stopPropagation(); leaderArm(); }
 }, true);
 addEventListener('blur', () => { if (leader.armed) leaderDisarm(); }); // switching tabs must not leave it armed
+
+// ---- peek: hold Alt alone (key in Settings) to see only the terminal; a CSS class on <html>, so layout and window state are never touched ----
+let peekKey = peekKeyOrNull(store.get('peekKey', DEFAULT_PEEK));
+const peek = createPeek({ getKey: () => peekKey, onChange: (on) => document.documentElement.classList.toggle('peek', on) });
+// Capture phase and registered without stopPropagation: the leader and shortcut handlers and xterm see every key as before (a keydown also ends the peek).
+addEventListener('keydown', (e) => peek.keydown(e), true);
+addEventListener('keyup', (e) => { if (peek.keyup(e)) e.preventDefault(); }, true); // the release that ends a peek must not open the browser's menu bar
+for (const ev of ['blur', 'pointerdown', 'contextmenu']) addEventListener(ev, () => peek.reset(), true);
+document.addEventListener('visibilitychange', () => peek.reset());
+document.addEventListener('focusout', (e) => { if (!e.relatedTarget) peek.reset(); }, true);
+$('optPeek').value = peekKey || 'off';
+$('optPeek').addEventListener('change', (e) => { peek.reset(); peekKey = peekKeyOrNull(e.target.value); store.set('peekKey', e.target.value); });
 
 // ---- window arrangement (Emacs C-x 1 / tiling ideas) ----
 async function tileWindows() {

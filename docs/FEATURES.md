@@ -77,6 +77,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Session report | 046 | server /api/report, ui.js | CLI only | |
 | Maximize | 034 | windows.js | yes | |
 | Show desktop (leader Shift+d): minimize all, again restores the same formation | - | show-desktop.js, windows.js, app.js | planning and change detection | not browser-tested |
+| Peek: hold Alt alone to see only the terminal (key in Settings; other keys end it) | - | peek.js, style.css, app.js | state machine (timing, cancel, reset) | seen in headless Chromium: hold, release, Alt+b, other key, blur; not Firefox or Windows menu-bar behaviour |
 | Tile / minimize-all / close-all | 025 | app.js | tile only | |
 | Phone layout + extra keys bar | 015 | style.css, app.js | emulated | |
 | Font size memory | 028 | app.js | no | |

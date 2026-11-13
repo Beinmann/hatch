@@ -202,6 +202,7 @@ The header keeps secondary tools in the command palette. It opens immediately wi
 | Leader, then s | Show or hide the dock column (also palette: Toggle dock; Zen mode hides it too and restores it as it was) |
 | Leader, then m / q / u | Minimize, close, restore from the dock |
 | Leader, then Tab | Next window |
+| Hold Alt alone | Peek: hides everything but the terminal while held (after ~0.2 s, so Alt+key chords never flash); release restores it all untouched. Any other key ends it. Key (Alt, Shift, Ctrl, Meta or off) is in Settings |
 | Ctrl+Shift+G | Fold or unfold progress strip |
 | Ctrl+Shift+F / Z / 1..9 | Terminal find / Zen mode / workspaces |
 
