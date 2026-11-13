@@ -9,7 +9,7 @@ import { startHatch, tmp } from './helpers.js';
 
 const UI = fileURLToPath(new URL('../bin/hatch.js', import.meta.url));
 const ui = (args, state) => new Promise((resolve) => {
-  const p = spawn('node', [UI, '--state', state, ...args], { env: { ...process.env, HATCH_STATE: '', HATCH_URL: '', HATCH_PLAN: '' } });
+  const p = spawn('node', [UI, '--state', state, ...args], { env: { ...process.env, HATCH_STATE: '', HATCH_URL: '', HATCH_PLAN: '', HATCH_WORKSPACE: '' } });
   let stdout = ''; let stderr = ''; p.stdout.on('data', (d) => { stdout += d; }); p.stderr.on('data', (d) => { stderr += d; });
   p.on('close', (status) => resolve({ status, stdout, stderr }));
 });
@@ -58,9 +58,9 @@ test('server: fx is in the snapshot, POST /api/fx saves it and emits an event, a
     assert.deepEqual(h.hatch.state.snapshot().fx, { effect: null, intensity: 50 });
     const events = []; const old = h.hatch.bus.emit; h.hatch.bus.emit = (e, d) => { events.push([e, d]); return old.call(h.hatch.bus, e, d); };
     let r = await h.call('POST', '/api/fx', { effect: 'rain' }); assert.equal(r.status, 200); assert.equal(r.data.effect, 'rain'); assert.equal(r.data.intensity, 50); assert.deepEqual(r.data.effects, EFFECTS);
-    assert.equal(h.hatch.state.snapshot().fx.effect, 'rain'); assert.ok(events.some(([e, d]) => e === 'fx' && d.effect === 'rain'), 'open pages are told');
+    assert.equal(h.hatch.state.snapshot().fx.effect, 'rain'); assert.ok(events.some(([e, d]) => e === 'fx' && d.ws === 'main' && d.effect === 'rain'), 'open pages are told');
     r = await h.call('POST', '/api/fx', { intensity: 30 }); assert.equal(r.status, 200); assert.equal(r.data.intensity, 30);
-    assert.deepEqual(events.at(-1), ['fx', { effect: 'rain', intensity: 30 }], 'an intensity change alone is pushed too');
+    assert.deepEqual(events.at(-1), ['fx', { ws: 'main', effect: 'rain', intensity: 30 }], 'an intensity change alone is pushed too');
     assert.deepEqual(h.hatch.state.snapshot().fx, { effect: 'rain', intensity: 30 });
     r = await h.call('POST', '/api/fx', { effect: 'matrix', intensity: 90 }); assert.deepEqual([r.data.effect, r.data.intensity], ['matrix', 90]);
     r = await h.call('POST', '/api/fx', { effect: 'rain' }); assert.equal(r.data.intensity, 30, 'each effect keeps its own');
@@ -72,6 +72,61 @@ test('server: fx is in the snapshot, POST /api/fx saves it and emits an event, a
     fs.writeFileSync(path.join(h.stateDir, 'fx.json'), 'nope'); h.hatch.state.rescan();
     assert.equal(h.hatch.state.snapshot().fx.effect, null); assert.ok(h.hatch.state.snapshot().warnings.some((w) => w.file === 'fx'));
     r = await h.call('POST', '/api/fx', { effect: 'off' }); assert.equal(r.data.effect, null); assert.equal(h.hatch.state.snapshot().warnings.some((w) => w.file === 'fx'), false, 'the warning clears');
+  } finally { await h.close(); }
+});
+
+test('effects are per workspace: API, events, snapshot and CLI only touch the calling workspace', async () => {
+  const h = await startHatch();
+  try {
+    assert.equal((await h.call('POST', '/api/workspaces', { name: 'other' })).status, 201);
+    const events = []; const old = h.hatch.bus.emit; h.hatch.bus.emit = (e, d) => { events.push([e, d]); return old.call(h.hatch.bus, e, d); };
+    let r = await h.call('POST', '/api/fx', { effect: 'rain', ws: 'other' }); assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal((await h.call('GET', '/api/fx')).data.effect, null, 'main is untouched');
+    assert.equal((await h.call('GET', '/api/fx?ws=other')).data.effect, 'rain');
+    assert.deepEqual(events.filter(([e]) => e === 'fx').map(([, d]) => d), [{ ws: 'other', effect: 'rain', intensity: 50 }], 'only the calling workspace is told');
+    let snap = h.hatch.state.snapshot(); assert.deepEqual(snap.fx, { effect: null, intensity: 50 }); assert.deepEqual(snap.fxs, { other: { effect: 'rain', intensity: 50 } });
+    await h.call('POST', '/api/fx', { effect: 'matrix' }); assert.equal((await h.call('GET', '/api/fx?ws=other')).data.effect, 'rain', 'main changes do not leak');
+    assert.deepEqual(h.hatch.state.snapshot().fxs, { other: { effect: 'rain', intensity: 50 }, main: { effect: 'matrix', intensity: 50 } });
+    assert.equal((await h.call('POST', '/api/fx', { effect: 'rain', ws: 'nope' })).status, 404);
+    let c = await ui(['--ws', 'other', 'fx', 'snow', '--intensity', '20'], h.stateDir); assert.equal(c.status, 0, c.stderr); assert.match(c.stdout, /workspace other/);
+    assert.deepEqual([(await h.call('GET', '/api/fx?ws=other')).data.effect, (await h.call('GET', '/api/fx')).data.effect], ['snow', 'matrix']);
+    c = await ui(['--ws', 'other', 'fx', '--json'], h.stateDir); assert.equal(JSON.parse(c.stdout).effect, 'snow');
+    c = await ui(['--ws', 'other', 'fx', 'off'], h.stateDir); assert.equal(c.status, 0, c.stderr);
+    assert.equal((await h.call('GET', '/api/fx?ws=other')).data.effect, null); assert.equal((await h.call('GET', '/api/fx')).data.effect, 'matrix');
+    c = await ui(['--ws', 'nope', 'fx'], h.stateDir); assert.equal(c.status, 1); assert.match(c.stderr, /no workspace named nope/);
+  } finally { await h.close(); }
+});
+
+test('effects per workspace: $HATCH_WORKSPACE picks the workspace, hand edits and bad files, rename, close, old main fx.json', async () => {
+  const h = await startHatch();
+  try {
+    fs.writeFileSync(path.join(h.stateDir, 'fx.json'), '{"effect":"aurora"}\n'); h.hatch.state.rescan();
+    assert.deepEqual(h.hatch.state.snapshot().fxs, { main: { effect: 'aurora', intensity: 50 } }, 'an existing main fx.json keeps working');
+    const w = (await h.call('POST', '/api/workspaces', { name: 'two' })).data;
+    const wdir = path.join(h.stateDir, 'workspaces', w.id);
+    assert.equal(h.hatch.state.snapshot().fxs.two, undefined, 'a new workspace starts without an effect');
+    const events = []; const old = h.hatch.bus.emit; h.hatch.bus.emit = (e, d) => { events.push([e, d]); return old.call(h.hatch.bus, e, d); };
+    const env = { ...process.env, HATCH_STATE: '', HATCH_URL: '' };
+    const c = await new Promise((resolve) => { const p = spawn('node', [UI, '--state', h.stateDir, 'fx', 'embers'], { env: { ...env, HATCH_WORKSPACE: 'two' } }); let out = ''; p.stdout.on('data', (d) => { out += d; }); p.on('close', (status) => resolve({ status, out })); });
+    assert.equal(c.status, 0); assert.match(c.out, /workspace two/);
+    assert.equal(readFx(wdir).effect, 'embers', 'saved in the workspace folder'); assert.equal(readFx(h.stateDir).effect, 'aurora');
+    // hand edit of a workspace file is picked up; a malformed one warns and means off
+    fs.writeFileSync(path.join(wdir, 'fx.json'), '{"effect":"snow","intensity":{"snow":10}}\n'); h.hatch.state.rescan();
+    assert.deepEqual(h.hatch.state.snapshot().fxs.two, { effect: 'snow', intensity: 10 });
+    fs.writeFileSync(path.join(wdir, 'fx.json'), '{not json'); h.hatch.state.rescan();
+    let snap = h.hatch.state.snapshot(); assert.equal(snap.fxs.two, undefined); assert.equal(snap.fxs.main.effect, 'aurora');
+    assert.ok(snap.warnings.some((x) => x.file === 'fx' && /two/.test(x.message)), 'the warning names the workspace');
+    assert.ok(events.some(([e, d]) => e === 'fx' && d.ws === 'two' && d.effect === null), 'pages are told it is off');
+    fs.writeFileSync(path.join(wdir, 'fx.json'), '{"effect":"goo"}\n'); h.hatch.state.rescan();
+    assert.equal(h.hatch.state.snapshot().warnings.some((x) => x.file === 'fx'), false);
+    // a rename keeps the effect (the folder is by id); closing removes the effect and its file
+    assert.equal((await h.call('POST', '/api/workspaces/two/rename', { to: 'three' })).status, 200);
+    snap = h.hatch.state.snapshot(); assert.deepEqual([snap.fxs.three?.effect, snap.fxs.two], ['goo', undefined]);
+    events.length = 0;
+    const r = await h.call('DELETE', '/api/workspaces/three', { confirm: 'three' }); assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(fs.existsSync(wdir), false, 'fx.json goes with the workspace folder');
+    assert.deepEqual(h.hatch.state.snapshot().fxs, { main: { effect: 'aurora', intensity: 50 } });
+    assert.ok(events.some(([e, d]) => e === 'fx' && d.ws === 'three' && d.effect === null), 'pages are told');
   } finally { await h.close(); }
 });
 

@@ -167,7 +167,8 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   let background = null; // main's background: { url, rev, mode } or null
   const backgrounds = new Map(); // workspace name -> { url, rev, mode } (only those that have one); main is mirrored in `background`
   let wsList = []; let wsSig = ''; // [{ name, id }] from workspaces.json plus names seen on windows
-  let fx = { effect: null, intensity: 50 }; // the background effect (null = none) and its intensity
+  const fxs = new Map(); // workspace name -> { effect, intensity } (only those with an effect); each workspace has its own fx.json
+  let fx = { effect: null, intensity: 50 }; // main's background effect (null = none) and its intensity, mirrored for old clients
   let transparency = DEFAULT_TRANSPARENCY;  // percent, 0 = opaque
   let windowTransparency = 0; // percent for windows never set one by one; 0 = opaque, 'follow' = same as `transparency`
   let watcher = null; let pollTimer = null; let debounce = null; let closed = false;
@@ -306,11 +307,22 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     transparency = t.percent; windowTransparency = t.windows; emit('transparency', { transparency, windowTransparency });
   }
 
+  // Effects are per workspace: main's fx.json is in the state dir, the others' in their workspace dir (like the background)
   function scanFx() {
-    const f = readFx(dir);
-    warn('fx', f.problem || null);
-    if (f.effect === fx.effect && f.intensity === fx.intensity) return;
-    fx = { effect: f.effect, intensity: f.intensity }; emit('fx', fx);
+    const seen = new Set(); const problems = [];
+    for (const w of wsList) {
+      const f = readFx(workspaceDir(dir, w));
+      if (f.problem) problems.push(w.name === 'main' ? f.problem : `workspace ${w.name}: ${f.problem}`);
+      seen.add(w.name);
+      const before = fxs.get(w.name) || { effect: null, intensity: 50 };
+      if (f.effect === before.effect && f.intensity === before.intensity) continue;
+      const next = { effect: f.effect, intensity: f.intensity };
+      if (next.effect) fxs.set(w.name, next); else fxs.delete(w.name);
+      if (w.name === 'main') fx = next;
+      emit('fx', { ws: w.name, ...next });
+    }
+    for (const n of [...fxs.keys()]) if (!seen.has(n)) { fxs.delete(n); emit('fx', { ws: n, effect: null, intensity: 50 }); }
+    warn('fx', problems[0] || null);
   }
 
   function scanSizes() { warn('sizes', readSizes(dir).problem || null); }
@@ -620,7 +632,7 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
   return {
     plan,
     layout: l, start, close, rescan,
-    snapshot: () => ({ background, backgrounds: Object.fromEntries(backgrounds), workspaces: wsList, transparency, windowTransparency, fx, panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
+    snapshot: () => ({ background, backgrounds: Object.fromEntries(backgrounds), workspaces: wsList, transparency, windowTransparency, fx, fxs: Object.fromEntries(fxs), panels: [...panels.values()], progress, plans: plansApi.all(), widgets: [...widgetRev].map(([name, w]) => ({ name, rev: w.rev, meta: w.meta })), warnings: [...warnings].map(([file, message]) => ({ file, message })) }),
     workspaces: () => wsList, backgroundOf: (name) => backgrounds.get(name) || null,
     listPanels: () => [...panels.values()], setAllTransparency, getPanel: (id) => panels.get(id),
     createPanel, patchPanel, convertPanel, deletePanel, listTrash, restoreTrash, emptyTrash,

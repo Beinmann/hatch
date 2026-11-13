@@ -43,9 +43,11 @@ const store = {
 // ---- transparency (state dir transparency.json, percent 0..100): --opa is how opaque the backgrounds stay ----
 const applyTransparency = (pct) => { const r = document.documentElement; const n = Number.isFinite(pct) ? pct : 30; r.style.setProperty('--opa', `${100 - n}%`); r.classList.add('has-tr'); term?.retheme?.(); }; // always on: 0 = fully opaque even with a background image set
 // ---- background effect (state dir fx.json; pushed in the snapshot and by the 'fx' event; drawn by public/fx.js) ----
-const fxState = { effect: null, intensity: 50 };
+let fxs = {}; // workspace name -> { effect, intensity }; each workspace has its own effect
+const fxOf = () => fxs[wm.current()] || { effect: null, intensity: 50 };
+const applyFx = () => { const f = fxOf(); fxCtl.set(f.effect, f.intensity); };
 const fxCtl = createFx({ canvas: $('fx'), getXterm: () => term?.term || null, onChange: (name) => { const b = $('fxhint'); b.hidden = !name; b.textContent = name ? 'fx: hatch fx off' : ''; } });
-$('fxhint').addEventListener('click', () => api('POST', '/api/fx', { effect: 'off' }).catch((e) => toast(e.message, 'bad')));
+$('fxhint').addEventListener('click', () => api('POST', '/api/fx', { effect: 'off', ws: wm.current() }).catch((e) => toast(e.message, 'bad')));
 // ---- background image (state dir background.*; the server sends its URL in the snapshot and on change) ----
 const applyBackground = (b) => { const r = document.documentElement; if (b?.url) { r.style.setProperty('--bg-image', `url("${b.url}")`); r.dataset.bgmode = b.mode || 'fill'; r.classList.add('has-bg'); } else { r.style.removeProperty('--bg-image'); delete r.dataset.bgmode; r.classList.remove('has-bg'); } term?.retheme?.(); };
 
@@ -207,7 +209,7 @@ function connectEvents() {
     for (const id of askDrafts.keys()) if (!pendingAsks.some((question) => question.id === id)) askDrafts.delete(id);
     showAsk();
     gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); $('conn').title = 'view-only mirror'; } loadCustom(s.info.custom); info = s.info; $('session').textContent = `tmux: ${s.info.session}`;
-    setBackgrounds(s.backgrounds || {}); setWorkspaces(s.workspaces || [{ name: 'main', id: 'main' }]); presenceCounts = s.presence || {}; paintPresence(); applyTransparency(s.transparency); wm.setDefaultTransparency(s.windowTransparency); fxState.effect = s.fx?.effect; fxState.intensity = s.fx?.intensity; fxCtl.set(s.fx?.effect, s.fx?.intensity);
+    setBackgrounds(s.backgrounds || {}); setWorkspaces(s.workspaces || [{ name: 'main', id: 'main' }]); presenceCounts = s.presence || {}; paintPresence(); applyTransparency(s.transparency); wm.setDefaultTransparency(s.windowTransparency); fxs = { ...(s.fxs || (s.fx?.effect ? { main: s.fx } : {})) }; applyFx();
     widgets.clear(); for (const w of s.widgets) widgets.set(w.name, w);
     progressState = s.progress; for (const f of progressListeners) f(progressState);
     plansState.clear(); for (const [n, v] of Object.entries(s.plans || {})) plansState.set(n, v); for (const [n, v] of plansState) for (const f of planListeners) f(n, v);
@@ -220,7 +222,7 @@ function connectEvents() {
     reportPresence();
   });
   es.addEventListener('transparency', (e) => { const d = JSON.parse(e.data); applyTransparency(d.transparency); wm.setDefaultTransparency(d.windowTransparency); });
-  es.addEventListener('fx', (e) => { const d = JSON.parse(e.data); fxState.effect = d.effect; fxState.intensity = d.intensity; fxCtl.set(d.effect, d.intensity); });
+  es.addEventListener('fx', (e) => { const d = JSON.parse(e.data); if (d.effect) fxs[d.ws || 'main'] = { effect: d.effect, intensity: d.intensity }; else delete fxs[d.ws || 'main']; applyFx(); });
   es.addEventListener('background', (e) => { const d = JSON.parse(e.data); if (d.background) backgrounds[d.ws || 'main'] = d.background; else delete backgrounds[d.ws || 'main']; applyBackground(backgrounds[wm.current()]); });
   es.addEventListener('workspaces', (e) => setWorkspaces(JSON.parse(e.data).workspaces));
   es.addEventListener('presence', (e) => { presenceCounts = JSON.parse(e.data).counts || {}; paintPresence(); });
@@ -312,7 +314,7 @@ function showTerm(name) {
   e.host.hidden = false; activeTerm = e.ctl;
   paintStatus(e.status); paintReconnect(e.rc);
   if (!e.live) { e.live = true; e.ctl.connect(); } else e.ctl.fit();
-  fxCtl?.set?.(fxState.effect, fxState.intensity); // the effect canvas follows the shown terminal
+  if (fxCtl) applyFx(); // the effect canvas follows the shown terminal (and its workspace's effect)
 }
 showTerm('main'); // the other workspaces' terminals are made when first shown (the right one is chosen after the first snapshot)
 ctx.term = term;
@@ -456,6 +458,7 @@ function setWorkspaces(list) {
   wsList = list;
   for (const n of [...attention]) if (!wsNames().includes(n)) attention.delete(n);
   if (routed && !list.some((w) => w.name === wm.current())) { toast(`Workspace ${wm.current()} was closed`, 'info', 3000); showWorkspace('main'); setHash('main', true); }
+  applyFx(); // a rename or a closed workspace can change which effect the shown workspace has
   paintWorkspaces(); paintPresence();
 }
 /** Shows a workspace: its windows, terminal and background. Terminals of the others keep running. */
@@ -855,7 +858,7 @@ const palette = createPalette({
     add('Minimize focused popup', 'leader m', () => wm.dismiss(true));
     add('Show desktop: minimize all windows, again to restore', 'leader Shift+d', () => { if (wm.showDesktop() === 'none') toast('No windows to minimize', 'info', 1500); });
     try {
-      const f = await get('/api/fx'); const setFx = (body) => api('POST', '/api/fx', body).catch((e) => toast(e.message, 'bad'));
+      const f = await get(`/api/fx?ws=${encodeURIComponent(wm.current())}`); const setFx = (body) => api('POST', '/api/fx', { ...body, ws: wm.current() }).catch((e) => toast(e.message, 'bad'));
       for (const n of [...f.effects, 'off']) add(n === 'off' ? 'Background effect: off' : `Background effect: ${n}`, `hatch fx ${n}`, () => setFx({ effect: n }));
       if (f.effect) for (const [label, d] of [['stronger', 20], ['weaker', -20]]) add(`Background effect: ${label}`, `intensity ${f.intensity}`, () => setFx({ intensity: Math.max(0, Math.min(100, f.intensity + d)) }));
     } catch { /* no effects list */ }
