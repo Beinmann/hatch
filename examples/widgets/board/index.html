@@ -309,13 +309,16 @@
   }
   function line(x1, y1, x2, y2, cls) { var l = document.createElementNS(SVGNS, 'line'); l.setAttribute('class', cls);
     l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); return l; }
+  // an arrow is a straight line or, when it would cross a card or share its route with the opposite arrow, a curve (model.js arrowPath)
+  function arc(p, cls) { var l = document.createElementNS(SVGNS, 'path'); l.setAttribute('class', cls);
+    l.setAttribute('d', 'M' + p.x1 + ' ' + p.y1 + (p.c ? ' Q' + p.c.x + ' ' + p.c.y + ' ' : ' L') + p.x2 + ' ' + p.y2); return l; }
   function drawLines(tmp) {
     Array.prototype.slice.call(lines.querySelectorAll('g,.tmp')).forEach(function (n) { n.remove(); });
     board.arrows.forEach(function (a) {
-      var p = M.arrowLine(board, a); if (!p) return;
+      var p = M.arrowPath(board, a); if (!p) return;
       var g = document.createElementNS(SVGNS, 'g'); if (sel && sel.kind === 'arrow' && sel.id === a.id) g.setAttribute('class', 'sel');
-      var ln = line(p.x1, p.y1, p.x2, p.y2, 'ln'); ln.setAttribute('marker-end', 'url(#head)');
-      var hit = line(p.x1, p.y1, p.x2, p.y2, 'hit');
+      var ln = arc(p, 'ln'); ln.setAttribute('marker-end', 'url(#head)');
+      var hit = arc(p, 'hit');
       hit.addEventListener('pointerdown', function (e) { e.stopPropagation(); select('arrow', a.id); stage.focus(); });
       g.append(ln, hit); lines.appendChild(g);
     });

@@ -145,6 +145,30 @@
     const p = edgePoint(f, t.x + t.w / 2, t.y + t.h / 2), q = edgePoint(t, f.x + f.w / 2, f.y + f.h / 2);
     return { x1: p.x, y1: p.y, x2: q.x, y2: q.y };
   }
+  /** Path of an arrow: the straight edge-to-edge segment, or a quadratic curve (control point `c`) when the straight line would
+   *  run through another card or when the opposite arrow exists (so the two never coincide). Returns {x1,y1,x2,y2,c|null}
+   *  or null if a card is missing. The bulge grows until the curve clears every other card. */
+  function arrowPath(b, a) {
+    const f = b.cards.find((c) => c.id === a.from), t = b.cards.find((c) => c.id === a.to);
+    if (!f || !t) return null;
+    const fc = { x: f.x + f.w / 2, y: f.y + f.h / 2 }, tc = { x: t.x + t.w / 2, y: t.y + t.h / 2 };
+    const straight = arrowLine(b, a), others = b.cards.filter((c) => c !== f && c !== t && typeOf(c) !== 'group');
+    const hits = (pts) => others.some((c) => pts.some((p) => p.x > c.x - 6 && p.x < c.x + c.w + 6 && p.y > c.y - 6 && p.y < c.y + c.h + 6));
+    const mutual = b.arrows.some((o) => o.from === a.to && o.to === a.from);
+    const sample = (p, q, c) => Array.from({ length: 31 }, (_, i) => { const u = i / 30, v = 1 - u; return c ? { x: v * v * p.x + 2 * v * u * c.x + u * u * q.x, y: v * v * p.y + 2 * v * u * c.y + u * u * q.y } : { x: p.x + (q.x - p.x) * u, y: p.y + (q.y - p.y) * u }; });
+    if (!mutual && !hits(sample({ x: straight.x1, y: straight.y1 }, { x: straight.x2, y: straight.y2 }))) return { ...straight, c: null };
+    const dx = tc.x - fc.x, dy = tc.y - fc.y, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len; // unit normal, to the left of the travel direction
+    const mid = { x: (fc.x + tc.x) / 2, y: (fc.y + tc.y) / 2 };
+    const tries = mutual ? [50, -50] : [];
+    for (let d = 80; d <= 560; d += 60) tries.push(d, -d);
+    let best = null;
+    for (const d of tries) {
+      const c = { x: mid.x + nx * d, y: mid.y + ny * d }, p = edgePoint(f, c.x, c.y), q = edgePoint(t, c.x, c.y);
+      best = best || { x1: p.x, y1: p.y, x2: q.x, y2: q.y, c };
+      if (!hits(sample(p, q, c))) return { x1: p.x, y1: p.y, x2: q.x, y2: q.y, c };
+    }
+    return best || { ...straight, c: null };
+  }
   /** Topmost card (last in the list) containing the world point, or null. */
   function cardAt(b, x, y) {
     let frame = null; // a group frame only counts when nothing else is under the point
@@ -251,6 +275,6 @@
     const out = []; for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size)); return out;
   }
 
-  const api = { historyNew, historyPush, historyUndo, historyRedo, HISTORY_LIMIT, addCardLinked, tokenize, splitQuote, imageUrl, linkUrl, cycle, CARD_W, CARD_H, TYPES, TYPE_ORDER, DEFAULT_TYPE, STATUSES, MILESTONE_STATES, NOTE_COLORS, BOARD_ID_RE, typeOf, groupMembers, newBoardId, boardSummary, setChildSummary, wouldCycle, clip, removeCards, paste, wrap, empty, sanitize, parse, serialize, addCard, moveCard, setText, lines, progress, toggleCheck, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, cardAt, raise, chunks };
+  const api = { historyNew, historyPush, historyUndo, historyRedo, HISTORY_LIMIT, addCardLinked, tokenize, splitQuote, imageUrl, linkUrl, cycle, CARD_W, CARD_H, TYPES, TYPE_ORDER, DEFAULT_TYPE, STATUSES, MILESTONE_STATES, NOTE_COLORS, BOARD_ID_RE, typeOf, groupMembers, newBoardId, boardSummary, setChildSummary, wouldCycle, clip, removeCards, paste, wrap, empty, sanitize, parse, serialize, addCard, moveCard, setText, lines, progress, toggleCheck, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, arrowPath, cardAt, raise, chunks };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ScratchModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

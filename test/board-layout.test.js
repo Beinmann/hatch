@@ -84,3 +84,37 @@ test('snapshot and restore: one step back to the earlier positions, extra or rem
   assert.deepEqual(J(L.restore(t, snap)), J(b));
   assert.equal(J(L.restore(M.removeCard(t, 'b'), snap)).cards.length, 1);
 });
+
+// Arrow paths: after tidy no arrow may run through another card or lie on top of another arrow.
+const sampleArrow = (p) => Array.from({ length: 41 }, (_, i) => { const u = i / 40, v = 1 - u, c = p.c || { x: (p.x1 + p.x2) / 2, y: (p.y1 + p.y2) / 2 };
+  return { x: v * v * p.x1 + 2 * v * u * c.x + u * u * p.x2, y: v * v * p.y1 + 2 * v * u * c.y + u * u * p.y2 }; });
+const crossesOther = (b, a) => { const p = M.arrowPath(b, a); return b.cards.some((c) => c.id !== a.from && c.id !== a.to && sampleArrow(p).some((q) => q.x > c.x && q.x < c.x + c.w && q.y > c.y && q.y < c.y + c.h)); };
+
+test('arrowPath: a plain arrow stays a straight line', () => {
+  const b = board([card('a', 0, 0), card('b', 300, 0)], [arrow('a', 'b')]);
+  assert.equal(M.arrowPath(b, b.arrows[0]).c, null);
+});
+
+test('arrowPath: an arrow that would pass through another card curves around it', () => {
+  const b = board([card('a', 0, 0), card('m', 270, 0), card('c', 540, 0)], [arrow('a', 'c')]);
+  const p = M.arrowPath(b, b.arrows[0]);
+  assert.ok(p.c, 'curved');
+  assert.ok(!crossesOther(b, b.arrows[0]));
+});
+
+test('tidy keeps a three-card cycle readable: the back arrow does not cross the middle card or coincide with another arrow', () => {
+  const b = J(L.layout(board([card('h', 0, 0), card('w', 300, 200), card('t', 600, 0)], [arrow('h', 'w'), arrow('w', 't'), arrow('t', 'h')])));
+  const ys = new Set(b.cards.map((c) => c.y));
+  for (const a of b.arrows) assert.ok(!crossesOther(b, a), `${a.id} crosses a card`);
+  const back = M.arrowPath(b, b.arrows.find((a) => a.id === 't-h'));
+  assert.ok(back.c || ys.size > 1, 'back arrow is curved (or the cards are not in one row)');
+  // no two arrows share a straight route
+  const key = (a) => { const p = M.arrowPath(b, a); return JSON.stringify([p.x1, p.y1, p.x2, p.y2].map(Math.round)); };
+  assert.equal(new Set(b.arrows.map(key)).size, b.arrows.length);
+});
+
+test('arrowPath: two opposite arrows between the same cards are drawn apart', () => {
+  const b = board([card('a', 0, 0), card('b', 300, 0)], [arrow('a', 'b'), arrow('b', 'a')]);
+  const [p, q] = b.arrows.map((a) => M.arrowPath(b, a));
+  assert.ok(p.c && q.c && Math.sign(p.c.y - 50) !== Math.sign(q.c.y - 50));
+});
