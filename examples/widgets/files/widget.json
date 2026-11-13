@@ -1,0 +1,27 @@
+{
+ "title": "Files",
+ "w": 760,
+ "h": 440,
+ "placement": "float",
+ "sources": [
+  {
+   "name": "start",
+   "kind": "exec",
+   "cmd": "printf '%s' {{cwd}}"
+  },
+  {
+   "name": "ls",
+   "kind": "exec",
+   "arg": "any",
+   "maxBytes": 4194304,
+   "cmd": "p=$HATCH_ARG\ncase \"$p\" in /*) ;; *) echo '@@err not an absolute path'; exit 0;; esac\n[ -e \"$p\" ] || { echo '@@err no such folder (it may have been moved or deleted)'; exit 0; }\n[ -d \"$p\" ] || { echo '@@err not a folder'; exit 0; }\n[ -r \"$p\" ] && [ -x \"$p\" ] || { echo '@@err permission denied'; exit 0; }\nr=$(cd -- \"$p\" 2>/dev/null && pwd -P) || { echo '@@err cannot open this folder'; exit 0; }\necho \"@@real $r\"; echo @@entries\nfind \"$r\" -mindepth 1 -maxdepth 1 -printf '%y%Y\\037%s\\037%T@\\037%l\\037%f\\0' 2>/dev/null | head -z -n 3001\ntrue"
+  },
+  {
+   "name": "peek",
+   "kind": "exec",
+   "arg": "any",
+   "maxBytes": 4194304,
+   "cmd": "p=$HATCH_ARG\ncase \"$p\" in /*) ;; *) echo '@@err not an absolute path'; exit 0;; esac\n[ -e \"$p\" ] || { echo '@@err no such file (it may have been moved or deleted)'; exit 0; }\nst=$(stat -L -c '%s\t%Y\t%a\t%F' -- \"$p\" 2>/dev/null) || { echo '@@err cannot read file information'; exit 0; }\nprintf '@@stat %s\\n' \"$st\"\n[ -f \"$p\" ] || { echo @@special; exit 0; }\n[ -r \"$p\" ] || { echo '@@err permission denied'; exit 0; }\nsz=$(printf '%s' \"$st\" | cut -f1)\nd=$(file -b -- \"$p\" 2>/dev/null | head -c 200); [ -n \"$d\" ] && printf '@@desc %s\\n' \"$d\"\nl=$(printf '%s' \"$p\" | tr 'A-Z' 'a-z')\ncase \"$l\" in *.png) m=image/png;; *.jpg|*.jpeg) m=image/jpeg;; *.gif) m=image/gif;; *.webp) m=image/webp;; *.svg) m=image/svg+xml;; *) m=;; esac\nif [ -n \"$m\" ]; then\n  if [ \"$sz\" -gt 2097152 ]; then echo @@bigimage; exit 0; fi\n  echo \"@@image $m\"; echo @@body; base64 -w0 < \"$p\" 2>/dev/null || base64 < \"$p\" | tr -d '\\n'; exit 0\nfi\na=$(head -c 4096 -- \"$p\" 2>/dev/null | wc -c); b=$(head -c 4096 -- \"$p\" 2>/dev/null | LC_ALL=C tr -d '\\000-\\010\\013\\016-\\032\\034-\\037\\177' | wc -c)\nif [ \"$a\" != \"$b\" ]; then echo @@binary; exit 0; fi\n[ \"$sz\" -gt 65536 ] && echo @@trunc\necho @@text; echo @@body; head -c 65536 -- \"$p\" 2>/dev/null\ntrue"
+  }
+ ]
+}

@@ -313,11 +313,31 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
     state.rescan(); return state.createPanel({ type: 'widget', props: { name }, ...windowOptions });
   }
+  /** One file browser per start folder: `files-<folder>` with its start folder pinned in the `start` source. */
+  function openFilesFor(options) {
+    const dir = options.dir;
+    if (typeof dir !== 'string' || !path.isAbsolute(dir) || dir.includes('\0')) throw new HttpError(400, 'dir must be an absolute path');
+    let real; try { real = fs.realpathSync(dir); if (!fs.statSync(real).isDirectory()) throw new Error('not a directory'); } catch { throw new HttpError(400, `not a directory: ${dir}`); }
+    const slug = (path.basename(real).replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'root').slice(0, 40);
+    let name = `files-${slug}`;
+    const dirOf = (n) => { try { return JSON.parse(fs.readFileSync(path.join(l.widgets, n, 'widget.json'), 'utf8')).dir; } catch { return undefined; } };
+    if (fs.existsSync(path.join(l.widgets, name)) && dirOf(name) !== real) name = `${name}-${crypto.createHash('sha1').update(real).digest('hex').slice(0, 6)}`;
+    const target = path.join(l.widgets, name);
+    if (!fs.existsSync(target)) {
+      fs.cpSync(path.join(EXAMPLES, 'files'), target, { recursive: true });
+      const metaFile = path.join(target, 'widget.json'); const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+      atomicWrite(metaFile, `${JSON.stringify(gitProjectMeta(meta, real, `Files: ${path.basename(real) || real}`, 'files'), null, 2)}\n`);
+    }
+    const windowOptions = {};
+    for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
+    state.rescan(); return state.createPanel({ type: 'widget', props: { name }, ...windowOptions });
+  }
   /** Copies an example into widgets/ (keeping an existing copy) and opens it as a window. */
   function openExample(name, options = {}) {
     if (!exampleList().some((e) => e.name === name)) throw new HttpError(404, `no example widget ${name}`);
     if (name === 'top') return openTop(options);
     if (name === 'git' && options?.dir !== undefined) return openGitFor(options);
+    if (name === 'files' && options?.dir !== undefined) return openFilesFor(options);
     if (name === 'trash') return state.listPanels().find((q) => q.type === 'trash') || state.createPanel({ type: 'trash', title: 'Trash' }); // one trash window is enough
     const dir = path.join(l.widgets, name);
     if (!fs.existsSync(dir)) { fs.cpSync(path.join(EXAMPLES, name), dir, { recursive: true }); recordShipped(stateDir, name); }

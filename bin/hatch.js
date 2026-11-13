@@ -424,7 +424,7 @@ async function main(argv) {
       // "top" is a terminal window running htop, not the old widget, so keys work
       if (sub === 'open' && name === 'top') { const p = await api('POST', '/api/examples/top/open', {}); return console.log(`top open as ${p.id}`); }
       // "git" follows the shell: one widget per project, made by the server for this directory (the server does not know our cwd)
-      if (sub === 'open' && name === 'git') { const p = await api('POST', '/api/examples/git/open', { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
+      if (sub === 'open' && (name === 'git' || name === 'files')) { const p = await api('POST', `/api/examples/${name}/open`, { dir: process.cwd(), ...dockOpt }); return console.log(`widget ${p.props.name} open as ${p.id}`); }
       const target = path.join(l.widgets, name);
       if (sub === 'open' && !fs.existsSync(path.join(target, 'index.html'))) {
         // Not installed: a bundled example of that name is copied in and opened by the server.

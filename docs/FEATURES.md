@@ -70,6 +70,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Git window (stage, commit, diffs) | 048 | src/git.js, panels/git.js | yes | no push/pull/discard |
 | exec placeholders in widget sources | 057 | sources.js, server.js | yes | |
 | Git status widget (sections, per-project instances via `hatch widget open git`) | - | examples/widgets/git, server openGitFor | parser and server, not seen in a browser | read-only |
+| Files widget (`hatch widget open files`: read-only browser, hjkl/arrows/mouse, hidden toggle, image/text/metadata preview) | - | examples/widgets/files, server openFilesFor, sources.js maxBytes | model, source commands and server tested; seen in headless Chromium (keys, preview, images decode, permission message; text glyphs not visible there) | read-only; images over 2 MB and text past 64 KB are not shown in full; lists at most 3000 entries |
 | Board widget (PROTOTYPE: pan/zoom canvas, text cards, arrows, saved to data/board.json via exec sources) | - | examples/widgets/board, test/board.test.js | headless Chromium only (layout and interaction; text glyphs not visible there) | model in model.js is node-tested; no undo, plain text only |
 | ports metric, ports and pomodoro widgets | 051 | sources.js, examples/widgets | yes | |
 | Task runner, listening ports | 047 | src/discover.js | tests only | |
