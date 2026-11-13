@@ -124,7 +124,7 @@ desktop
   windows transparency 0..100       set the transparency of every window that is open right now (each kept per window, like leader o)
   desktop                           open a set of live gadgets (graph, system, clock, top, git, log) plus the progress panel
 git (Magit-lite window)
-  git [DIR]                         status window: stage with checkboxes, click a file for its diff, commit
+  git [DIR]                         same as: widget open git [--dir DIR] (status window: stage with checkboxes, click a file for its diff, commit)
 discover
   tasks [--run NAME]                list package.json scripts and Makefile targets of the server dir; --run opens one in an output window
   ports                             listening TCP ports on the box (and which process owns them)
@@ -301,6 +301,8 @@ async function main(argv) {
   const di = firstPos >= 0 && (argv[firstPos] === 'diff' || argv[firstPos] === 'log' || argv[firstPos] === 'curl') ? firstPos : -1; // only when diff/log IS the command, not an argument of another one
   const diffArgs = di >= 0 ? argv.slice(di + 1) : null;
   const o = parse(diffArgs ? argv.slice(0, di + 1) : argv);
+  // `hatch git [DIR]` is `hatch widget open git [--dir DIR]`: the per-project git widget (one per directory, reused)
+  if (o._[0] === 'git' && !o.help) { const dir = o._[1]; o._ = ['widget', 'open', 'git', ...o._.slice(2)]; if (dir !== undefined && o.dir === undefined) o.dir = dir; }
   const [cmd0, rawSub, ...rest] = o._;
   const rawCmd = cmd0 === 'w' ? 'widget' : cmd0; // `w` is short for `widget`
   const sub = rawCmd === 'popup' && rawSub === 'create' ? 'new' : (rawCmd === 'widget' && rawSub === 'o' ? 'open' : rawSub); // `widget o` is short for `widget open`
@@ -777,11 +779,6 @@ async function main(argv) {
       console.log(`running as ${r.id} in window ${p.id}`);
       if (o.wait) for (;;) { const v = await api('GET', `/api/runs/${r.id}`); if (v.state === 'done') { process.exitCode = Number.isInteger(v.code) && v.code >= 0 && v.code <= 255 ? v.code : 1; return console.log(`exit ${v.code}`); } await new Promise((res) => setTimeout(res, 400)); }
       return;
-    }
-    case 'git': {
-      const dirp = path.resolve(sub || process.cwd()); need(fs.existsSync(dirp), `no such directory: ${dirp}`);
-      const p = await api('POST', '/api/panels', { type: 'git', title: o.title || 'Git', props: { dir: dirp } });
-      return console.log(`git window ${p.id}`);
     }
     case 'tasks': {
       const list = await api('GET', '/api/tasks');

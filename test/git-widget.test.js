@@ -86,6 +86,9 @@ test('widget open git: one instance per project, titled, quoted dir, reused; col
     fs.writeFileSync(path.join(s, 'widgets', name, 'marker'), 'keep');
     r = await cli(['widget', 'open', 'git'], repo, s); assert.match(r.stdout, /already exists/); assert.ok(fs.existsSync(path.join(s, 'widgets', name, 'marker')), 'reused, not recreated');
     assert.equal((await h.call('GET', '/api/panels')).data.filter((p) => p.type === 'widget').length, 1);
+    r = await cli(['git'], repo, s); assert.match(r.stdout, /already exists/, '`hatch git` is `hatch widget open git`');
+    r = await cli(['git', repo], odd, s); assert.match(r.stdout, /already exists/, '`hatch git DIR` is `--dir DIR`');
+    assert.equal((await h.call('GET', '/api/panels')).data.filter((p) => p.type === 'widget').length, 1);
     r = await cli(['widget', 'open', 'git'], odd, s); assert.equal(r.status, 0, r.stderr);
     const oddName = r.stdout.match(/widget (\S+) open/)[1];
     const om = JSON.parse(fs.readFileSync(path.join(s, 'widgets', oddName, 'widget.json'), 'utf8'));
