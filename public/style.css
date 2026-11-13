@@ -282,3 +282,6 @@ body.viewonly .win .tb button,body.viewonly .win .rz,body.viewonly .win .rz-edge
 #wsnotice{cursor:pointer}
 button.danger:not(:disabled){background:#dc2626;color:#fff;border-color:#dc2626}
 #wsbar:has(button:nth-child(2):last-child){display:inline-flex}
+
+.pathpop{position:fixed;z-index:60;max-width:min(90vw,520px);display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;box-shadow:0 4px 18px #0004}
+.pathpop code{font-family:var(--mono);font-size:12px;word-break:break-all;user-select:text}

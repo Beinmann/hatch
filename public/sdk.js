@@ -76,6 +76,8 @@
   addEventListener('focus', () => post({ type: 'hatch-focus' }));
   addEventListener('pointerdown', () => post({ type: 'hatch-focus' }), true);
   addEventListener('error', (e) => hatch.log(`error: ${e.message}`));
+  // Tell the host which file this page is showing now; the window's title-bar path button shows it (see file-path.js).
+  hatch.setPath = (path) => post({ type: 'path', path: path == null ? null : String(path) });
   window.hatch = hatch;
   post({ type: 'hatch-hello' }); // asks for init again in case the host sent it before this script listened
 })();

@@ -62,6 +62,21 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     w.node.hidden = !shown(w); applyOpacity(w);
   }
 
+  // Small popover under a title-bar button with a file path and a Copy action; one at a time, closed by Escape or an outside click.
+  let pathPop = null;
+  function closePathPop() { pathPop?.remove(); pathPop = null; }
+  function showPath(anchor, text) {
+    const again = pathPop && pathPop.anchor === anchor; closePathPop(); if (again || !text) return;
+    const copy = el('button', { type: 'button', onclick: async () => { const { copyText } = await import('./terminal.js'); ctx.toast((await copyText(text)) ? 'Path copied' : 'Copy failed: the browser denied clipboard access', 'info', 2500); } }, 'Copy');
+    const pop = el('div', { class: 'pathpop', role: 'dialog', 'aria-label': 'File path' }, el('code', {}, text), copy);
+    pop.anchor = anchor; document.body.append(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.top = `${Math.round(r.bottom + 4)}px`; pop.style.right = `${Math.max(8, Math.round(innerWidth - r.right))}px`;
+    pathPop = pop;
+    const off = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !pop.contains(e.target) && e.target !== anchor) { closePathPop(); removeEventListener('pointerdown', off, true); removeEventListener('keydown', off, true); } };
+    addEventListener('pointerdown', off, true); addEventListener('keydown', off, true);
+  }
+
   function build(panel) {
     const kind = kinds[panel.type];
     const w = { panel, node: el('div', { class: 'win', tabindex: '-1', role: 'region', 'aria-label': panel.title, 'data-id': panel.id }), view: null };
@@ -82,6 +97,12 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     w.node.append(w.tb, w.body, w.rzr, w.rzb, w.rz);
     w.view = kind.create(panel, ctx);
     w.body.append(w.view.el);
+    // generic title-bar action: a view that shows a file offers onPath(cb); the button appears while it has a path
+    if (w.view.onPath) {
+      const btn = mkBtn('⎘', 'Show the file path', () => showPath(btn, w.pathText));
+      btn.hidden = true; btn.classList.add('pathbtn'); w.tb.insertBefore(btn, w.tb.children[1]);
+      w.view.onPath((p) => { w.pathText = p; btn.hidden = !p; if (!p) closePathPop(); });
+    }
     // double-click the title bar: maximize over the terminal and back (in the page only, geometry is not saved)
     w.tb.addEventListener('dblclick', (e) => { if (!isViewOnly() && !e.target.closest('button') && w.panel.placement === 'float') patch(w.panel.id, { maximized: !w.panel.maximized }).catch((e) => ctx.toast(e.message, 'bad')); });
     drag(w); dockDrag(w); resize(w);

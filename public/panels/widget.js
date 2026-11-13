@@ -2,6 +2,7 @@
 // API). Data comes through postMessage from here; sources run on the server and arrive over SSE.
 import { el } from '../util.js';
 import { createLastValues } from '../last-values.js';
+import { shownPath } from '../file-path.js';
 
 export default {
   create(panel, ctx) {
@@ -42,6 +43,9 @@ export default {
         document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
       } catch (err) { ctx.toast?.(`screenshot failed: ${err.message}`, 'bad'); }
     };
+    let reported = null; const pathListeners = new Set();
+    const currentPath = () => shownPath(reported, ctx.widgetInfo(name)?.meta);
+    const firePath = () => { const p = currentPath(); pathListeners.forEach((f) => f(p)); };
     const onMessage = (e) => {
       if (e.source !== frame.contentWindow) return;
       const m = e.data || {};
@@ -58,6 +62,7 @@ export default {
       else if (m.type === 'unsubscribe') { streams.get(m.source)?.(); streams.delete(m.source); }
       else if (m.type === 'hatch-screenshot-result') shots.get(m.rid)?.(m), shots.delete(m.rid);
       else if (m.type === 'screenshot-save') download(!!m.abstract);
+      else if (m.type === 'path') { reported = m.path == null ? null : String(m.path); firePath(); }
       else if (m.type === 'log') console.log(`[widget ${name}]`, m.text);
       else if (m.type === 'resize' && Number.isFinite(m.w) && Number.isFinite(m.h)) ctx.patch(panel.id, { w: Math.round(m.w), h: Math.round(m.h) }).catch(() => {});
     };
@@ -83,7 +88,9 @@ export default {
     load();
     return {
       el: root, focus() { frame.focus(); }, update() {}, destroy() { unregister?.(); removeEventListener('message', onMessage); closeAll(); frame.src = 'about:blank'; },
-      widgetChanged(info) { if (info.name === name) load(); },
+      widgetChanged(info) { if (info.name === name) { reported = null; load(); firePath(); } },
+      // title-bar path button (windows.js): called with the current path or null, now and on every change
+      onPath(f) { pathListeners.add(f); f(currentPath()); },
     };
   },
 };
