@@ -79,7 +79,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Session report | 046 | server /api/report, ui.js | CLI only | |
 | Maximize | 034 | windows.js | yes | |
 | Show desktop (leader Shift+d): minimize all, again restores the same formation | - | show-desktop.js, windows.js, app.js | planning and change detection | not browser-tested |
-| Dock look: opaque surface-colour column with an inset divider, darker widgets, 22px padding on the left and 2px on the right; no scroll bar at all, the wheel scrolls the dock over its padding, gaps and non-scrolling content (not over widget iframes, which take the wheel); the dock's left edge (5px, col-resize) resizes it (120px to 70% of the window, remembered) | - | windows.js, style.css | - | not yet seen in a browser |
+| Dock look: opaque surface-colour column with an inset divider, darker widgets, 30px padding on the left and 6px on the right; no scroll bar at all, the wheel scrolls the dock over its padding, gaps and non-scrolling content (not over widget iframes, which take the wheel); the dock's left edge (5px, col-resize) resizes it (120px to 70% of the window, remembered) | - | windows.js, style.css | - | not yet seen in a browser |
 | Peek: hold Alt alone to hide the floating windows (dock, fx and background stay) (key in Settings; other keys end it) | - | peek.js, style.css, app.js | state machine (timing, cancel, reset) | seen in headless Chromium: hold, release, Alt+b, other key, blur; not Firefox or Windows menu-bar behaviour |
 | Tile / minimize-all / close-all | 025 | app.js | tile only | |
 | Phone layout + extra keys bar | 015 | style.css, app.js | emulated | |
