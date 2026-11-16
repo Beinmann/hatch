@@ -84,8 +84,9 @@ test('leader ] [ w move between workspaces', () => {
   assert.equal(leaderAction({ code: 'BracketRight', key: ']', ctrlKey: true }), null);
 });
 
-test('Ctrl+Shift+Space and Ctrl+B are matched only without other modifiers', () => {
-  assert.ok(isTermKey({ code: 'Space', ctrlKey: true, shiftKey: true }));
+test('Ctrl+G (and the Ctrl+Shift+Space alias) and Ctrl+B are matched only without other modifiers', () => {
+  assert.ok(isTermKey({ code: 'Space', ctrlKey: true, shiftKey: true }) && isTermKey({ code: 'KeyG', ctrlKey: true }));
+  assert.ok(!isTermKey({ code: 'KeyG', ctrlKey: true, shiftKey: true }) && !isTermKey({ code: 'KeyG' }) && !isTermKey({ code: 'KeyG', ctrlKey: true, altKey: true }));
   assert.ok(!isTermKey({ code: 'Space', ctrlKey: true }) && !isTermKey({ code: 'Backquote', ctrlKey: true }) && !isTermKey({ code: 'Space', ctrlKey: true, shiftKey: true, altKey: true }) && !isTermKey({ code: 'KeyB', ctrlKey: true }));
   assert.ok(isPrefixKey({ code: 'KeyB', ctrlKey: true }));
   assert.ok(!isPrefixKey({ code: 'KeyB' }) && !isPrefixKey({ code: 'KeyB', ctrlKey: true, altKey: true }));

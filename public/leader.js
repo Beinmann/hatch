@@ -27,8 +27,9 @@ export const chordMatches = (c, e) => !!c && e.code === c.code && !!e.ctrlKey ==
 // Chrome but Firefox reserves it for a private window, so it is only a secondary route.
 export const isPaletteKey = (e) => e.code === 'KeyP' && !!e.ctrlKey && !e.altKey && !e.metaKey;
 
-/** Ctrl+Shift+Space returns focus to the terminal from anywhere (Firefox keeps Ctrl+` for itself; Ctrl+Space alone is the leader). */
-export const isTermKey = (e) => e.code === 'Space' && !!e.ctrlKey && !!e.shiftKey && !e.altKey && !e.metaKey;
+/** Ctrl+G returns focus to the terminal from anywhere (Firefox keeps Ctrl+` for itself; Ctrl+Space alone is the leader).
+ *  The older Ctrl+Shift+Space still works as an alias. Ctrl+Shift+G (progress strip) is a different chord. */
+export const isTermKey = (e) => !e.altKey && !e.metaKey && !!e.ctrlKey && ((e.code === 'KeyG' && !e.shiftKey) || (e.code === 'Space' && !!e.shiftKey));
 /** Ctrl+B (no other modifier): the tmux prefix. */
 export const isPrefixKey = (e) => e.code === 'KeyB' && !!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
 /** True for elements where the user types text (Ctrl+B belongs to them, not to tmux). `el` is a DOM element or null. */

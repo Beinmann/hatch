@@ -113,7 +113,7 @@ Going back: the project `.hatch` is as it was. Stop the per-user instance and st
 
 - **Terminal.** tmux in the page. Reload re-attaches; if the pty dies the page reconnects with backoff. Input queued for an old connection is discarded during reconnect so commands are not replayed accidentally. Select with
   Shift+drag and copy with Ctrl+C (without a selection Ctrl+C interrupts). The leader key (Ctrl+Space, then t) returns focus to the
-  terminal. Ctrl+Shift+Space does it in one chord from anywhere, widget frames and the palette included. Ctrl+B with a window focused (not a text field) returns to the terminal and sends the tmux prefix. Ctrl+Shift+F searches the scrollback (Enter next, Shift+Enter previous, Esc closes). Mouse mode, `allow-passthrough` and the tmux prefix are your own tmux config; Hatch never touches `~/.tmux.conf`.
+  terminal. Ctrl+G (or the older Ctrl+Shift+Space) does it in one chord from anywhere, widget frames and the palette included. Ctrl+B with a window focused (not a text field) returns to the terminal and sends the tmux prefix. Ctrl+Shift+F searches the scrollback (Enter next, Shift+Enter previous, Esc closes). Mouse mode, `allow-passthrough` and the tmux prefix are your own tmux config; Hatch never touches `~/.tmux.conf`.
 - **Image paste and drop.** Paste a screenshot (or drop an image) anywhere on the page: it is saved to
   `uploads/N.ext` on the box, the absolute path is typed into the terminal (as a bracketed paste when the program asks
   for it, as Claude Code does). An image window only opens if you tick "Show pasted images in a window" in the settings (off by default). Claude Code can then read the file. No resizing happens.
@@ -200,6 +200,7 @@ The header keeps secondary tools in the command palette. It opens immediately wi
 |---|---|
 | Ctrl+P, or Leader (Ctrl+Space) then p | Command palette (Ctrl+P also works with the terminal focused; Ctrl+Shift+P too, except in Firefox) |
 | Leader, then t | Return to terminal |
+| Ctrl+G (older alias: Ctrl+Shift+Space) | Return to terminal from anywhere, widget frames and the palette included |
 | Leader, then h / j / k / l | Focus the nearest window or the terminal to the left / below / above / right |
 | Leader, then Shift+h / j / k / l | Move the focused floating window by 40px (stays on screen, position is saved) |
 | Leader, then d | Dock the focused floating window, or release a docked one (same as the title-bar button) |
