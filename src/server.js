@@ -232,7 +232,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
     res.write('retry: 2000\n\n');
     const off = subscribe((value, ts) => res.write(`data: ${JSON.stringify({ value, ts })}\n\n`));
-    const hb = setInterval(() => res.write('event: ping\ndata: 1\n\n'), 3000);
+    const hb = setInterval(() => res.write(': ping\n\n'), 15000);
     req.on('close', () => { clearInterval(hb); off(); });
   }
 

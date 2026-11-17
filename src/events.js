@@ -1,13 +1,12 @@
 // One browser SSE stream carries state and widget events. Slow clients reconnect to a fresh snapshot.
 import { createSseWriter } from './sse.js';
-const HEARTBEAT_MS = 15000;
 
-export function createBus(snapshot, { maxQueuedBytes = 2 * 1024 * 1024, stallMs = 30000, log = () => {} } = {}) {
-  if (!Number.isSafeInteger(maxQueuedBytes) || maxQueuedBytes < 1 || !Number.isFinite(stallMs) || stallMs <= 0 || stallMs > 0x7fffffff) throw new Error('event queue bytes and stall timeout must be positive values within their supported limits');
+export function createBus(snapshot, { maxQueuedBytes = 2 * 1024 * 1024, stallMs = 30000, heartbeatMs = 3000, log = () => {} } = {}) {
+  if (!Number.isSafeInteger(maxQueuedBytes) || maxQueuedBytes < 1 || !Number.isFinite(heartbeatMs) || heartbeatMs < 1 || heartbeatMs > 0x7fffffff || !Number.isFinite(stallMs) || stallMs <= 0 || stallMs > 0x7fffffff) throw new Error('event queue bytes and stall timeout must be positive values within their supported limits');
   const clients = new Map(); const metas = new Map(); let closed = false;
   const encode = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   const cleanup = (onClose) => { try { onClose(); } catch (error) { log(`event stream cleanup failed: ${error.message}`); } };
-  const timer = setInterval(() => { for (const writer of clients.values()) writer.write(': ping\n\n'); }, HEARTBEAT_MS);
+  const timer = setInterval(() => { for (const writer of clients.values()) writer.write('event: ping\ndata: 1\n\n'); }, heartbeatMs); // named, so the page can tell the server is alive
   timer.unref();
   return {
     /** Send to every stream, or only to those whose meta (given to subscribe) `pick` accepts. Returns how many streams it went to. */

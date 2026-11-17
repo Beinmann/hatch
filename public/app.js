@@ -223,13 +223,26 @@ function paintServer(up) {
   }
   srvUp = up;
 }
-setInterval(() => { if (Date.now() - srvSeen > 8000) paintServer(false); }, 1000);
+const STALE_MS = 8000; const RETRY_MS = 3000;
+let evtSource = null; let lastOpen = 0;
+// A half-dead stream (network change) can stay silent without an error event: close it and open a fresh one.
+function reconnectEvents() { lastOpen = Date.now(); connectEvents(); }
+function checkStale() {
+  if (document.hidden) return; // timers and streams are throttled in a hidden tab, silence proves nothing
+  const silent = Date.now() - srvSeen > STALE_MS;
+  if (silent) paintServer(false);
+  if ((silent || evtSource?.readyState === 2) && Date.now() - lastOpen >= RETRY_MS) reconnectEvents();
+}
+setInterval(checkStale, 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkStale(); });
 window.addEventListener('offline', () => paintServer(false));
+window.addEventListener('online', () => { if (!document.hidden || srvUp === false) reconnectEvents(); });
 function connectEvents() {
-  const es = new EventSource(`/api/events?cid=${cid}`);
+  if (evtSource) evtSource.close(); // only one live stream; the old one's listeners die with it
+  const es = new EventSource(`/api/events?cid=${cid}`); evtSource = es; lastOpen = Date.now();
   const seen = () => { srvSeen = Date.now(); paintServer(true); };
   es.addEventListener('open', seen); es.addEventListener('ping', seen); es.addEventListener('snapshot', seen);
-  es.addEventListener('error', () => paintServer(false));
+  es.addEventListener('error', () => { paintServer(false); if (es.readyState === 2 && evtSource === es) setTimeout(() => { if (evtSource === es) reconnectEvents(); }, RETRY_MS); });
   es.addEventListener('source', (e) => { const d = JSON.parse(e.data); for (const fn of srcHandlers.get(srcKey(d.widget, d.source)) || []) fn(d.value, d.ts); });
   es.addEventListener('snapshot', (e) => {
     for (const k of srcHandlers.keys()) { const [widget, ...rest] = k.split('/'); api('POST', '/api/sub', { cid, widget, source: rest.join('/') }).catch(() => {}); } // after a reconnect or server restart
