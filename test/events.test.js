@@ -85,3 +85,12 @@ test('a large initial snapshot can drain before the bounded follow-up queue resu
     res.write = write; res.emit('drain'); assert.deepEqual(events(res), ['snapshot', 'after']); assert.equal(bus.size(), 1);
   } finally { bus.close(); }
 });
+
+test('a subscribed client receives a named ping event on the heartbeat interval', async () => {
+  const bus = createBus(() => ({}), { heartbeatMs: 20 }); const res = new Response();
+  try {
+    bus.subscribe(new EventEmitter(), res);
+    await waitFor(() => events(res).includes('ping'));
+    assert.ok(res.frames.includes('event: ping\ndata: 1\n\n'));
+  } finally { bus.close(); }
+});
