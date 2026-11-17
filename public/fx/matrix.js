@@ -1,5 +1,6 @@
 // Film-style digital rain, ported from the matrix example widget and dimmed so terminal text stays readable on top.
 // Effect interface (public/fx.js drives it): start(canvas, { animate, intensity }), setIntensity(n), stop(), resize(). One instance per page.
+import { paused } from './idle.js';
 import { factor } from './intensity.js';
 const GLYPHS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾅﾆﾇﾈﾉ0123456789:=*+-<>'.split('');
 const FS = 16, CW = 12.5, CH = 17, DIM = 0.42, FPS = 30; // font size, column pitch, row pitch, overall strength, frame cap
@@ -67,7 +68,7 @@ function draw() {
 
 function frame(t) {
   raf = requestAnimationFrame(frame);
-  if (document.hidden || t - last < 1000 / FPS) return; // paused in a background tab; capped to keep the CPU cost low
+  if (paused() || t - last < 1000 / FPS) return; // paused in a hidden tab or after 5 minutes without input (idle.js); capped to keep the CPU cost low
   const dt = Math.min(0.1, (t - last) / 1000); last = t;
   step(dt); draw();
 }

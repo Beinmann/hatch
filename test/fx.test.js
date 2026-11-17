@@ -434,3 +434,16 @@ test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, waves) 
     assert.ok(calls.fillRect > 0 && calls.arc > 0 && calls.fill > 0 && calls.stroke > 0 && calls.createLinearGradient > 0, 'the effects drew rects, arcs, paths and gradients');
   } finally { Object.assign(globalThis, { document: saved.document, requestAnimationFrame: saved.raf, cancelAnimationFrame: saved.caf }); if (!saved.document) delete globalThis.document; }
 });
+
+test('idle: effects skip frames in a hidden tab or after IDLE_MS without input, and input wakes them', async () => {
+  const saved = { document: globalThis.document, addEventListener: globalThis.addEventListener };
+  const handlers = {}; globalThis.addEventListener = (e, f) => { handlers[e] = f; }; globalThis.document = { hidden: false };
+  try {
+    const { paused, IDLE_MS } = await import('../public/fx/idle.js?idle-test');
+    const now = performance.now();
+    assert.equal(paused(now), false);
+    assert.equal(paused(now + IDLE_MS + 1000), true, 'idle: no input for longer than IDLE_MS');
+    handlers.keydown(); assert.equal(paused(performance.now() + 1000), false, 'a key wakes it');
+    globalThis.document.hidden = true; assert.equal(paused(), true, 'hidden tab');
+  } finally { Object.assign(globalThis, saved); if (!saved.document) delete globalThis.document; if (!saved.addEventListener) delete globalThis.addEventListener; }
+});

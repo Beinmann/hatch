@@ -3,6 +3,7 @@
 // fragment shader (rain-shader.js) refracts the page background through every drop. Only the background is refracted: the effect canvas
 // sits under the terminal text, so text stays sharp. Fallback when WebGL is missing: the same simulation drawn as 2D shapes (no refraction).
 // Effect interface (public/fx.js drives it): start(canvas, { animate, intensity }), setIntensity(n), stop(), resize(). One instance per page.
+import { paused } from './idle.js';
 import { createGlass } from './rain-sim.js';
 import { rasterStatic, rasterLive, runnerBox } from './rain-raster.js';
 import { rainLevel, bgTransform, parseCssColor } from './rain-physics.js';
@@ -170,7 +171,7 @@ function settle() { for (let i = 0; i < 240; i++) glass.step(0.25); needFull = t
 
 function frame(t) {
   raf = requestAnimationFrame(frame);
-  if (document.hidden || t - last < 1000 / (t < typingUntil ? P.TYPING_FPS : P.FPS)) return; // paused in a background tab; capped to keep the CPU and GPU cost low
+  if (paused() || t - last < 1000 / (t < typingUntil ? P.TYPING_FPS : P.FPS)) return; // paused in a hidden tab or after 5 minutes without input (idle.js); capped to keep the CPU and GPU cost low
   const dt = Math.min(0.1, (t - last) / 1000); last = t; time += dt; sinceStyle += dt;
   if (gl && sinceStyle >= P.STYLE_EVERY) { sinceStyle = 0; readStyle(); }
   glass.step(dt); refresh(dt);

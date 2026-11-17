@@ -4,6 +4,7 @@
 // It paints on a transparent canvas (device pixel ratio 1 on purpose: cheap), pauses in a hidden tab, caps the frame rate, and with
 // reduced motion (animate: false) it draws one still frame. The canvas never takes input (the page styles it pointer-events: none).
 import { factor } from './intensity.js';
+import { paused } from './idle.js';
 
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const rnd = (a, b) => a + Math.random() * (b - a);
@@ -22,7 +23,7 @@ export function makeEffect(name, { fps = 30, still = 120, create }) {
   function paint() { ctx.globalAlpha = 1; ctx.clearRect(0, 0, W, H); sim.draw(ctx); ctx.globalAlpha = 1; }
   function frame(t) {
     raf = requestAnimationFrame(frame);
-    if (document.hidden || t - last < 1000 / fps) return; // paused in a background tab; capped to keep the CPU cost low
+    if (paused() || t - last < 1000 / fps) return; // paused in a hidden tab or after 5 minutes without input (idle.js); capped to keep the CPU cost low
     const dt = Math.min(0.1, (t - last) / 1000); last = t;
     sim.step(dt); paint();
   }

@@ -6,6 +6,7 @@
 // Drawn on the canvas UNDER the text, in low alpha: the look is dark oil with a faint lighter rim and a soft highlight, so it still
 // shows on a dark terminal. Effect interface (public/fx.js): start(canvas, { animate, intensity, terminal }), setIntensity(n), stop(), resize().
 // Behaviour numbers (lengths, timings, counts) are in the CFG table of goo-physics.js; the colours are here.
+import { paused } from './idle.js';
 import { CFG, gooLevel, maxDrips, pickAnchor, cellOrigin, fallbackOrigin, newDrip, stepDrip, strandPoints, stubOf, tipOf, scrollDrips, checkAnchors, placeDrips, release } from './goo-physics.js';
 
 // ---- Colours (rgb triplets; alpha is applied per drip) ----
@@ -110,7 +111,7 @@ const settle = () => { for (let i = 0; i < 360; i++) step(1 / 30); draw(); }; //
 
 function frame(t) {
   raf = requestAnimationFrame(frame);
-  if (document.hidden || t - last < 1000 / FPS) return; // paused in a background tab; capped to keep the CPU cost low
+  if (paused() || t - last < 1000 / FPS) return; // paused in a hidden tab or after 5 minutes without input (idle.js); capped to keep the CPU cost low
   const dt = Math.min(0.1, (t - last) / 1000); last = t;
   step(dt); draw();
 }
