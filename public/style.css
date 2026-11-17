@@ -295,3 +295,7 @@ button.danger:not(:disabled){background:#dc2626;color:#fff;border-color:#dc2626}
 
 .pathpop{position:fixed;z-index:60;max-width:min(90vw,520px);display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;box-shadow:0 4px 18px #0004}
 .pathpop code{font-family:var(--mono);font-size:12px;word-break:break-all;user-select:text}
+
+#srv{display:flex;align-items:center;gap:6px;font:12px var(--mono);color:var(--muted);margin:0 6px;white-space:nowrap}
+#srv::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--ok,#3fb950)}
+#srv.down{color:var(--bad)} #srv.down::before{background:var(--bad)}

@@ -213,8 +213,23 @@ function paintWarnings() {
 $('warnbtn').addEventListener('click', () => { $('warnlist').hidden = !$('warnlist').hidden; });
 $('setbtn').addEventListener('click', () => { $('settings').hidden = !$('settings').hidden; });
 
+let srvSeen = Date.now(); let srvUp = true;
+// The server pings the event stream every 3 s; ~8 s of silence (or the browser's own offline event) marks it unreachable.
+function paintServer(up) {
+  const d = $('srv'); d.classList.toggle('down', !up); d.textContent = up ? 'online' : 'offline'; d.title = up ? 'Hatch server reachable' : 'Hatch server unreachable, retrying';
+  if (up && !srvUp) { // back again: re-attach every terminal that is not connected (tmux kept the programs running)
+    for (const e of terms.values()) if (e.live && e.status !== 'connected') e.ctl.connect();
+    toast('Reconnected to the Hatch server', 'info');
+  }
+  srvUp = up;
+}
+setInterval(() => { if (Date.now() - srvSeen > 8000) paintServer(false); }, 1000);
+window.addEventListener('offline', () => paintServer(false));
 function connectEvents() {
   const es = new EventSource(`/api/events?cid=${cid}`);
+  const seen = () => { srvSeen = Date.now(); paintServer(true); };
+  es.addEventListener('open', seen); es.addEventListener('ping', seen); es.addEventListener('snapshot', seen);
+  es.addEventListener('error', () => paintServer(false));
   es.addEventListener('source', (e) => { const d = JSON.parse(e.data); for (const fn of srcHandlers.get(srcKey(d.widget, d.source)) || []) fn(d.value, d.ts); });
   es.addEventListener('snapshot', (e) => {
     for (const k of srcHandlers.keys()) { const [widget, ...rest] = k.split('/'); api('POST', '/api/sub', { cid, widget, source: rest.join('/') }).catch(() => {}); } // after a reconnect or server restart
