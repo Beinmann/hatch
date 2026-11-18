@@ -61,3 +61,22 @@ test('SDK forwards Ctrl+G and Ctrl+Shift+Space always and Ctrl+B unless typing i
   assert.ok(!s.key({ code: 'KeyB', key: 'b', ctrlKey: true, target: { tagName: 'TEXTAREA' } }));
   assert.ok(!s.key({ code: 'KeyB', key: 'b', ctrlKey: true, shiftKey: true, target: { tagName: 'DIV' } }));
 });
+
+test('with numberKeys the SDK reports bare Ctrl down/up and takes Ctrl+digit, nothing else new', () => {
+  const s = sandbox(); s.message({ type: 'init', numberKeys: true });
+  assert.ok(!s.key({ code: 'ControlLeft', key: 'Control', ctrlKey: true }), 'bare Ctrl still reaches the widget');
+  assert.ok(s.key({ code: 'Digit3', key: '3', ctrlKey: true }), 'Ctrl+digit is taken');
+  assert.ok(!s.key({ code: 'Digit3', key: '3', ctrlKey: true, shiftKey: true }));
+  assert.ok(!s.key({ code: 'Digit3', key: '3' }));
+  assert.ok(!s.key({ code: 'KeyC', key: 'c', ctrlKey: true }), 'other Ctrl combos stay in the widget');
+  s.blur(); // releasing focus counts as releasing Ctrl, so the badges cannot stick
+  const sent = s.posted.filter((m) => m.type === 'hatch-shortcut').map((m) => `${m.key}${m.up ? '-up' : ''}`);
+  assert.deepEqual(sent, ['Control', '3', 'Control-up']);
+});
+
+test('without numberKeys (older host) Ctrl+digit and Ctrl stay in the widget', () => {
+  const s = sandbox(); s.message({ type: 'init' });
+  assert.ok(!s.key({ code: 'Digit3', key: '3', ctrlKey: true }));
+  assert.ok(!s.key({ code: 'ControlLeft', key: 'Control', ctrlKey: true }));
+  assert.equal(s.posted.filter((m) => m.type === 'hatch-shortcut').length, 0);
+});

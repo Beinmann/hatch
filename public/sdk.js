@@ -37,6 +37,7 @@
     if (e.source !== parent) return;
     const m = e.data || {};
     if (m.type === 'init') {
+      numberKeys = m.numberKeys === true;
       hatch.theme = m.theme || {}; leader = m.leader || null; hatch.name = m.name; hatch.sources = m.sources || [];
       const r = document.documentElement.style;
       for (const [k, v] of Object.entries(hatch.theme)) r.setProperty(`--${k}`, v);
@@ -60,19 +61,27 @@
   // Keyboard events do not bubble out of an iframe, so forward Hatch's reserved keys: Ctrl+Shift+G and P, Ctrl+G (and the older Ctrl+Shift+Space) and Ctrl+B, the leader chord
   // (sent in init) and, while the host says the leader is armed, every key after it. The host decides what they mean.
   let leader = null; let armed = false;
+  // Hold Ctrl shows window numbers and Ctrl+1..9 jumps to a window; the host opts in (init numberKeys) so an older host never swallows Ctrl+digit.
+  let numberKeys = false; let ctrlDown = false;
   const fields = (e) => ({ type: 'hatch-shortcut', code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey });
   const isLeader = (e) => !!leader && e.code === leader.code && !!e.ctrlKey === leader.ctrl && !!e.altKey === leader.alt && !!e.shiftKey === leader.shift && !!e.metaKey === leader.meta;
   // Ctrl+B in a text field of a widget stays with the field.
   const editable = (t) => !!t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(String(t.tagName).toUpperCase()) || !!t.isContentEditable);
+  const bareCtrl = (e) => e.key === 'Control' && !e.altKey && !e.metaKey && !e.shiftKey;
   addEventListener('keydown', (e) => {
+    // Bare Ctrl is only reported (the widget still sees it); Ctrl+digit is taken like the other reserved chords.
+    if (numberKeys && bareCtrl(e)) { ctrlDown = true; post(fields(e)); return; }
+    const digit = numberKeys && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^Digit[1-9]$/.test(e.code || '');
     const fold = (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyG') || (e.code === 'KeyP' && e.ctrlKey && !e.altKey && !e.metaKey)
       || (e.code === 'Space' && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) || (e.code === 'KeyG' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) || (e.code === 'KeyB' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && !editable(e.target));
-    if (!fold && !armed && !isLeader(e)) return;
+    if (!fold && !digit && !armed && !isLeader(e)) return;
     e.preventDefault(); e.stopPropagation();
-    if (!fold && !armed) armed = true; // optimistic; the host answers with the real state
+    if (!fold && !digit && !armed) armed = true; // optimistic; the host answers with the real state
     post(fields(e));
   }, true);
-  addEventListener('blur', () => { armed = false; });
+  const ctrlUp = () => { if (ctrlDown) { ctrlDown = false; post({ ...fields({ key: 'Control', code: 'ControlLeft' }), up: true }); } };
+  addEventListener('keyup', (e) => { if (e.key === 'Control') ctrlUp(); }, true);
+  addEventListener('blur', () => { armed = false; ctrlUp(); });
   addEventListener('focus', () => post({ type: 'hatch-focus' }));
   addEventListener('pointerdown', () => post({ type: 'hatch-focus' }), true);
   addEventListener('error', (e) => hatch.log(`error: ${e.message}`));
