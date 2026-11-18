@@ -150,7 +150,9 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     return extra.get(name);
   };
   const term = createTerminal({ session: cfg.session, cwd, attach, tmuxBin, env: {}, onOutput: (b) => { watches.feed(b); noteActivity('@main')(b); } });
-  const info = () => ({ viewOnly, custom: { css: fs.existsSync(path.join(stateDir, 'custom.css')), js: fs.existsSync(path.join(stateDir, 'custom.js')) }, root: fsapi.getRoot(), version: VERSION, session: cfg.session, stateDir, uploadsDir: l.uploads, port: server.address()?.port ?? cfg.port, cwd, token: readTokenAge(stateDir) });
+  // bootId changes on every server start: open pages compare it to notice a restart and reload (it is random, not a secret)
+  const bootId = crypto.randomBytes(8).toString('hex');
+  const info = () => ({ bootId, viewOnly, custom: { css: fs.existsSync(path.join(stateDir, 'custom.css')), js: fs.existsSync(path.join(stateDir, 'custom.js')) }, root: fsapi.getRoot(), version: VERSION, session: cfg.session, stateDir, uploadsDir: l.uploads, port: server.address()?.port ?? cfg.port, cwd, token: readTokenAge(stateDir) });
 
   // ---- static ----
   function serveFile(res, file, headers = {}, req = null) {
