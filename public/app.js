@@ -68,6 +68,14 @@ function beep() {
     o.connect(g); g.connect(a.destination); g.gain.value = 0.05; o.frequency.value = 660; o.start(); o.stop(a.currentTime + 0.15);
   } catch { /* no audio */ }
 }
+// Old login token: a toast that stays until dismissed; the dismissal is remembered per browser for that token age marker.
+function warnOldToken(t) {
+  if (!t || !t.stale || document.body.classList.contains('viewonly')) return;
+  if (store.get('tokenWarnDismissed', null) === t.changedAt) return;
+  const note = el('div', { class: 'toast warn', role: 'status' }, `The login token is ${t.ageDays} days old. Rotate it with \`hatch-server rotate-token\`; if you change it by hand, run \`hatch-server token touch\` afterwards. `,
+    el('button', { type: 'button', onclick: () => { store.set('tokenWarnDismissed', t.changedAt); note.remove(); } }, 'Dismiss'));
+  $('toasts').append(note);
+}
 function notify({ text, level }) {
   { const list = store.get('log', []); list.unshift({ t: Date.now(), text, level }); store.set('log', list.slice(0, 100)); } // *Messages*: kept per browser
   toast(text, level === 'warn' ? 'warn' : level === 'done' ? 'done' : 'info', 9000);
@@ -251,7 +259,7 @@ function connectEvents() {
     pendingAsks.length = 0; pendingAsks.push(...(s.asks || []));
     for (const id of askDrafts.keys()) if (!pendingAsks.some((question) => question.id === id)) askDrafts.delete(id);
     showAsk();
-    gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); $('conn').title = 'view-only mirror'; } loadCustom(s.info.custom); info = s.info; $('session').textContent = `tmux: ${s.info.session}`;
+    gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); $('conn').title = 'view-only mirror'; } loadCustom(s.info.custom); info = s.info; warnOldToken(s.info.token); $('session').textContent = `tmux: ${s.info.session}`;
     setBackgrounds(s.backgrounds || {}); setWorkspaces(s.workspaces || [{ name: 'main', id: 'main' }]); presenceCounts = s.presence || {}; paintPresence(); applyTransparency(s.transparency); wm.setDefaultTransparency(s.windowTransparency); fxs = { ...(s.fxs || (s.fx?.effect ? { main: s.fx } : {})) }; applyFx();
     widgets.clear(); for (const w of s.widgets) widgets.set(w.name, w);
     progressState = s.progress; for (const f of progressListeners) f(progressState);

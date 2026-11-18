@@ -35,7 +35,7 @@ import { createConfigGuard } from './config-guard.js';
 import { createSessions } from './sessions.js';
 import { createLimiter, clientKey } from './rate-limit.js';
 import { loginPage, loginNeededPage, createCodes } from './login.js';
-import { rotateTokenFile } from './token.js';
+import { rotateTokenFile, readTokenAge } from './token.js';
 import { createHostSecrets, HOST_SECRET_RE } from './host-secrets.js';
 import { createScreenshots, findWidgetPanel } from './screenshots.js';
 import { injectBase, MAX_PAGE_BYTES } from './host-inject.js';
@@ -150,7 +150,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     return extra.get(name);
   };
   const term = createTerminal({ session: cfg.session, cwd, attach, tmuxBin, env: {}, onOutput: (b) => { watches.feed(b); noteActivity('@main')(b); } });
-  const info = () => ({ viewOnly, custom: { css: fs.existsSync(path.join(stateDir, 'custom.css')), js: fs.existsSync(path.join(stateDir, 'custom.js')) }, root: fsapi.getRoot(), version: VERSION, session: cfg.session, stateDir, uploadsDir: l.uploads, port: server.address()?.port ?? cfg.port, cwd });
+  const info = () => ({ viewOnly, custom: { css: fs.existsSync(path.join(stateDir, 'custom.css')), js: fs.existsSync(path.join(stateDir, 'custom.js')) }, root: fsapi.getRoot(), version: VERSION, session: cfg.session, stateDir, uploadsDir: l.uploads, port: server.address()?.port ?? cfg.port, cwd, token: readTokenAge(stateDir) });
 
   // ---- static ----
   function serveFile(res, file, headers = {}, req = null) {
