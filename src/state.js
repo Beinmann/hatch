@@ -85,7 +85,7 @@ export function projectSession(dir) {
 
 export function loadConfig(dir, overrides = {}, { warn = () => {} } = {}) {
   const l = ensureLayout(dir);
-  let cfg = {}; let original; const problems = [];
+  let cfg = {}; let original; let newToken = false; const problems = [];
   try { original = fs.readFileSync(l.config); }
   catch (e) { if (e.code !== 'ENOENT') throw new Error(`cannot read ${l.config}: ${e.message}; check its permissions before starting Hatch`); }
   if (original !== undefined) {
@@ -95,7 +95,7 @@ export function loadConfig(dir, overrides = {}, { warn = () => {} } = {}) {
   }
   if (typeof cfg.token !== 'string' || cfg.token.length < 16 || /[\s;"\\\x00-\x1f\x7f-\uffff]/.test(cfg.token)) {
     if (cfg.token !== undefined) problems.push('invalid token');
-    cfg.token = crypto.randomBytes(16).toString('hex');
+    cfg.token = crypto.randomBytes(16).toString('hex'); newToken = true;
   }
   if (cfg.session !== undefined && (typeof cfg.session !== 'string' || !cfg.session.trim() || /[\x00-\x1f\x7f:.]/.test(cfg.session))) {
     problems.push('invalid tmux session'); delete cfg.session;
@@ -113,6 +113,7 @@ export function loadConfig(dir, overrides = {}, { warn = () => {} } = {}) {
     atomicWrite(path.join(dir, backup), original, { mode: 0o600 });
   }
   atomicWrite(l.config, `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 });
+  if (newToken) atomicWrite(path.join(dir, 'token-changed'), `${new Date().toISOString()}\n`); // keep in step with token.js
   if (backup) warn(`Recovered ${problems.join('; ')}. Original saved in ${backup}; review that backup to restore any needed settings.`);
   return cfg;
 }

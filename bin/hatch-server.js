@@ -24,6 +24,7 @@ usage:
   hatch-server token [--state DIR]     print the login token, to paste into the login page
   hatch-server sessions                list browser logins (id, created, last seen, client)
   hatch-server logout ID | --all       end one login (the id from \`sessions\`) or all of them
+  hatch-server token touch [--state DIR]  record that you changed the token yourself (the page warns when the token is older than 30 days; rotate-token does this by itself)
   hatch-server rotate-token            make a new token, end every login, print the new token once
   hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it (view links may go away in a later version)
   hatch-server doctor [--state DIR]    check node, python3, tmux, state dir, server
@@ -164,6 +165,10 @@ if (cmd === 'url') {
   console.log(`http://${lanAddress()}:${c.port}/`);
   console.error('Log in with the token (`hatch-server token` prints it) or use `hatch-server url --once` for a single-use link.');
   process.exit(0);
+}
+if (cmd === 'token' && o._[1] === 'touch') {
+  const { touchTokenStamp } = await import('../src/token.js'); const dir = findStateDir({ state: o.state });
+  console.log(`token change recorded: ${touchTokenStamp(dir)} (in ${path.join(dir, 'token-changed')})`); process.exit(0);
 }
 if (cmd === 'token') { console.log(readConfig(findStateDir({ state: o.state })).token); process.exit(0); }
 if (cmd === 'sessions' || cmd === 'logout' || cmd === 'rotate-token') {
