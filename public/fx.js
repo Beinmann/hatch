@@ -5,7 +5,7 @@
 // do not need it ignore it. To add one: a new file there plus its name in src/fx.js. Effects are loaded on first use.
 import { terminalAdapter } from './fx-terminal.js';
 const LOADERS = { matrix: () => import('./fx/matrix.js'), rain: () => import('./fx/rain.js'), goo: () => import('./fx/goo.js'),
-  snow: () => import('./fx/snow.js'), starfield: () => import('./fx/starfield.js'), aurora: () => import('./fx/aurora.js'), fireflies: () => import('./fx/fireflies.js'), embers: () => import('./fx/embers.js'), waves: () => import('./fx/waves.js'),
+  snow: () => import('./fx/snow.js'), starfield: () => import('./fx/starfield.js'), aurora: () => import('./fx/aurora.js'), fireflies: () => import('./fx/fireflies.js'), embers: () => import('./fx/embers.js'),
   ripples: () => import('./fx/ripples.js'),
   breathing: () => import('./fx/breathing.js'),
   constellation: () => import('./fx/constellation.js'),

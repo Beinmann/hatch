@@ -1,4 +1,4 @@
-// Shared frame loop for the small 2D effects (snow, stars, aurora, fireflies, embers, waves). An effect module is just
+// Shared frame loop for the small 2D effects (snow, stars, aurora, fireflies, embers). An effect module is just
 //   export default makeEffect('name', { fps, create(w, h, level) -> { step(dt), draw(ctx) } })
 // and this file does the rest of the effect interface (public/fx.js): start(canvas, { animate, intensity }), setIntensity(n), stop(), resize().
 // It paints on a transparent canvas (device pixel ratio 1 on purpose: cheap), pauses in a hidden tab, caps the frame rate, and with
