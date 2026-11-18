@@ -46,8 +46,15 @@ const applyTransparency = (pct) => { const r = document.documentElement; const n
 let fxs = {}; // workspace name -> { effect, intensity }; each workspace has its own effect
 const fxOf = () => fxs[wm.current()] || { effect: null, intensity: 50 };
 const applyFx = () => { const f = fxOf(); fxCtl.set(f.effect, f.intensity); };
-const fxCtl = createFx({ canvas: $('fx'), getXterm: () => term?.term || null, onChange: (name) => { const b = $('fxhint'); b.hidden = !name; b.textContent = name ? 'fx: hatch fx off' : ''; } });
-$('fxhint').addEventListener('click', () => api('POST', '/api/fx', { effect: 'off', ws: wm.current() }).catch((e) => toast(e.message, 'bad')));
+const fxSet = (body) => api('POST', '/api/fx', { ...body, ws: wm.current() }).catch((e) => toast(e.message, 'bad'));
+const fxClosePop = () => { $('fxpop').hidden = true; $('fxhint').setAttribute('aria-expanded', 'false'); };
+const fxCtl = createFx({ canvas: $('fx'), getXterm: () => term?.term || null, onChange: (name) => { const b = $('fxhint'); b.hidden = !name; $('fxname').textContent = name ? `fx ${name}` : ''; if (!name) fxClosePop(); } });
+$('fxhint').addEventListener('click', () => { const open = $('fxpop').hidden; $('fxpop').hidden = !open; $('fxhint').setAttribute('aria-expanded', String(open)); if (open) { const v = fxOf().intensity; $('fxint').value = v; $('fxival').textContent = v; } });
+$('fxoff').addEventListener('click', () => { fxClosePop(); fxSet({ effect: 'off' }); });
+$('fxint').addEventListener('input', (e) => { $('fxival').textContent = e.target.value; });
+$('fxint').addEventListener('change', (e) => fxSet({ intensity: Number(e.target.value) }));
+document.addEventListener('mousedown', (e) => { if (!$('fxpop').hidden && !$('fxwrap').contains(e.target)) fxClosePop(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('fxpop').hidden) { fxClosePop(); $('fxhint').focus(); } });
 // ---- background image (state dir background.*; the server sends its URL in the snapshot and on change) ----
 const applyBackground = (b) => { const r = document.documentElement; if (b?.url) { r.style.setProperty('--bg-image', `url("${b.url}")`); r.dataset.bgmode = b.mode || 'fill'; r.classList.add('has-bg'); } else { r.style.removeProperty('--bg-image'); delete r.dataset.bgmode; r.classList.remove('has-bg'); } term?.retheme?.(); };
 
