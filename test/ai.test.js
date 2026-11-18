@@ -9,11 +9,14 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { startHatch, tmp } from './helpers.js';
 import { runClaude, claudeArgs, extractJson, ClaudeError } from '../src/claude-p.js';
-import { cleanCommitMessage, readAiSettings } from '../src/ai.js';
+import { cleanCommitMessage, readAiSettings, normalizeBoardSuggestion, checkBoardRequest, AiError } from '../src/ai.js';
 
 const GIT_DIR = fileURLToPath(new URL('../examples/widgets/git/', import.meta.url));
 const gctx = vm.createContext({}); vm.runInContext(fs.readFileSync(path.join(GIT_DIR, 'parse.js'), 'utf8'), gctx);
 const G = gctx.GitParse; const J = (v) => JSON.parse(JSON.stringify(v));
+const BOARD_DIR = fileURLToPath(new URL('../examples/widgets/board/', import.meta.url));
+const bctx = vm.createContext({}); vm.runInContext(fs.readFileSync(path.join(BOARD_DIR, 'model.js'), 'utf8'), bctx);
+const M = bctx.ScratchModel;
 const gitMeta = JSON.parse(fs.readFileSync(path.join(GIT_DIR, 'widget.json'), 'utf8'));
 const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=Test User', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8' });
 
@@ -141,4 +144,62 @@ test('git widget: suggest and commit-with helpers, the commit-with source commit
   assert.equal(git(d, 'status', '--porcelain').trim(), '?? b.txt', 'unstaged and untracked files are left alone');
   const again = run('nothing staged'); assert.equal(G.parseCommitWith({ out: again.out.trim(), code: 0 }).ok, false);
   assert.equal(G.parseCommitWith({ out: run('x', path.join(d, 'missing')).out.trim() }).ok, false);
+});
+
+// ---- board assistant ----
+const sel = [{ id: 'c1', type: 'task', text: 'Write the parser' }, { id: 'c2', text: 'Test it' }];
+const expandReply = '```json\n' + JSON.stringify({ cards: [{ ref: 'n1', type: 'task', text: 'Handle errors' }, { ref: 'n2', type: 'bogus', text: 'Docs' }, { ref: 'c1', text: 'clashes with a selected id' }, { ref: 'n3', text: '  ' }, { ref: 'n1', text: 'duplicate ref' }],
+  arrows: [{ from: 'c1', to: 'n1' }, { from: 'n1', to: 'n2' }, { from: 'n1', to: 'zzz' }, { from: 'c2', to: 'c2' }, { from: 'c1', to: 'n1' }] }) + '\n```';
+
+test('board suggestions: bad types become notes, clashing refs, empty text, unknown or duplicate arrows are dropped and counted', () => {
+  const r = normalizeBoardSuggestion('expand', JSON.parse(expandReply.replace(/```(json)?/g, '')), ['c1', 'c2']);
+  assert.deepEqual(r.cards, [{ ref: 'n1', type: 'task', text: 'Handle errors' }, { ref: 'n2', type: 'note', text: 'Docs' }]);
+  assert.deepEqual(r.arrows, [{ from: 'c1', to: 'n1' }, { from: 'n1', to: 'n2' }]);
+  assert.equal(r.dropped, 6);
+  assert.throws(() => normalizeBoardSuggestion('expand', { cards: [] }, ['c1']), AiError);
+  assert.deepEqual(normalizeBoardSuggestion('summarise', { text: ' Short ' }, ['c1']).cards, [{ ref: 'n1', type: 'note', text: 'Short' }]);
+  assert.equal(normalizeBoardSuggestion('group', { title: 'Parser work\nextra' }, ['c1']).title, 'Parser work');
+  assert.throws(() => normalizeBoardSuggestion('group', {}, ['c1']), AiError);
+  assert.throws(() => checkBoardRequest({ action: 'delete', cards: sel }), /action must be/);
+  assert.throws(() => checkBoardRequest({ action: 'expand', cards: [] }), /select at least one/);
+  assert.throws(() => checkBoardRequest({ action: 'expand', cards: [{ id: '../x', text: '' }] }), /unique id/);
+  assert.throws(() => checkBoardRequest({ action: 'expand', cards: Array.from({ length: 31 }, (_, i) => ({ id: `c${i}`, text: '' })) }), /at most 30/);
+});
+
+test('board model: aiSlice sends only the selection; applySuggestion adds cards and arrows as one board value without touching the rest', () => {
+  let b = J(M.addCard(M.empty(), 100, 100, 'one')).board; const o = J(M.addCard(b, 400, 100, 'two')); b = o.board;
+  b = J(M.addCard(b, 700, 100, 'secret other card')).board;
+  const slice = J(M.aiSlice(b, ['c1', 'c2']));
+  assert.deepEqual(slice.cards.map((c) => c.id), ['c1', 'c2']); assert.ok(!JSON.stringify(slice).includes('secret')); assert.equal(slice.cards[0].type, 'note');
+  const s = { cards: [{ ref: 'n1', type: 'task', text: 'Next' }, { ref: 'n2', type: 'board', text: 'not allowed type' }, { ref: 'n3', type: 'note', text: '' }], arrows: [{ from: 'c1', to: 'n1' }, { from: 'n1', to: 'gone' }, { from: 'c2', to: 'n2' }] };
+  const r = J(M.applySuggestion(b, ['c1', 'c2'], s));
+  assert.equal(r.board.cards.length, 5); assert.equal(r.ids.length, 2);
+  const [n1, n2] = r.board.cards.slice(3);
+  assert.equal(n1.type, 'task'); assert.equal(n2.type, undefined, 'a type the model may not create becomes a note');
+  assert.ok(n1.x >= 310 + 180 + 60, 'new cards start right of the selection'); assert.ok(n2.y > n1.y);
+  assert.deepEqual(r.board.arrows.map((a) => [a.from, a.to]), [['c1', n1.id], ['c2', n2.id]]);
+  assert.deepEqual(r.board.cards.slice(0, 3), b.cards, 'existing cards are untouched');
+  assert.ok(r.board.nextId > Math.max(...r.board.cards.map((c) => parseInt(c.id.slice(1), 10))));
+  // the original board object is never mutated, so one history snapshot is one undo step
+  assert.equal(b.cards.length, 3);
+  const h = J(M.historyPush(M.historyNew(), b)); assert.deepEqual(J(M.historyUndo(h, r.board)).board.cards, b.cards);
+});
+
+test('board: /api/ai/board sends only the selection to the fake model, returns a validated suggestion and applies nothing', async () => {
+  const f = fakeClaude(expandReply);
+  const h = await startHatch({ limitsProbe: okLimits });
+  try {
+    await withFake(f, async () => {
+      const r = await h.call('POST', '/api/ai/board', { action: 'expand', cards: sel, arrows: [{ from: 'c1', to: 'c2' }, { from: 'c1', to: 'c9' }] });
+      assert.equal(r.status, 200); assert.equal(r.data.cards.length, 2); assert.equal(r.data.arrows.length, 2); assert.equal(r.data.dropped, 6);
+      const c = f.call(1); assert.deepEqual(c.args.slice(0, 7), ['-p', '--model', 'haiku', '--tools', '', '--max-budget-usd', '0.05']);
+      assert.match(c.input, /Write the parser/); assert.match(c.input, /"from":"c1","to":"c2"/); assert.doesNotMatch(c.input, /c9/);
+      f.setReply('```json\n{"title":"Parser"}\n```'); const g = await h.call('POST', '/api/ai/board', { action: 'group', cards: sel });
+      assert.deepEqual(g.data, { action: 'group', title: 'Parser', cards: [], arrows: [], dropped: 0 });
+      f.setReply('I cannot do that'); assert.equal((await h.call('POST', '/api/ai/board', { action: 'summarise', cards: sel })).status, 502);
+      const before = f.calls();
+      assert.equal((await h.call('POST', '/api/ai/board', { action: 'expand', cards: [] })).status, 400);
+      assert.equal(f.calls(), before, 'an invalid request never reaches the model');
+    });
+  } finally { await h.close(); }
 });

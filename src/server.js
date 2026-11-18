@@ -777,6 +777,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         aiBusy = true;
         try {
           if (g[1] === 'commit-message') return json(res, 200, await ai.commitMessage());
+          if (g[1] === 'board') return json(res, 200, await ai.board(b));
         } finally { aiBusy = false; }
         throw new HttpError(404, `unknown AI task ${g[1]}`);
       }

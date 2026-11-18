@@ -221,6 +221,34 @@
     return { board: setChildSummary(r.board, r.id, child), child, id: r.id };
   }
 
+  // ---- AI suggestions (the server validates and normalizes the reply, see src/ai.js; this applies it as ONE board change) ----
+  /** What the server may ask a board to create: only plain-text types. */
+  const AI_TYPES = ['note', 'task', 'code', 'milestone', 'quote'];
+  /** The slice of the board that is sent to the assistant: ids, types and texts of the selected cards and the arrows between them. Nothing else leaves the board. */
+  function aiSlice(b, ids) {
+    const set = new Set(ids), cards = b.cards.filter((c) => set.has(c.id));
+    return { cards: cards.map((c) => ({ id: c.id, type: typeOf(c), text: c.text })), arrows: b.arrows.filter((a) => set.has(a.from) && set.has(a.to)).map((a) => ({ from: a.from, to: a.to })) };
+  }
+  /** Adds the suggested cards in a column right of the selected cards (no positions come from the model; `tidy` arranges them properly),
+   *  then the arrows. `s` = { cards: [{ref, type, text}], arrows: [{from, to}] } where from/to are existing card ids or refs.
+   *  Unknown ids and duplicates are skipped. Returns { board, ids } (the new card ids) in one board value, so the caller records one undo step. */
+  function applySuggestion(b, selIds, s) {
+    const sel = b.cards.filter((c) => selIds.includes(c.id));
+    const x = sel.length ? Math.max(...sel.map((c) => c.x + c.w)) + 60 : 0; let y = sel.length ? Math.min(...sel.map((c) => c.y)) : 0;
+    let next = b.nextId; const map = new Map(), cards = [];
+    for (const c of (s && s.cards) || []) {
+      if (!c || typeof c.text !== 'string' || !c.text.trim() || map.has(c.ref)) continue;
+      const type = AI_TYPES.includes(c.type) ? c.type : DEFAULT_TYPE, size = type === 'note' ? [CARD_W, CARD_H] : TYPES[type].size;
+      const card = { id: 'c' + next++, x: Math.round(x), y: Math.round(y), w: size[0], h: size[1], text: c.text.slice(0, 20000) };
+      if (type !== DEFAULT_TYPE) card.type = type;
+      y += size[1] + 30; map.set(c.ref, card.id); cards.push(card);
+    }
+    let out = { ...b, nextId: next, cards: [...b.cards, ...cards] };
+    const ref = (id) => map.get(id) || (out.cards.some((c) => c.id === id) ? id : null);
+    for (const a of (s && s.arrows) || []) { const f = ref(a.from), t = ref(a.to); if (f && t) out = addArrow(out, f, t).board; }
+    return { board: out, ids: cards.map((c) => c.id) };
+  }
+
   // ---- undo / redo: whole-board snapshots (boards are small and never mutated, so a snapshot is just the old object).
   // The history is a plain value too: every function returns a new one. The view (pan/zoom) is not part of an undo step.
   const HISTORY_LIMIT = 100, COALESCE_MS = 1000;
@@ -275,6 +303,6 @@
     const out = []; for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size)); return out;
   }
 
-  const api = { historyNew, historyPush, historyUndo, historyRedo, HISTORY_LIMIT, addCardLinked, tokenize, splitQuote, imageUrl, linkUrl, cycle, CARD_W, CARD_H, TYPES, TYPE_ORDER, DEFAULT_TYPE, STATUSES, MILESTONE_STATES, NOTE_COLORS, BOARD_ID_RE, typeOf, groupMembers, newBoardId, boardSummary, setChildSummary, wouldCycle, clip, removeCards, paste, wrap, empty, sanitize, parse, serialize, addCard, moveCard, setText, lines, progress, toggleCheck, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, arrowPath, cardAt, raise, chunks };
+  const api = { aiSlice, applySuggestion, AI_TYPES, historyNew, historyPush, historyUndo, historyRedo, HISTORY_LIMIT, addCardLinked, tokenize, splitQuote, imageUrl, linkUrl, cycle, CARD_W, CARD_H, TYPES, TYPE_ORDER, DEFAULT_TYPE, STATUSES, MILESTONE_STATES, NOTE_COLORS, BOARD_ID_RE, typeOf, groupMembers, newBoardId, boardSummary, setChildSummary, wouldCycle, clip, removeCards, paste, wrap, empty, sanitize, parse, serialize, addCard, moveCard, setText, lines, progress, toggleCheck, patchCard, removeCard, addArrow, removeArrow, setView, toWorld, zoomAt, edgePoint, arrowLine, arrowPath, cardAt, raise, chunks };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ScratchModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

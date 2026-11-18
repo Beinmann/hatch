@@ -22,5 +22,8 @@
    "kind": "exec",
    "cmd": "D={{state}}/widgets/{{widget}}/data; ID=\"${HATCH_ARG:-}\"; case \"$ID\" in '') F=\"$D/board.json\";; *[!A-Za-z0-9_-]*) echo \"bad board id\" >&2; exit 1;; *) F=\"$D/board.$ID.json\";; esac; printf '%s' \"$F\""
   }
+ ],
+ "ai": [
+  "board"
  ]
 }
