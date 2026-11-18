@@ -166,6 +166,33 @@
     return { button: b, status };
   }
 
+  // ---- Suggest message + Commit staged: Claude suggests a one-line message into a text field (it commits nothing), the user edits
+  // it and commits what is staged with plain git (the `commit-with` source). ----
+  const MSG_MAX = 4000;   // the call argument limit of an `arg: any` source
+  /** State of the message row. staged: number of staged files; text: the field; busy: 'suggest' | 'commit' | ''. */
+  function msgView({ staged, dirty, text, busy }) {
+    const t = String(text || '').trim();
+    return {
+      suggest: { disabled: !!busy || !dirty, label: busy === 'suggest' ? 'Suggesting...' : 'Suggest', title: dirty ? 'Send the staged diff (or the unstaged one when nothing is staged) and the last commit subjects to Claude for a one-line message. Nothing is committed.' : 'Nothing to describe' },
+      commit: { disabled: !!busy || !staged || !t || t.length > MSG_MAX, label: busy === 'commit' ? 'Committing...' : 'Commit staged', title: !staged ? 'Stage files first (this commits only what is staged)' : !t ? 'Write a message' : 'git commit -m with this message' },
+    };
+  }
+  /** Answer of the `ai` call 'commit-message' ({message, source, truncated}) -> text shown next to the buttons. */
+  function suggestNote(r) {
+    if (!r || typeof r.message !== 'string' || !r.message.trim()) return { ok: false, text: 'No suggestion came back. Try again.' };
+    return { ok: true, message: r.message.trim().replace(/\s+/g, ' ').slice(0, MSG_MAX), text: `Suggestion from the ${r.source === 'unstaged' ? 'unstaged' : 'staged'} changes${r.truncated ? ' (large diff, cut)' : ''}: review it, then commit.` };
+  }
+  /** Answer of the `commit-with` call -> { ok, text }. git's own output is shown; a failed run has `error` and a non-zero code. */
+  function parseCommitWith(v) {
+    const out = String((v && v.out) || '').trim(); const first = out.split('\n')[0] || '';
+    if (out === '@@nodir') return { ok: false, text: 'The folder this widget points at no longer exists.' };
+    if (out === '@@norepo') return { ok: false, text: 'Not a git repository.' };
+    if (out.startsWith('@@failed')) return { ok: false, text: (out.split('\n')[1] || 'git commit failed (is anything staged?)').slice(0, 300) };
+    if (v && v.error) return { ok: false, text: String(v.error).slice(0, 300) };
+    if (v && v.code) return { ok: false, text: (first || 'git commit failed (is anything staged?)').slice(0, 300) };
+    return { ok: true, text: first.slice(0, 200) || 'Committed.' };
+  }
+
   /** Home replaced by ~, then the middle replaced by an ellipsis when longer than `max` characters. */
   function shortPath(p, home, max = 40) {
     let s = String(p || '');
@@ -285,6 +312,6 @@
   const splitPath = (p) => { const i = p.lastIndexOf('/'); return i < 0 ? { dir: '', name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) }; };
   const baseName = (p) => String(p || '').replace(/\/+$/, '').split('/').pop() || '/';
 
-  const api = { commitStep, commitView, parseCommitCall, parseCommitState, CONFIRM_MS, diffArg, parseDiff, parseNumstat, parseShow, parseFileDiff, statBars, rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
+  const api = { msgView, suggestNote, parseCommitWith, MSG_MAX, commitStep, commitView, parseCommitCall, parseCommitState, CONFIRM_MS, diffArg, parseDiff, parseNumstat, parseShow, parseFileDiff, statBars, rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GitParse = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

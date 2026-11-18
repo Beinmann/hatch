@@ -130,6 +130,7 @@
   button:disabled { opacity: .4; cursor: default; } button:disabled:hover { border-color: color-mix(in srgb, var(--muted, #888) 60%, transparent); }
   #dlg { position: absolute; inset: 0; z-index: 10001; display: grid; place-items: center; background: #0007; }
   #dlg div { max-width: 340px; padding: 14px; border-radius: 8px; background: var(--bg, #1b1b1b); border: 1px solid var(--accent, #6af); }
+  #dlg ul { margin: 0 0 12px; padding-left: 18px; max-height: 240px; overflow: auto; } #dlg li { margin: 2px 0; white-space: pre-wrap; } #dlg { max-width: none; }
   #dlg p { margin: 0 0 12px; } #dlg .row { display: flex; gap: 8px; justify-content: flex-end; }
   /* type picker */
   #menu { position: absolute; z-index: 10000; min-width: 190px; padding: 4px; border-radius: 6px; background: var(--bg, #1b1b1b); box-shadow: 0 6px 20px #000a;
@@ -142,7 +143,7 @@
 </head>
 <body>
 <div id="bar"><span id="crumbs"><b>Root</b></span><span class="hint">PROTOTYPE. Double-click or + card: pick a node type (Enter = sticky note). Board card: double-click opens it; cut/paste moves cards between levels. Drag a card top (or the paper) to move. Drag the right dot to another card: arrow. Click + Delete: remove. "- [ ] item" lines are checkboxes. Left-drag background: select a rectangle. Middle-drag: pan. Wheel: scroll, Shift+wheel: sideways, Ctrl+wheel: zoom.</span>
-  <span id="status" class="hint" style="flex:none"></span><button id="cut" title="Cut the selected cards (Ctrl+X); paste them at any level with Ctrl+V" disabled>cut</button><button id="paste" title="Paste the cut cards here (Ctrl+V)" disabled>paste</button><button id="wrapbtn" title="Move the selected cards into a new nested board" disabled>into board</button><button id="add">+ card</button><button id="tidy" title="Arrange the cards by their arrows: left to right, no overlap, unconnected cards in a grid below (key: T)">tidy</button><button id="undo" title="Undo the last change (Ctrl+Z); every edit counts, also tidy" hidden>undo</button><button id="redo" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" hidden>redo</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
+  <span id="status" class="hint" style="flex:none"></span><button id="cut" title="Cut the selected cards (Ctrl+X); paste them at any level with Ctrl+V" disabled>cut</button><button id="paste" title="Paste the cut cards here (Ctrl+V)" disabled>paste</button><button id="wrapbtn" title="Move the selected cards into a new nested board" disabled>into board</button><button id="aiexp" class="ai" title="Ask Claude for follow-up cards and arrows for the selected cards. Only the selected cards' text is sent. You review the suggestion before anything changes." disabled>AI expand</button><button id="aisum" class="ai" title="Ask Claude for one summary card of the selected cards (their text is sent). You review it first." disabled>AI summarise</button><button id="aigrp" class="ai" title="Ask Claude for a title, then move the selected cards into a nested board with it (their text is sent). You review it first." disabled>AI group</button><button id="add">+ card</button><button id="tidy" title="Arrange the cards by their arrows: left to right, no overlap, unconnected cards in a grid below (key: T)">tidy</button><button id="undo" title="Undo the last change (Ctrl+Z); every edit counts, also tidy" hidden>undo</button><button id="redo" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" hidden>redo</button><button id="reset">reset view</button><button id="shot" title="Download a PNG of this board">png</button><button id="shotabs" title="Download a PNG with all text replaced by grey bars (layout and colors only)">abstract png</button></div>
 <div id="stage"><div id="world"><svg id="lines"><defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg></div></div>
 <script src="/sdk.js"></script>
 <script src="model.js"></script>
@@ -479,6 +480,7 @@
   function selectedIds() { return multi.size ? Array.from(multi) : sel && sel.kind === 'card' ? [sel.id] : []; }
   function updateBar() {
     var n = selectedIds().length; document.getElementById('cut').disabled = !n; document.getElementById('wrapbtn').disabled = !n; document.getElementById('paste').disabled = !clipboard;
+    ['aiexp', 'aisum', 'aigrp'].forEach(function (id) { document.getElementById(id).disabled = !n || aiBusy; });
   }
   function drawCrumbs() {
     var box = document.getElementById('crumbs'); box.textContent = '';
@@ -547,15 +549,52 @@
     multi = new Set(res.ids); sel = null; if (res.ids.length === 1) { sel = { kind: 'card', id: res.ids[0] }; multi = new Set(); }
     render(); changed(); setStatus(res.refused.length ? 'a board cannot be pasted into itself or its own inner boards: it stays in the clipboard' : 'pasted');
   }
-  function wrapSelection() {
-    var ids = selectedIds(); if (!ids.length) return;
-    var r = M.wrap(board, ids, 'Board'); if (!r) return;
+  function wrapSelection(title, given) {
+    var ids = given || selectedIds(); if (!ids.length) return;
+    var r = M.wrap(board, ids, typeof title === 'string' ? title : 'Board'); if (!r) return;
     saveBoard(r.board.cards.filter(function (k) { return k.id === r.id; })[0].childId, r.child); // the new inner board is written first
     record(); board = r.board; sel = { kind: 'card', id: r.id }; multi = new Set(); render(); changed(); setStatus('moved ' + ids.length + ' card' + (ids.length === 1 ? '' : 's') + ' into a new board');
   }
   document.getElementById('cut').addEventListener('click', cutSelection);
   document.getElementById('paste').addEventListener('click', pasteHere);
-  document.getElementById('wrapbtn').addEventListener('click', wrapSelection);
+  document.getElementById('wrapbtn').addEventListener('click', function () { wrapSelection(); });
+  // ---- AI assistant: hatch.ai('board') returns a SUGGESTION (validated by the server); it is shown in a dialog and only applied on OK,
+  // as one undo step. Only the selected cards (text and the arrows between them) are sent, and only when a button is pressed.
+  var aiBusy = false;
+  function aiPreview(title, lines, note, okLabel) {
+    return new Promise(function (resolve) {
+      var d = mk('div'); d.id = 'dlg'; var box = mk('div'), row = mk('div', 'row'), ok = mk('button', '', okLabel), no = mk('button', '', 'Discard'), ul = mk('ul');
+      lines.forEach(function (t) { ul.appendChild(mk('li', '', t)); });
+      function done(v) { d.remove(); resolve(v); }
+      ok.addEventListener('click', function () { done(true); }); no.addEventListener('click', function () { done(false); });
+      d.addEventListener('keydown', function (e) { if (e.key === 'Escape') done(false); });
+      row.append(no, ok); box.append(mk('p', '', title), ul); if (note) box.appendChild(mk('p', 'hint', note)); box.appendChild(row); d.appendChild(box); document.body.appendChild(d); no.focus();
+    });
+  }
+  function aiSuggest(action) {
+    var ids = selectedIds(); if (!ids.length || aiBusy) return;
+    var slice = M.aiSlice(board, ids), level = curId; aiBusy = true; updateBar(); setStatus('asking Claude...');
+    hatch.ai('board', { action: action, cards: slice.cards, arrows: slice.arrows }).then(function (s) {
+      if (curId !== level) { setStatus('AI: you left the board before the answer arrived; nothing changed'); return; }
+      var note = s.dropped ? s.dropped + ' invalid part' + (s.dropped === 1 ? ' was' : 's were') + ' left out' : '';
+      if (action === 'group') {
+        return aiPreview('Move ' + slice.cards.length + ' card' + (slice.cards.length === 1 ? '' : 's') + ' into a new board titled:', [s.title], '', 'Group').then(function (ok) {
+          if (!ok) { setStatus('discarded'); return; }
+          wrapSelection(s.title, ids.filter(function (id) { return !!cardOf(id); }));
+        });
+      }
+      var lines = s.cards.map(function (c) { return (c.type !== 'note' ? '[' + c.type + '] ' : '') + c.text; });
+      if (s.arrows.length) lines.push('+ ' + s.arrows.length + ' arrow' + (s.arrows.length === 1 ? '' : 's'));
+      return aiPreview(action === 'summarise' ? 'Add this summary card?' : 'Add ' + s.cards.length + ' card' + (s.cards.length === 1 ? '' : 's') + '?', lines, note, 'Add').then(function (ok) {
+        if (!ok) { setStatus('discarded'); return; }
+        var r = M.applySuggestion(board, ids, s); record(); board = r.board; multi = new Set(r.ids); sel = null; render(); changed();
+        setStatus('added ' + r.ids.length + ' card' + (r.ids.length === 1 ? '' : 's') + ' (undo with Ctrl+Z, tidy with T)');
+      });
+    }).catch(function (e) { setStatus('AI: ' + e.message); }).then(function () { aiBusy = false; updateBar(); });
+  }
+  document.getElementById('aiexp').addEventListener('click', function () { aiSuggest('expand'); });
+  document.getElementById('aisum').addEventListener('click', function () { aiSuggest('summarise'); });
+  document.getElementById('aigrp').addEventListener('click', function () { aiSuggest('group'); });
   try { var cb0 = M.sanitize(JSON.parse(localStorage.getItem(CLIP_KEY) || 'null')); clipboard = cb0.cards.length ? M.clip(cb0, cb0.cards.map(function (k) { return k.id; })) : null; } catch (e) { clipboard = null; }
 
   hatch.ready(function () {

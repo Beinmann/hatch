@@ -27,6 +27,13 @@ export default {
       if (!declared().includes(String(m.source))) return reply({ error: `widget.json does not declare source "${m.source}"` });
       ctx.callSource(name, String(m.source), m.arg === undefined ? undefined : String(m.arg)).then((value) => reply({ value }), (e) => reply({ error: e.message }));
     };
+    // hatch.ai: a suggestion from Claude for a task the widget declared in widget.json ("ai": ["commit-message"]); the page never applies it
+    const aiCall = (m) => {
+      const reply = (r) => post({ type: 'result', id: m.id, ...r });
+      const allowed = ctx.widgetInfo(name)?.meta?.ai;
+      if (!Array.isArray(allowed) || !allowed.includes(String(m.task))) return reply({ error: `widget.json does not list the AI task "${m.task}" in "ai"` });
+      ctx.aiRequest(String(m.task), m.payload).then((value) => reply({ value }), (e) => reply({ error: e.message }));
+    };
     // Screenshots: the widget renders its own DOM (the sandbox hides it from this page) and answers with a PNG blob.
     const shots = new Map(); let shotId = 1;
     const capture = ({ abstract = false, scale = 2 } = {}) => new Promise((resolve, reject) => {
@@ -59,6 +66,7 @@ export default {
       else if (m.type === 'hatch-hello') sendInit(); // the SDK may have started after the load event's init
       else if (m.type === 'subscribe') subscribe(String(m.source));
       else if (m.type === 'call') call(m);
+      else if (m.type === 'ai') aiCall(m);
       else if (m.type === 'unsubscribe') { streams.get(m.source)?.(); streams.delete(m.source); }
       else if (m.type === 'hatch-screenshot-result') shots.get(m.rid)?.(m), shots.delete(m.rid);
       else if (m.type === 'screenshot-save') download(!!m.abstract);

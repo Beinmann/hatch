@@ -94,8 +94,18 @@
   #bar button.confirm{color:#111;background:var(--warn);border-color:var(--warn);font-weight:bold}
   #bar .cs{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted,#888)}
   #bar .cs.done{color:var(--ok)}#bar .cs.failed{color:var(--bad)}
+  /* message row: Suggest (AI, suggestion only) and Commit staged (plain git) */
+  #mbar{display:flex;gap:8px;align-items:baseline;padding:6px 10px 0;min-width:0}
+  #mbar[hidden],#mstat[hidden]{display:none}
+  #mbar input{flex:1;min-width:0;font:inherit;color:var(--fg,#eee);background:rgba(127,127,127,.12);border:1px solid rgba(127,127,127,.4);border-radius:4px;padding:0 6px}
+  #mbar button{flex:none;font:inherit;color:var(--accent,#4fd1c0);background:none;border:1px solid rgba(127,127,127,.4);border-radius:4px;padding:0 8px;cursor:pointer}
+  #mbar button:hover:not(:disabled){background:rgba(127,127,127,.15)}#mbar button:disabled{opacity:.5;cursor:default}
+  #mstat{padding:2px 10px 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted,#888)}
+  #mstat.done{color:var(--ok)}#mstat.failed{color:var(--bad)}
 </style>
 <div id="bar" hidden><button id="commit" type="button"></button><span class="cs" id="cs"></span></div>
+<div id="mbar" hidden><input id="msg" type="text" maxlength="4000" placeholder="Commit message" aria-label="Commit message" autocomplete="off" spellcheck="false"><button id="suggest" type="button"></button><button id="cwith" type="button"></button></div>
+<div id="mstat" class="cs" hidden></div>
 <div id="app"><div class="msg">loading...</div></div>
 <script src="/sdk.js"></script>
 <script src="parse.js"></script>
@@ -305,13 +315,37 @@
     }
     updateBar();
   }
+  // ---- message row: Suggest asks Claude (hatch.ai) for a one-line message and only fills the field; Commit staged is plain git ----
+  const mbar = document.getElementById('mbar'), msg = document.getElementById('msg'), sbtn = document.getElementById('suggest'), wbtn = document.getElementById('cwith'), mstat = document.getElementById('mstat');
+  let mbusy = '';
+  const say = (kind, text) => { mstat.hidden = !text; mstat.className = `cs ${kind}`; mstat.textContent = text; mstat.title = text; };
+  function updateMsg() {
+    const s = !detail && last && !last.error ? G.parse(last.out) : null;
+    mbar.hidden = !(s && s.state === 'ok'); if (mbar.hidden) { mstat.hidden = true; return; }
+    const dirty = s.conflicts.length + s.unstaged.length + s.staged.length > 0;
+    const v = G.msgView({ staged: s.staged.length, dirty, text: msg.value, busy: mbusy });
+    sbtn.textContent = v.suggest.label; sbtn.disabled = v.suggest.disabled; sbtn.title = v.suggest.title;
+    wbtn.textContent = v.commit.label; wbtn.disabled = v.commit.disabled; wbtn.title = v.commit.title;
+  }
+  sbtn.addEventListener('click', () => {
+    mbusy = 'suggest'; say('', 'asking Claude...'); updateMsg();
+    hatch.ai('commit-message').then((r) => { const n = G.suggestNote(r); if (n.ok) msg.value = n.message; say(n.ok ? 'done' : 'failed', n.text); },
+      (e) => say('failed', e && e.message ? e.message : String(e))).finally(() => { mbusy = ''; updateMsg(); });
+  });
+  wbtn.addEventListener('click', () => {
+    mbusy = 'commit'; say('', ''); updateMsg();
+    hatch.call('commit-with', msg.value.trim()).then((v) => { const c = G.parseCommitWith(v); if (c.ok) msg.value = ''; say(c.ok ? 'done' : 'failed', c.text); },
+      (e) => say('failed', e && e.message ? e.message : String(e))).finally(() => { mbusy = ''; updateMsg(); });
+  });
+  msg.addEventListener('input', updateMsg);
+  msg.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !wbtn.disabled) { e.preventDefault(); wbtn.click(); } });
   cbtn.addEventListener('click', () => commitEvent('click'));
   cbtn.addEventListener('blur', () => commitEvent('blur'));
 
   // Re-render only when the markup changed, so the 3 s refresh never flickers; scroll position is restored anyway.
   function render() {
     if (!last) return;
-    updateBar();
+    updateBar(); updateMsg();
     const html = detail ? detailView() : last.error ? `<div class="msg bad">${esc(last.error)}</div>` : view(G.parse(last.out), Date.now());
     if (html === shown) return;
     const y = window.scrollY; shown = html; app.innerHTML = html; window.scrollTo(0, y);

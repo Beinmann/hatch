@@ -160,6 +160,7 @@ const ctx = {
   openFile: (p, line) => term.openFileHook?.(p, line),
   subscribeSource,
   callSource: (widget, source, arg) => api('POST', '/api/call', { widget, source, ...(arg !== undefined && { arg }) }).then((r) => r.value),
+  aiRequest: (task, payload) => api('POST', `/api/ai/${encodeURIComponent(task)}`, payload ?? {}),
   api, toast, cwd: () => info.cwd || '/', uploadsDir: () => info.uploadsDir, term: null, patch: (id, body) => api('PATCH', `/api/panels/${id}`, body),
   widgetInfo: (name) => widgets.get(name),
   progress: () => progressState,
@@ -592,7 +593,7 @@ function askBox({ title, text = '', ok = 'OK', input = null, match = null, dange
     const sync = () => { okBtn.disabled = !!field && (match !== null ? field.value !== match : !field.value.trim()); };
     field?.addEventListener('input', sync);
     const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) done(null); } }, el('div', { class: 'box pad', role: 'dialog', 'aria-label': title },
-      el('h3', { style: 'margin:0 0 8px' }, title), text ? el('p', { class: 'muted' }, text) : '', field || '', el('div', { style: 'margin-top:10px;display:flex;gap:8px;justify-content:flex-end' }, el('button', { type: 'button', onclick: () => done(null) }, 'Cancel'), okBtn)));
+      el('h3', { style: 'margin:0 0 8px' }, title), text ? el('p', { class: 'muted', style: 'white-space:pre-wrap' }, text) : '', field || '', el('div', { style: 'margin-top:10px;display:flex;gap:8px;justify-content:flex-end' }, el('button', { type: 'button', onclick: () => done(null) }, 'Cancel'), okBtn)));
     box.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') done(null); else if (e.key === 'Enter' && !okBtn.disabled) { e.preventDefault(); okBtn.click(); } });
     sync(); document.body.append(box); const first = field || okBtn; first.focus(); setTimeout(() => { if (box.isConnected && !box.contains(document.activeElement)) first.focus(); }, 80); // a widget frame may grab focus as it loads
   });
@@ -879,6 +880,20 @@ function primaryCommands() {
     { label: 'Keyboard shortcuts', run: showHelp },
   ];
 }
+// Palette "?": the server asks Claude for a plan and validates every command against an allowlist (src/ai-palette.js); the page shows
+// the plan, and only a click on Run sends the commands back (the server validates them again).
+async function askClaude(text) {
+  toast('Asking Claude...', 'info', 2500);
+  const ws = window.hatchApp?.wm.current();
+  const plan = await api('POST', '/api/ai/palette', { text });
+  const skipped = plan.rejected.length ? `\n\nNot allowed, left out:\n${plan.rejected.map((r) => `${r.text}  (${r.reason})`).join('\n')}` : '';
+  if (!plan.commands.length) return toast(`${plan.say || 'Claude proposed no runnable commands.'}${plan.rejected.length ? ` (${plan.rejected.length} refused)` : ''}`, 'info', 7000);
+  const ok = await askBox({ title: 'Run these commands?', text: `${plan.say ? `${plan.say}\n\n` : ''}${plan.commands.map((c) => c.text).join('\n')}${skipped}`, ok: 'Run' });
+  if (!ok) return;
+  const res = await api('POST', '/api/ai/palette-run', { commands: plan.commands.map((c) => c.argv), ws });
+  const failed = res.results.find((r) => r.code !== 0);
+  toast(failed ? `Failed: ${failed.text}: ${failed.out || `exit ${failed.code}`}` : `Ran ${res.results.length} command${res.results.length === 1 ? '' : 's'}`, failed ? 'bad' : 'info', failed ? 7000 : 2500);
+}
 const palette = createPalette({
   initialEntries: primaryCommands,
   onError: (e) => toast(e.message, 'bad'),
@@ -891,6 +906,8 @@ const palette = createPalette({
       try { const r = formatResult(calc(q.slice(1))); return [{ label: `= ${r}`, hint: 'Enter copies the result', dynamic: true, run: async () => { const { copyText } = await import('./terminal.js'); toast((await copyText(r)) ? `Copied ${r}` : r, 'info', 3000); } }]; }
       catch (e) { return [{ label: `= ?`, hint: e.message, dynamic: true, run: () => {} }]; }
     }
+    // "?sentence": Claude turns it into hatch commands, which are shown for confirmation before anything runs (only the sentence is sent)
+    if (q.startsWith('?') && q.trim().length > 1 && !isViewOnly()) return [{ label: `Ask Claude: ${q.slice(1).trim()}`, hint: 'Enter sends this sentence to Claude; you confirm before anything runs', dynamic: true, run: () => askClaude(q.slice(1).trim()) }];
     if (q.startsWith('!') && q.trim().length > 1) return [{ label: `Run in a window: ${q.slice(1).trim()}`, hint: 'shell command', dynamic: true, run: () => runShell(q.slice(1).trim()) }];
     // "/name" opens a file in an editor window (VS Code Ctrl+P); "@name" types an @path mention (Claude Code) into the terminal
     if ((q.startsWith('/') || q.startsWith('@')) && q.length > 1 && fileCache) {
