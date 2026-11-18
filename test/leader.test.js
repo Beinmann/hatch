@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget } from '../public/leader.js';
+import { parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget, NUMBER_MODIFIER, isNumberModKey, numberChordDigit, isNumberModRelease } from '../public/leader.js';
 
 test('parseChord reads modifier chords and rejects unusable ones', () => {
   assert.deepEqual(parseChord('Ctrl+Space'), { ctrl: true, alt: false, shift: false, meta: false, code: 'Space' });
@@ -96,4 +96,19 @@ test('isTextTarget spots fields and editors', () => {
   assert.ok(isTextTarget({ tagName: 'TEXTAREA' }) && isTextTarget({ tagName: 'input' }) && isTextTarget({ tagName: 'DIV', isContentEditable: true }));
   assert.ok(isTextTarget({ tagName: 'DIV', closest: (s) => s.includes('.cm-editor') ? {} : null }));
   assert.ok(!isTextTarget({ tagName: 'DIV', closest: () => null }) && !isTextTarget(null));
+});
+
+test('number modifier: bare press shows numbers, modifier+digit jumps, other combos pass through', () => {
+  assert.equal(NUMBER_MODIFIER, 'ctrl');
+  assert.ok(isNumberModKey({ key: 'Control', ctrlKey: true }));
+  assert.ok(!isNumberModKey({ key: 'Control', ctrlKey: true, shiftKey: true }));
+  assert.ok(!isNumberModKey({ key: 'Alt', altKey: true }));
+  assert.ok(isNumberModKey({ key: 'Alt', altKey: true }, 'alt'), 'switchable to Alt');
+  assert.equal(numberChordDigit({ code: 'Digit3', ctrlKey: true }), 3);
+  assert.equal(numberChordDigit({ code: 'Digit3', altKey: true }, 'alt'), 3);
+  assert.equal(numberChordDigit({ code: 'Digit3', ctrlKey: true, shiftKey: true }), 0, 'Ctrl+Shift+digit is the workspace switch');
+  assert.equal(numberChordDigit({ code: 'Digit0', ctrlKey: true }), 0);
+  assert.equal(numberChordDigit({ code: 'KeyC', ctrlKey: true }), 0, 'Ctrl+C goes to the terminal');
+  assert.equal(numberChordDigit({ code: 'Digit3' }), 0);
+  assert.ok(isNumberModRelease({ key: 'Control' }));
 });

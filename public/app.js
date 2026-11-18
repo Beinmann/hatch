@@ -19,7 +19,7 @@ import { initLimits } from './limits.js';
 import { createPalette } from './palette.js';
 import { calc, formatResult } from './calc.js';
 import { createPeek, DEFAULT_PEEK, peekKeyOrNull } from './peek.js';
-import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget } from './leader.js';
+import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget, isNumberModKey, numberChordDigit, isNumberModRelease } from './leader.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -759,12 +759,12 @@ let ctrlNumbers = false;
 function ctrlNumbersOff() { if (!ctrlNumbers) return; ctrlNumbers = false; if (!leader.armed) wm.showNumbers(false); }
 addEventListener('keydown', (e) => {
   if (e.isComposing || leader.armed || isViewOnly()) return;
-  if (e.key === 'Control' && !e.altKey && !e.metaKey && !e.shiftKey) { if (!ctrlNumbers) { ctrlNumbers = true; wm.showNumbers(true); } return; }
-  if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || chordMatches(leaderChord, e)) return;
-  const d = /^Digit([1-9])$/.exec(e.code);
-  if (d && wm.focusNumber(Number(d[1]))) { e.preventDefault(); e.stopPropagation(); ctrlNumbersOff(); }
+  if (isNumberModKey(e)) { if (!ctrlNumbers) { ctrlNumbers = true; wm.showNumbers(true); } return; }
+  if (chordMatches(leaderChord, e)) return;
+  const n = numberChordDigit(e);
+  if (n && wm.focusNumber(n)) { e.preventDefault(); e.stopPropagation(); ctrlNumbersOff(); }
 }, true);
-addEventListener('keyup', (e) => { if (e.key === 'Control') ctrlNumbersOff(); }, true);
+addEventListener('keyup', (e) => { if (isNumberModRelease(e)) ctrlNumbersOff(); }, true);
 addEventListener('blur', ctrlNumbersOff);
 document.addEventListener('visibilitychange', ctrlNumbersOff);
 
