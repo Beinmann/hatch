@@ -314,3 +314,6 @@ button.danger:not(:disabled){background:#dc2626;color:#fff;border-color:#dc2626}
 #srv{display:flex;align-items:center;gap:6px;font:12px var(--mono);color:var(--muted);margin:0 6px;white-space:nowrap}
 #srv::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--ok,#3fb950)}
 #srv.down{color:var(--bad)} #srv.down::before{background:var(--bad)}
+
+/* warnings bell: list of {message, fix}; the fix is a command the user copies */
+#bell[hidden],#bellpop[hidden]{display:none} #bellpop{z-index:60;font-size:12px;max-width:min(480px,92vw)} #bellpop .bw{display:flex;flex-direction:column;gap:2px} #bellpop code{font:12px var(--mono);color:var(--accent);user-select:all;word-break:break-all}

@@ -85,14 +85,21 @@ function beep() {
     o.connect(g); g.connect(a.destination); g.gain.value = 0.05; o.frequency.value = 660; o.start(); o.stop(a.currentTime + 0.15);
   } catch { /* no audio */ }
 }
-// Old login token: a toast that stays until dismissed; the dismissal is remembered per browser for that token age marker.
-function warnOldToken(t) {
-  if (!t || !t.stale || document.body.classList.contains('viewonly')) return;
-  if (store.get('tokenWarnDismissed', null) === t.changedAt) return;
-  const note = el('div', { class: 'toast warn', role: 'status' }, `The login token is ${t.ageDays} days old. Rotate it with \`hatch-server rotate-token\`; if you change it by hand, run \`hatch-server token touch\` afterwards. `,
-    el('button', { type: 'button', onclick: () => { store.set('tokenWarnDismissed', t.changedAt); note.remove(); } }, 'Dismiss'));
-  $('toasts').append(note);
+// Warnings bell: GET /api/warnings lists { source, id, message, fix } (outdated widgets, old login token, ...). Hidden when there are none.
+let bellList = [];
+function paintBell() {
+  const n = bellList.length; $('bell').hidden = !n; $('bellcount').textContent = String(n);
+  $('bell').setAttribute('aria-label', `Warnings: ${n}`); $('bell').title = `${n} warning${n === 1 ? '' : 's'}: click for how to fix`;
+  $('bellpop').replaceChildren(...bellList.map((w) => el('div', { class: 'bw' }, el('span', {}, w.message), el('span', { class: 'muted' }, 'Fix: ', el('code', {}, w.fix)))));
+  if (!n) { $('bellpop').hidden = true; $('bell').setAttribute('aria-expanded', 'false'); }
 }
+function loadBell() {
+  if (document.body.classList.contains('viewonly')) return Promise.resolve();
+  return api('GET', '/api/warnings').then((r) => { bellList = Array.isArray(r.warnings) ? r.warnings : []; paintBell(); }).catch(() => {});
+}
+$('bell').addEventListener('click', () => { const open = $('bellpop').hidden; $('bellpop').hidden = !open; $('bell').setAttribute('aria-expanded', String(open)); if (open) loadBell(); });
+document.addEventListener('mousedown', (e) => { if (!$('bellpop').hidden && !$('bellpop').contains(e.target) && !$('bell').contains(e.target)) { $('bellpop').hidden = true; $('bell').setAttribute('aria-expanded', 'false'); } });
+setInterval(loadBell, 5 * 60 * 1000);
 function notify({ text, level }) {
   { const list = store.get('log', []); list.unshift({ t: Date.now(), text, level }); store.set('log', list.slice(0, 100)); } // *Messages*: kept per browser
   toast(text, level === 'warn' ? 'warn' : level === 'done' ? 'done' : 'info', 9000);
@@ -296,7 +303,7 @@ function connectEvents() {
     pendingAsks.length = 0; pendingAsks.push(...(s.asks || []));
     for (const id of askDrafts.keys()) if (!pendingAsks.some((question) => question.id === id)) askDrafts.delete(id);
     showAsk();
-    gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); $('conn').title = 'view-only mirror'; } loadCustom(s.info.custom); info = s.info; warnOldToken(s.info.token); $('session').textContent = `tmux: ${s.info.session}`;
+    gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); $('conn').title = 'view-only mirror'; } loadCustom(s.info.custom); info = s.info; loadBell(); $('session').textContent = `tmux: ${s.info.session}`;
     setBackgrounds(s.backgrounds || {}); setWorkspaces(s.workspaces || [{ name: 'main', id: 'main' }]); presenceCounts = s.presence || {}; paintPresence(); applyTransparency(s.transparency); wm.setDefaultTransparency(s.windowTransparency); fxs = { ...(s.fxs || (s.fx?.effect ? { main: s.fx } : {})) }; applyFx();
     widgets.clear(); for (const w of s.widgets) widgets.set(w.name, w);
     progressState = s.progress; for (const f of progressListeners) f(progressState);

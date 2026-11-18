@@ -31,6 +31,7 @@
   <span class="grow"></span>
   <span id="srv" class="srvdot" title="Hatch server reachable">online</span>
   <button id="limits" type="button" hidden></button>
+  <button id="bell" type="button" class="chip warn" hidden aria-expanded="false" aria-controls="bellpop" aria-label="Warnings: 0" title="Warnings"><span aria-hidden="true">&#128276;</span> <span id="bellcount">0</span></button>
   <button id="warnbtn" class="chip warn" hidden title="Files the page could not read"></button>
   <button id="palbtn" type="button" title="Command palette (Ctrl+P, or leader key then p)">Commands</button>
   <button id="progressbtn" type="button" title="Toggle progress (Ctrl+Shift+G)" aria-expanded="false" aria-controls="progress-strip">Progress</button>
@@ -46,6 +47,7 @@
     <div class="muted small">Focus terminal: leader key, then t · command palette: Ctrl+P · all shortcuts: palette → Keyboard shortcuts</div>
   </div>
   <div id="warnlist" class="menu" hidden></div>
+  <div id="bellpop" class="menu" role="dialog" aria-label="Warnings" hidden></div>
 </header>
 <section id="progress-strip" hidden aria-label="Progress overview"></section>
 <main id="stage">
