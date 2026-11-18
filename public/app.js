@@ -50,8 +50,16 @@ const fxOf = () => fxs[wm.current()] || { effect: null, intensity: 50 };
 const applyFx = () => { const f = fxOf(); fxCtl.set(f.effect, f.intensity); };
 const fxSet = (body) => api('POST', '/api/fx', { ...body, ws: wm.current() }).catch((e) => toast(e.message, 'bad'));
 const fxClosePop = () => { $('fxpop').hidden = true; $('fxhint').setAttribute('aria-expanded', 'false'); };
-const fxCtl = createFx({ canvas: $('fx'), getXterm: () => term?.term || null, onChange: (name) => { const b = $('fxhint'); b.hidden = !name; $('fxname').textContent = name ? `fx ${name}` : ''; if (!name) fxClosePop(); } });
-$('fxhint').addEventListener('click', () => { const open = $('fxpop').hidden; $('fxpop').hidden = !open; $('fxhint').setAttribute('aria-expanded', String(open)); if (open) { const v = fxOf().intensity; $('fxint').value = v; $('fxival').textContent = v; } });
+// The popover shows the intensity slider while an effect runs, and the list of effects to turn one on while none does (the list comes from /api/fx).
+function fxShowPop() {
+  const on = !!fxCtl.active(); $('fxcfg').hidden = !on; $('fxpick').hidden = on;
+  if (on || $('fxpop').hidden) return;
+  api('GET', `/api/fx?ws=${encodeURIComponent(wm.current())}`).then((f) => {
+    $('fxlist').replaceChildren(...(f.effects || []).map((n) => el('button', { type: 'button', onclick: () => { fxClosePop(); fxSet({ effect: n }); } }, n)));
+  }).catch((e) => { $('fxlist').textContent = `Could not load the list (${e.message}). Run: hatch fx <name>`; });
+}
+const fxCtl = createFx({ canvas: $('fx'), getXterm: () => term?.term || null, onChange: (name) => { const b = $('fxhint'); b.classList.toggle('off', !name); b.classList.toggle('ok', !!name); b.title = name ? 'Background effect is on; click for options' : 'Background effect is off; click to choose one'; $('fxname').textContent = name ? `fx ${name}` : 'fx: off'; fxShowPop(); } });
+$('fxhint').addEventListener('click', () => { const open = $('fxpop').hidden; $('fxpop').hidden = !open; $('fxhint').setAttribute('aria-expanded', String(open)); if (open) fxShowPop(); if (open) { const v = fxOf().intensity; $('fxint').value = v; $('fxival').textContent = v; } });
 $('fxoff').addEventListener('click', () => { fxClosePop(); fxSet({ effect: 'off' }); });
 $('fxint').addEventListener('input', (e) => { $('fxival').textContent = e.target.value; });
 $('fxint').addEventListener('change', (e) => fxSet({ intensity: Number(e.target.value) }));
