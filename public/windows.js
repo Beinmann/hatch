@@ -6,6 +6,7 @@ import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE } from './folders.js';
 import { chipIcon } from './chip-icons.js';
+import { chipClickAction } from './chip-click.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
 // (stacked in the right column). Geometry changes are written back to the panel file (debounced), so the layout
@@ -285,9 +286,11 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   const draggable = (btn, id) => { if (isViewOnly()) return; btn.draggable = true; btn.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-hatch-window', id); e.dataTransfer.effectAllowed = 'move'; }); };
   function chipFor(w) {
     const hidden = !onScreen(w);
-    const btn = el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, title: w.panel.minimized ? 'Restore' : hidden ? 'Open the dock and show' : 'Bring to front', disabled: isViewOnly() && w.panel.minimized,
+    const btn = el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, title: w.panel.title, disabled: isViewOnly() && w.panel.minimized,
       onclick: () => {
-        if (w.panel.minimized) { setMinimized(w.panel.id, false).catch((e) => ctx.toast(e.message, 'bad')); return; }
+        const act = chipClickAction({ minimized: !!w.panel.minimized, onScreen: !hidden, focused: w.node.classList.contains('focus') });
+        if (act === 'restore') { setMinimized(w.panel.id, false).catch((e) => ctx.toast(e.message, 'bad')); return; }
+        if (act === 'minimize') { setMinimized(w.panel.id, true).catch((e) => ctx.toast(e.message, 'bad')); return; }
         if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); } // the dock must be on screen before focusing into it
         focus(w); w.node.classList.add('flash'); setTimeout(() => w.node.classList.remove('flash'), 600);
       } }, chipIcon(w.panel.type), el('span', { class: 'nm' }, w.panel.title));
