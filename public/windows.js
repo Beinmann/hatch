@@ -302,7 +302,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   const closePop = () => { openFolder = null; pop?.remove(); pop = null; };
   function folderChip(f) {
     const members = f.ids.map((id) => wins.get(id)).filter(Boolean);
-    const btn = el('button', { type: 'button', class: `chip folder${members.some((w) => w.node.classList.contains('focus')) ? ' ok' : ''}${openFolder === f.name ? ' sel' : ''}${members.every((w) => w.panel.minimized) ? ' min' : ''}`, 'data-folder': f.name, title: 'Folder: click to list its windows',
+    const btn = el('button', { type: 'button', class: `chip folder${members.some((w) => w.node.classList.contains('focus')) ? ' ok' : ''}${openFolder === f.name ? ' sel' : ''}${members.every((w) => w.panel.minimized) ? ' min' : ''}`, 'data-folder': f.name, title: `Folder ${f.name} (${members.length}): click to list its windows`,
       onclick: () => { if (openFolder === f.name) closePop(); else { openFolder = f.name; paintChips(); } } }, chipIcon('folder'), el('span', { class: 'nm' }, `${f.name} (${members.length})`));
     dropOnChip(btn, f.name);
     return btn;

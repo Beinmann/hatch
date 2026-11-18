@@ -177,8 +177,10 @@ html.peek #floats{visibility:hidden!important}
 /* taskbar: Windows-style. Icon + name per window; on screen = tinted with an accent underline (the focused one a longer one), minimized = faded icon, dimmed italic label and a short grey dash; "N hidden" on the right. */
 #taskbar{border-top:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,transparent);padding:0 6px;min-height:42px;gap:2px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
 #chips{display:flex;align-items:stretch;gap:2px;flex-wrap:nowrap;max-width:none;overflow:visible}
-#chips button{position:relative;display:flex;align-items:center;gap:7px;font:12px var(--mono);white-space:nowrap;flex:none;cursor:pointer;border:0;border-radius:6px;margin:4px 0;background:transparent;color:var(--fg);padding:0 12px 0 10px;transition:background .12s,color .12s}
+#chips button{position:relative;display:flex;align-items:center;gap:7px;font:12px var(--mono);white-space:nowrap;flex:none;width:160px;box-sizing:border-box;cursor:pointer;border:0;border-radius:6px;margin:4px 0;background:transparent;color:var(--fg);padding:0 12px 0 10px;transition:background .12s,color .12s}
 #chips button .cico{width:15px;height:15px;flex:none}
+/* every chip is the same width; a longer name is cut off with an ellipsis (the full title is the tooltip) */
+#chips button .nm{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;text-align:left}
 #chips button::after{content:"";position:absolute;left:30%;right:30%;bottom:-4px;height:3px;border-radius:3px;background:var(--accent);transition:left .15s,right .15s}
 #chips button:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 10%,transparent)}
 #chips button:not(.min){background:color-mix(in srgb,var(--accent) 12%,transparent)}
