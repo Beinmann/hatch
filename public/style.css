@@ -193,7 +193,8 @@ html.peek #floats{visibility:hidden!important}
 /* every chip is the same width; a longer name is cut off with an ellipsis (the full title is the tooltip) */
 #chips button .nm{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;text-align:left}
 #chips button::after{content:"";position:absolute;left:30%;right:30%;bottom:-4px;height:3px;border-radius:3px;background:var(--accent);transition:left .15s,right .15s}
-#chips button:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 10%,transparent)}
+/* hover: solid (opaque) surface, lighter than the resting chip, so nothing behind the bar shows through */
+#chips button:hover:not(:disabled),#chips button.min:hover:not(:disabled),#chips button.ok:hover:not(:disabled),#chips button.off:hover:not(:disabled){background:color-mix(in srgb,var(--tc,var(--fg)) 22%,var(--surface));opacity:1}
 #chips button[data-type]{--tp:12%}
 #chips button:not([data-type]){--tp:6%}
 #chips button:not(.min){background:color-mix(in srgb,var(--tc,var(--fg)) var(--tp),var(--surface))}
