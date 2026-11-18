@@ -85,7 +85,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const title = el('span', { class: 't' }, panel.title);
     w.title = title;
     const mkBtn = (label, tip, fn) => el('button', { type: 'button', title: tip, 'aria-label': tip, onclick: (e) => { e.stopPropagation(); fn(); } }, label);
-    w.tb = el('div', { class: 'tb' }, title,
+    w.tb = el('div', { class: 'tb' }, chipIcon(panel.type), title,
       mkBtn(panel.placement === 'dock' ? '⇱' : '⇲', 'Move between dock and floating', () => {
         const to = w.panel.placement === 'dock' ? 'float' : 'dock';
         patch(w.panel.id, { placement: to }).catch(() => {});
@@ -102,7 +102,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     // generic title-bar action: a view that shows a file offers onPath(cb); the button appears while it has a path
     if (w.view.onPath) {
       const btn = mkBtn('⎘', 'Show the file path', () => showPath(btn, w.pathText));
-      btn.hidden = true; btn.classList.add('pathbtn'); w.tb.insertBefore(btn, w.tb.children[1]);
+      btn.hidden = true; btn.classList.add('pathbtn'); w.tb.insertBefore(btn, w.title.nextSibling);
       w.view.onPath((p) => { w.pathText = p; btn.hidden = !p; if (!p) closePathPop(); });
     }
     // double-click the title bar: maximize over the terminal and back (in the page only, geometry is not saved)

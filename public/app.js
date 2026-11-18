@@ -1,4 +1,5 @@
 // Page glue: events (SSE snapshot + updates), the terminal, windows, image paste/drop, notifications, settings.
+import { restarted } from './restart.js';
 import { el, isViewOnly } from './util.js';
 import { initTerminal } from './terminal.js';
 import { createWindows } from './windows.js';
@@ -252,6 +253,12 @@ function paintServer(up) {
 }
 const STALE_MS = 8000; const RETRY_MS = 3000;
 let evtSource = null; let lastOpen = 0;
+let bootId = null; // the server start id of this page; a different one in a later snapshot means the server restarted
+// Reload once: the guard stops a loop if the id keeps changing (e.g. several servers behind one address).
+function reloadAfterRestart() {
+  try { const last = Number(sessionStorage.getItem('hatch-restart-reload') || 0); if (Date.now() - last < 10000) return; sessionStorage.setItem('hatch-restart-reload', String(Date.now())); } catch {}
+  location.reload();
+}
 // A half-dead stream (network change) can stay silent without an error event: close it and open a fresh one.
 function reconnectEvents() { lastOpen = Date.now(); connectEvents(); }
 function checkStale() {
@@ -274,6 +281,8 @@ function connectEvents() {
   es.addEventListener('snapshot', (e) => {
     for (const k of srcHandlers.keys()) { const [widget, ...rest] = k.split('/'); api('POST', '/api/sub', { cid, widget, source: rest.join('/') }).catch(() => {}); } // after a reconnect or server restart
     const s = JSON.parse(e.data);
+    if (restarted(bootId, s.info.bootId)) { reloadAfterRestart(); return; }
+    bootId = s.info.bootId ?? bootId;
     document.body.classList.toggle('viewonly', !!s.info.viewOnly);
     pendingAsks.length = 0; pendingAsks.push(...(s.asks || []));
     for (const id of askDrafts.keys()) if (!pendingAsks.some((question) => question.id === id)) askDrafts.delete(id);
