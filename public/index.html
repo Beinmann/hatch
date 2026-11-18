@@ -18,11 +18,12 @@
   <strong class="brand">Hatch</strong>
   <span id="conn" class="chip" title="terminal connection">connecting</span>
   <span id="session" class="muted"></span>
-  <span id="fxwrap"><button id="fxhint" type="button" class="chip ok" hidden aria-expanded="false" aria-controls="fxpop" title="Background effect is on; click for options"><span class="fxdot" aria-hidden="true"></span><span id="fxname"></span></button>
+  <span id="fxwrap"><button id="fxhint" type="button" class="chip off" aria-expanded="false" aria-controls="fxpop" title="Background effect is off; click to choose one"><span class="fxdot" aria-hidden="true"></span><span id="fxname">fx: off</span></button>
   <div id="fxpop" class="menu" role="dialog" aria-label="Background effect" hidden>
-    <label class="fxrow">Intensity <output id="fxival">50</output></label>
+    <div id="fxpick" class="fxpick" hidden><span class="fxrow">Turn an effect on</span><span id="fxlist" class="fxlist"></span></div>
+    <div id="fxcfg"><label class="fxrow">Intensity <output id="fxival">50</output></label>
     <input id="fxint" type="range" min="0" max="100" value="50" aria-label="Effect intensity">
-    <button id="fxoff" type="button">Turn effect off</button>
+    <button id="fxoff" type="button">Turn effect off</button></div>
   </div></span>
   <button id="agentchip" type="button" class="chip idle" title="Agents running (progress plans with a running step)"><span class="agentdot" aria-hidden="true"></span><span id="agenttext"></span></button>
   <span id="wsbar" class="chips" title="Workspaces: switch with the palette (workspace: switch) or leader ] [ / w 1-9"></span>
@@ -30,6 +31,7 @@
   <span class="grow"></span>
   <span id="srv" class="srvdot" title="Hatch server reachable">online</span>
   <button id="limits" type="button" hidden></button>
+  <button id="bell" type="button" class="chip warn" hidden aria-expanded="false" aria-controls="bellpop" aria-label="Warnings: 0" title="Warnings"><span aria-hidden="true">&#128276;</span> <span id="bellcount">0</span></button>
   <button id="warnbtn" class="chip warn" hidden title="Files the page could not read"></button>
   <button id="palbtn" type="button" title="Command palette (Ctrl+P, or leader key then p)">Commands</button>
   <button id="progressbtn" type="button" title="Toggle progress (Ctrl+Shift+G)" aria-expanded="false" aria-controls="progress-strip">Progress</button>
@@ -45,6 +47,7 @@
     <div class="muted small">Focus terminal: leader key, then t · command palette: Ctrl+P · all shortcuts: palette → Keyboard shortcuts</div>
   </div>
   <div id="warnlist" class="menu" hidden></div>
+  <div id="bellpop" class="menu" role="dialog" aria-label="Warnings" hidden></div>
 </header>
 <section id="progress-strip" hidden aria-label="Progress overview"></section>
 <main id="stage">

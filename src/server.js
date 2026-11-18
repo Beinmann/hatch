@@ -38,6 +38,7 @@ import { createSessions } from './sessions.js';
 import { createLimiter, clientKey } from './rate-limit.js';
 import { loginPage, loginNeededPage, createCodes } from './login.js';
 import { rotateTokenFile, readTokenAge } from './token.js';
+import { collectWarnings } from './warnings.js';
 import { createHostSecrets, HOST_SECRET_RE } from './host-secrets.js';
 import { createScreenshots, findWidgetPanel } from './screenshots.js';
 import { injectBase, MAX_PAGE_BYTES } from './host-inject.js';
@@ -585,6 +586,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     // ---- API ----
     if (p.startsWith('/api/')) {
       if (p === '/api/health') return json(res, 200, { ok: true });
+      if (p === '/api/warnings' && m === 'GET') return json(res, 200, { warnings: viewing ? [] : collectWarnings({ stateDir }) });
       if (p === '/api/info') return json(res, 200, { ...info(), viewOnly: viewing });
       if (p === '/api/events') {
         const cid = url.searchParams.get('cid') || ''; streamsOf.set(cid, (streamsOf.get(cid) || 0) + 1);
