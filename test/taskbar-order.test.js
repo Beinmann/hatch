@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeOrder, moveItem, dropZone } from '../public/taskbar-order.js';
+import { mergeOrder, moveItem, dropZone, chipSlots, slotNumber } from '../public/taskbar-order.js';
 
 test('mergeOrder: nothing saved keeps the default order', () => {
   assert.deepEqual(mergeOrder(undefined, ['a', 'b', 'c']), ['a', 'b', 'c']);
@@ -32,4 +32,19 @@ test('dropZone: edges reorder, the middle joins', () => {
   assert.equal(dropZone(r, 150), 'mid');
   assert.equal(dropZone(r, 190), 'after');
   assert.equal(dropZone({ left: 0, width: 0 }, 0), 'mid');
+});
+
+test('chipSlots: loose chips in order (minimized included), then folders; numbers follow the position', () => {
+  const slots = chipSlots(['c', 'a', 'x', 'b'], ['a', 'b', 'c'], [{ name: 'F', ids: ['x'] }]);
+  assert.deepEqual(slots.map((s) => s.kind === 'win' ? s.id : `folder:${s.name}`), ['c', 'a', 'b', 'folder:F']);
+  assert.equal(slotNumber(slots, 'a'), 2);
+  assert.equal(slotNumber(slots, 'x'), 4, 'a folder member shows its folder chip number');
+  assert.equal(slotNumber(slots, 'nope'), 0);
+});
+
+test('slotNumber: only 1-9 are reachable', () => {
+  const ids = Array.from({ length: 11 }, (_, i) => `w${i}`);
+  const slots = chipSlots(ids, ids, []);
+  assert.equal(slotNumber(slots, 'w8'), 9);
+  assert.equal(slotNumber(slots, 'w9'), 0);
 });

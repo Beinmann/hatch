@@ -24,3 +24,19 @@ export function dropZone(rect, x) {
   const f = rect.width > 0 ? (x - rect.left) / rect.width : 0.5;
   return f < 0.25 ? 'before' : f > 0.75 ? 'after' : 'mid';
 }
+
+/**
+ * The chip positions of the taskbar, in order: loose windows in `order`, then the folder chips (as drawn). Window numbers are
+ * the 1-based index into this list, minimized chips included, so Ctrl+3 always means the third chip.
+ * `looseIds` = ids that have a chip of their own; `folders` = [{ name, ids }] in drawn order.
+ */
+export function chipSlots(order, looseIds, folders) {
+  const loose = new Set(looseIds);
+  return [...order.filter((id) => loose.has(id)).map((id) => ({ kind: 'win', id })), ...folders.map((f) => ({ kind: 'folder', name: f.name, ids: f.ids.slice() }))];
+}
+
+/** The number (1-9) shown for window `id`: its own chip's position, or its folder chip's. 0 when it has no chip. */
+export function slotNumber(slots, id) {
+  const i = slots.findIndex((s) => (s.kind === 'win' ? s.id === id : s.ids.includes(id)));
+  return i >= 0 && i < 9 ? i + 1 : 0;
+}

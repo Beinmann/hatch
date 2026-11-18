@@ -5,7 +5,7 @@ import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE } from './folders.js';
-import { mergeOrder, moveItem, dropZone } from './taskbar-order.js';
+import { mergeOrder, moveItem, dropZone, chipSlots, slotNumber } from './taskbar-order.js';
 import { chipIcon } from './chip-icons.js';
 import { chipClickAction } from './chip-click.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
@@ -380,6 +380,19 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       if (id && wins.has(id) && looseDrag()) { e.preventDefault(); moveChip(id, null); }
     });
   }
+  let slots = []; // chip positions as last painted (see chipSlots); window numbers index into it
+  let numbersOn = false;
+  // Hold-Ctrl / leader numbers: a small badge on every chip (minimized ones too) and the same number on the title bars of shown windows.
+  function paintNumbers() {
+    chips.querySelectorAll('.cnum').forEach((n) => n.remove());
+    for (const w of wins.values()) delete w.tb.dataset.n;
+    if (!numbersOn) return;
+    slots.slice(0, 9).forEach((s, i) => {
+      const btn = s.kind === 'win' ? chips.querySelector(`.chip[data-id="${CSS.escape(s.id)}"]`) : chips.querySelector(`.chip.folder[data-folder="${CSS.escape(s.name)}"]`);
+      btn?.append(el('span', { class: 'cnum', 'aria-hidden': 'true' }, String(i + 1)));
+    });
+    for (const w of wins.values()) { const n = shown(w) ? slotNumber(slots, w.panel.id) : 0; if (n) w.tb.dataset.n = String(n); }
+  }
   const hiddenCount = chips.parentElement?.querySelector('#hiddencount');
   function paintChips() {
     // Taskbar: windows of this workspace in one order (the user's dragged order, new windows last), minimized ones just greyed out. Folders sit after the loose windows.
@@ -387,11 +400,13 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     chips.parentElement.hidden = !mine.length;
     const groups = groupWindows(mine.map((w) => w.panel), current);
     const loose = new Set(groups.loose); const looseWins = mine.filter((w) => loose.has(w.panel.id));
+    slots = chipSlots(mine.map((w) => w.panel.id), groups.loose, groups.folders);
     const folders = groups.folders.map(folderChip);
     chips.replaceChildren(...looseWins.map(chipFor), ...(folders.length && looseWins.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...folders);
     const nHidden = mine.filter((w) => w.panel.minimized).length;
     if (hiddenCount) { hiddenCount.textContent = `${nHidden} hidden`; hiddenCount.hidden = !nHidden; }
     if (openFolder) paintPop(groups, chips.querySelector('.chip.folder.sel'));
+    paintNumbers();
   }
   function paintDock() {
     const any = [...wins.values()].some((w) => w.panel.placement === 'dock' && shown(w));
@@ -502,10 +517,19 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   function blur() { for (const w of wins.values()) w.node.classList.remove('focus'); paintChips(); }
   const focused = () => [...wins.values()].find((o) => shown(o) && o.node.classList.contains('focus'));
-  // Windows that can be reached by number: visible and not minimized, in taskbar order (the same order the badges show).
+  // Windows that Leader Tab cycles through: visible and not minimized, in taskbar order.
   const numbered = () => taskbarOrder().filter((w) => shown(w));
-  function showNumbers(on) { numbered().forEach((w, i) => { if (on) w.tb.dataset.n = String(i + 1); else delete w.tb.dataset.n; }); if (!on) for (const w of wins.values()) delete w.tb.dataset.n; }
-  function focusNumber(n) { const w = numbered()[n - 1]; if (!w) return false; focus(w); return true; }
+  // Number n = the n-th chip of the taskbar, minimized or not (a folder chip counts as one). Ctrl+N on a minimized chip restores it;
+  // on a folder chip it raises the folder's first shown window, or restores its first window when all are minimized.
+  function showNumbers(on) { numbersOn = on; paintNumbers(); }
+  function focusNumber(n) {
+    const s = slots[n - 1]; if (!s) return false;
+    const ws = (s.kind === 'win' ? [s.id] : s.ids).map((id) => wins.get(id)).filter(Boolean);
+    const w = ws.find((x) => shown(x)) || ws[0]; if (!w) return false;
+    if (w.panel.minimized) { setMinimized(w.panel.id, false).catch((e) => ctx.toast(e.message, 'bad')); return true; }
+    if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); }
+    focus(w); return true;
+  }
   // Leader Tab: raise the next visible window, docked ones included.
   function focusNext() { const list = numbered(); if (!list.length) return false; const i = list.findIndex((w) => w.node.classList.contains('focus')); focus(list[(i + 1) % list.length]); return true; }
   // Leader d: the title-bar dock/release button for the focused window. Returns 'dock', 'float', or null when no window is focused.
