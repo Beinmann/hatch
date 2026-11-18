@@ -70,7 +70,7 @@ export default {
 
     const sendInit = () => {
       const cs = getComputedStyle(document.documentElement);
-      post({ type: 'init', leader: ctx.leaderChord?.() || null, name, sources: declared(), theme: { bg: cs.getPropertyValue('--surface').trim(), fg: cs.getPropertyValue('--fg').trim(), accent: cs.getPropertyValue('--accent').trim(), muted: cs.getPropertyValue('--muted').trim(), mono: cs.getPropertyValue('--mono').trim() } });
+      post({ type: 'init', numberKeys: true, leader: ctx.leaderChord?.() || null, name, sources: declared(), theme: { bg: cs.getPropertyValue('--surface').trim(), fg: cs.getPropertyValue('--fg').trim(), accent: cs.getPropertyValue('--accent').trim(), muted: cs.getPropertyValue('--muted').trim(), mono: cs.getPropertyValue('--mono').trim() } });
     };
     frame.addEventListener('load', () => {
       sendInit();

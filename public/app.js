@@ -206,6 +206,9 @@ ctx.leaderChord = () => leaderChord;
 ctx.shortcut = (m) => {
   const key = { code: String(m.code || ''), key: String(m.key || ''), ctrlKey: m.ctrlKey === true, shiftKey: m.shiftKey === true, altKey: m.altKey === true, metaKey: m.metaKey === true };
   const fold = (key.ctrlKey && key.shiftKey && !key.altKey && !key.metaKey && key.code === 'KeyG') || isPaletteKey(key) || isTermKey(key) || isPrefixKey(key);
+  // Number display: bare Ctrl down/up and Ctrl+digit go on as if typed on the page (the handlers there decide; see the hold-Ctrl block).
+  const numberKey = (key.key === 'Control' && !key.altKey && !key.metaKey && !key.shiftKey) || numberChordDigit(key) > 0;
+  if (numberKey && !leader.armed) { window.dispatchEvent(new KeyboardEvent(m.up ? 'keyup' : 'keydown', { ...key, cancelable: true })); return false; }
   // Only the leader chord or, once armed, the next key gets through; anything else a widget posts is ignored.
   if (fold || leader.armed || chordMatches(leaderChord, key)) window.dispatchEvent(new KeyboardEvent('keydown', { ...key, cancelable: true }));
   return leader.armed;
