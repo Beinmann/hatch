@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 import { spawnSync } from 'node:child_process';
+import { runClaudeSync, ClaudeError } from '../src/claude-p.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stepSlug as slug } from '../src/progress.js';
@@ -452,13 +453,9 @@ async function main(argv) {
         const desc = rest.join(' ').trim(); need(desc, 'usage: widget generate "DESCRIPTION" [--name N]');
         const gname = o.name || slug(desc).slice(0, 30).replace(/_+$/g, '').replace(/_/g, '-') || 'widget'; checkName(gname);
         need(!fs.existsSync(path.join(l.widgets, gname)), `widgets/${gname} already exists: pick another with --name`);
-        const bin = process.env.HATCH_CLAUDE || 'claude';
-        const r = spawnSync(bin, ['-p'], { input: generatePrompt(desc), encoding: 'utf8', timeout: 300000, maxBuffer: 16 << 20 });
-        need(!r.error || r.error.code !== 'ENOENT', `\`${bin}\` not found on PATH: install Claude Code, or set HATCH_CLAUDE to its path`);
-        // A provider may exit before reading stdin (for example when logged out). Prefer its exit status and stderr.
-        need(!r.error || (r.error.code === 'EPIPE' && r.status !== null), `could not run ${bin}: ${r.error?.message}`);
-        need(r.status === 0, `${bin} -p failed (exit ${r.status}): ${(r.stderr || r.stdout || '').trim().split('\n').slice(-3).join(' ') || 'no output'}. Run \`${bin} -p hi\` to check it is logged in.`);
-        const g = parseGenerated(r.stdout);
+        let reply;
+        try { reply = runClaudeSync({ prompt: generatePrompt(desc), model: null, tools: null, maxBudgetUsd: null, timeoutMs: 300000 }); } catch (e) { if (e instanceof ClaudeError) throw new CliError(e.message); throw e; }
+        const g = parseGenerated(reply);
         need(g.html, 'claude did not return an html block, so nothing was created. Try again or word the description more concretely.');
         if (g.json) { try { JSON.parse(g.json); } catch { g.json = null; console.error('hatch: ignored the generated widget.json (not valid JSON)'); } }
         const wdir = path.join(l.widgets, gname); fs.mkdirSync(wdir, { recursive: true });

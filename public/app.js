@@ -160,6 +160,7 @@ const ctx = {
   openFile: (p, line) => term.openFileHook?.(p, line),
   subscribeSource,
   callSource: (widget, source, arg) => api('POST', '/api/call', { widget, source, ...(arg !== undefined && { arg }) }).then((r) => r.value),
+  aiRequest: (task, payload) => api('POST', `/api/ai/${encodeURIComponent(task)}`, payload ?? {}),
   api, toast, cwd: () => info.cwd || '/', uploadsDir: () => info.uploadsDir, term: null, patch: (id, body) => api('PATCH', `/api/panels/${id}`, body),
   widgetInfo: (name) => widgets.get(name),
   progress: () => progressState,

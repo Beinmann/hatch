@@ -1,6 +1,7 @@
 // Hatch widget SDK: a tiny wrapper around the postMessage protocol between a widget iframe and the page.
 //   hatch.on('cpu', (value, ts) => ...)   subscribe to a source declared in widget.json
 //   hatch.call('pick', 'a.jpg').then((value) => ...)   run an exec source once; the argument arrives as $HATCH_ARG
+//   hatch.ai('commit-message')   ask for an AI suggestion (resolves with the answer, which is only a suggestion); widget.json must list the task in "ai"
 //   hatch.off('cpu')  hatch.resize(w, h)  hatch.log(text)  hatch.theme  hatch.ready(fn)
 //   hatch.saveScreenshot({ abstract })   download a PNG of this widget (abstract: text as grey bars); `hatch widget screenshot NAME` asks for one too
 (() => {
@@ -13,6 +14,12 @@
       return new Promise((resolve, reject) => {
         const id = nextId++; pending.set(id, { resolve, reject });
         post({ type: 'call', id, source, ...(arg !== undefined && { arg: String(arg) }) });
+      });
+    },
+    ai(task, payload) {
+      return new Promise((resolve, reject) => {
+        const id = nextId++; pending.set(id, { resolve, reject });
+        post({ type: 'ai', id, task: String(task), ...(payload !== undefined && { payload }) });
       });
     },
     off(source) { delete handlers[source]; post({ type: 'unsubscribe', source }); },
