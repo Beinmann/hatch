@@ -1,7 +1,7 @@
-// Small inline SVG icons for the taskbar, one per window type (no libraries, no network). They use currentColor.
+// Small inline SVG icons for the taskbar and window title bars, one per window type (no libraries, no network). They use currentColor.
 const P = {
   terminal: '<path d="M2.5 4.5l3.5 3.5-3.5 3.5M8 12h5.5"/>',
-  git: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="6" r="1.5"/><path d="M4.5 5v6M11.5 7.5c0 2.5-3 2-7 3.5"/>',
+  git: '<circle cx="4" cy="3.2" r="1.7"/><circle cx="4" cy="12.8" r="1.7"/><circle cx="12" cy="5.2" r="1.7"/><path d="M4 4.9v6.2M12 6.9c0 2.6-2 3.7-8 4.4"/>',
   files: '<path d="M2 4.5V12a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1H8L6.5 3.5H3a1 1 0 00-1 1z"/>',
   'files-preview': '<path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/>',
   image: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1"/><path d="M2.5 12l3.5-3.5 2.5 2.5 2-2 3 3"/>',
