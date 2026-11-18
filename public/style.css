@@ -2,13 +2,24 @@
   --bg:#f5f6f7; --surface:#fff; --fg:#1b2428; --muted:#5b6a71; --line:#d5dbde;
   --accent:#0f766e; --accent-soft:#d9efec; --warn:#b45309; --warn-soft:#f8e8d0; --bad:#b91c1c;
   --term:#16201f; --termfg:#d8e6e3;
+  /* muted per-window-type hues (text-safe on the surface and on a 22% tint of themselves) */
+  --hue-amber:#864d08; --hue-blue:#1a56a8; --hue-green:#25703a; --hue-violet:#6240b5; --hue-cyan:#0c6676; --hue-rose:#a63459; --hue-indigo:#3f4aa8;
   --sans:system-ui,-apple-system,'Segoe UI',sans-serif; --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#111819; --surface:#192223; --fg:#e3ebec; --muted:#93a4a9; --line:#2c393b;
   --accent:#4fd1c0; --accent-soft:#1d3a38; --warn:#f0a95a; --warn-soft:#3a2d1b; --bad:#f87171;
+  --hue-amber:#e8b05a; --hue-blue:#86b5f2; --hue-green:#7fc98f; --hue-violet:#bda7f4; --hue-cyan:#66c4d6; --hue-rose:#eb93ae; --hue-indigo:#a3acf5;
   --term:#0a1010; --termfg:#d8e6e3; color-scheme:dark}}
 *{box-sizing:border-box}
+/* window type -> hue, used by the taskbar chips and the title-bar icon tile; unknown types set no --tc and stay neutral */
+[data-type=git]{--tc:var(--hue-amber)}
+[data-type=widget],[data-type=iframe],[data-type=page]{--tc:var(--hue-blue)}
+[data-type=terminal],[data-type=output]{--tc:var(--hue-green)}
+[data-type=files],[data-type=files-preview],[data-type=progress]{--tc:var(--hue-cyan)}
+[data-type=note]{--tc:var(--hue-violet)}
+[data-type=editor]{--tc:var(--hue-indigo)}
+[data-type=image],[data-type=annotate]{--tc:var(--hue-rose)}
 /* slim themed scroll bars everywhere (panel bodies, inner lists, dock). Standard properties only: Chromium 121+ and Firefox.
    scrollbar-width is not inherited so it goes on every element; the gutter is reserved so the bar sits beside content, never over it. */
 *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 55%,transparent) transparent}
@@ -91,7 +102,7 @@ html .win.docked,html.has-tr .win.docked,html.has-tr .win.docked iframe{backgrou
 .dock-drop{position:absolute;left:30px;right:14px;height:3px;margin-top:-1.5px;border-radius:2px;background:var(--accent);pointer-events:none;z-index:5}
 .dock-drop.slot{height:auto;margin-top:0;background:color-mix(in srgb,var(--accent) 18%,transparent);outline:2px dashed var(--accent);outline-offset:-2px;border-radius:6px}
 .float-drop{position:absolute;pointer-events:none;z-index:9999;border:2px dashed var(--accent);border-radius:6px;background:color-mix(in srgb,var(--accent) 14%,transparent)}
-.win .tb .cico{width:14px;height:14px;flex:none;color:var(--muted);margin-left:-2px}
+.win .tb .cico{width:21px;height:21px;padding:3.5px;border-radius:6px;flex:none;color:var(--tc,var(--muted));background:color-mix(in srgb,var(--tc,var(--muted)) 15%,transparent);margin-left:-3px}
 .win .tb .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;font-size:13px}
 .win .tb button{padding:0 7px;line-height:20px;font-size:13px}
 .win .body{flex:1;min-height:0;overflow:auto;position:relative}
@@ -175,19 +186,21 @@ body.zen #taskbar{display:none}
 /* Peek (hold Alt alone): only the floating windows are made invisible; the dock, fx layer and background image stay. visibility, not display, so nothing reflows or refits and the layout comes back untouched. */
 html.peek #floats{visibility:hidden!important}
 /* taskbar: Windows-style. Icon + name per window; on screen = tinted with an accent underline (the focused one a longer one), minimized = faded icon, dimmed italic label and a short grey dash; "N hidden" on the right. */
-#taskbar{border-top:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,transparent);padding:0 6px;min-height:42px;gap:2px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
+#taskbar{border-top:1px solid var(--line);background:var(--surface);padding:0 6px;min-height:42px;gap:2px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
 #chips{display:flex;align-items:stretch;gap:2px;flex-wrap:nowrap;max-width:none;overflow:visible}
-#chips button{position:relative;display:flex;align-items:center;gap:7px;font:12px var(--mono);white-space:nowrap;flex:none;width:160px;box-sizing:border-box;cursor:pointer;border:0;border-radius:6px;margin:4px 0;background:transparent;color:var(--fg);padding:0 12px 0 10px;transition:background .12s,color .12s}
+#chips button{position:relative;display:flex;align-items:center;gap:7px;font:12px var(--mono);white-space:nowrap;flex:none;width:160px;box-sizing:border-box;cursor:pointer;border:0;border-radius:6px;margin:4px 0;background:transparent;color:var(--tc,var(--fg));padding:0 12px 0 10px;transition:background .12s,color .12s}
 #chips button .cico{width:15px;height:15px;flex:none}
 /* every chip is the same width; a longer name is cut off with an ellipsis (the full title is the tooltip) */
 #chips button .nm{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;text-align:left}
 #chips button::after{content:"";position:absolute;left:30%;right:30%;bottom:-4px;height:3px;border-radius:3px;background:var(--accent);transition:left .15s,right .15s}
 #chips button:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 10%,transparent)}
-#chips button:not(.min){background:color-mix(in srgb,var(--accent) 12%,transparent)}
-#chips button.ok{font-weight:600;background:color-mix(in srgb,var(--accent) 20%,transparent)}
+#chips button[data-type]{--tp:12%}
+#chips button:not([data-type]){--tp:6%}
+#chips button:not(.min){background:color-mix(in srgb,var(--tc,var(--fg)) var(--tp),var(--surface))}
+#chips button.ok{font-weight:600;background:color-mix(in srgb,var(--tc,var(--fg)) calc(var(--tp) * 1.6),var(--surface))}
 #chips button.ok::after{left:18%;right:18%}
-#chips button.min{color:var(--muted)}
-#chips button.min .cico{opacity:.45}
+#chips button.min{color:var(--muted);background:transparent}
+#chips button.min .cico{opacity:.5;color:var(--muted)}
 #chips button.min .nm{font-style:italic;opacity:.85}
 #chips button.min::after{left:46%;right:46%;background:var(--muted)}
 #chips button.off:not(.min){opacity:.75}
