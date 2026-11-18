@@ -7,7 +7,7 @@ import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPa
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE } from './folders.js';
 import { mergeOrder, moveItem, dropZone } from './taskbar-order.js';
 import { chipIcon } from './chip-icons.js';
-import { chipClickAction } from './chip-click.js';
+import { chipClickAction, createChipPress, windowFocused } from './chip-click.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
 // (stacked in the right column). Geometry changes are written back to the panel file (debounced), so the layout
@@ -310,11 +310,19 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     });
   };
   const draggable = (btn, id) => { if (isViewOnly()) return; btn.draggable = true; btn.addEventListener('dragend', () => { dragId = null; clearMarks(); }); btn.addEventListener('dragstart', (e) => { dragId = id; e.dataTransfer.setData('text/x-hatch-window', id); e.dataTransfer.effectAllowed = 'move'; }); };
+  const chipPress = createChipPress();
+  // Capture before focus moves (pointerdown precedes it); end the press after the click has run, then catch up on repaints.
+  chips.addEventListener('pointerdown', (e) => {
+    const b = e.target.closest?.('.chip[data-id]'); const w = b && wins.get(b.dataset.id);
+    if (w) chipPress.down(w.panel.id, windowFocused(w.node, document.activeElement));
+  }, true);
+  const endPress = () => setTimeout(() => { if (chipPress.up()) paintChips(); }, 0);
+  for (const ev of ['pointerup', 'pointercancel', 'dragstart']) chips.addEventListener(ev, endPress);
   function chipFor(w) {
     const hidden = !onScreen(w);
     const btn = el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, 'data-type': w.panel.type, title: w.panel.title, disabled: isViewOnly() && w.panel.minimized,
       onclick: () => {
-        const act = chipClickAction({ minimized: !!w.panel.minimized, onScreen: !hidden, focused: w.node.classList.contains('focus') });
+        const act = chipClickAction({ minimized: !!w.panel.minimized, onScreen: !hidden, focused: chipPress.focusedAt(w.panel.id, windowFocused(w.node, document.activeElement)) });
         if (act === 'restore') { setMinimized(w.panel.id, false).catch((e) => ctx.toast(e.message, 'bad')); return; }
         if (act === 'minimize') { setMinimized(w.panel.id, true).catch((e) => ctx.toast(e.message, 'bad')); return; }
         if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); } // the dock must be on screen before focusing into it
@@ -382,6 +390,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   const hiddenCount = chips.parentElement?.querySelector('#hiddencount');
   function paintChips() {
+    if (chipPress.deferPaint()) return;
     // Taskbar: windows of this workspace in one order (the user's dragged order, new windows last), minimized ones just greyed out. Folders sit after the loose windows.
     const mine = taskbarOrder().filter((w) => w.panel.sticky || wsOf(w.panel) === current);
     chips.parentElement.hidden = !mine.length;
