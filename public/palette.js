@@ -21,7 +21,7 @@ export function createPalette({ entries, initialEntries = () => [], dynamic = ()
     const input = el('input', { type: 'text', placeholder: 'Search commands, /files, !shell…', 'aria-label': 'Command palette', role: 'combobox', 'aria-expanded': 'true', 'aria-autocomplete': 'list', 'aria-controls': 'palette-results', autocomplete: 'off', spellcheck: 'false' });
     const list = el('ul', { id: 'palette-results', role: 'listbox', 'aria-label': 'Commands', 'aria-busy': 'true' });
     const status = el('div', { class: 'palette-status muted small', role: 'status' }, 'Loading commands…');
-    const help = el('div', { class: 'palette-help muted small' }, '↑↓ move · Enter open · Esc return', el('span', {}, '/ files · ! run · @ mention'));
+    const help = el('div', { class: 'palette-help muted small' }, '↑↓ move · Enter open · Esc return', el('span', {}, '/ files · ! run · @ mention · ? ask Claude'));
     let all = initialEntries(); let used = usage(); let shown = []; let sel = 0; let loading = true;
     const highlight = () => {
       [...list.children].forEach((n, i) => { n.classList.toggle('on', i === sel); n.setAttribute('aria-selected', String(i === sel)); });

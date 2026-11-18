@@ -30,6 +30,7 @@ import { findBackground, setBackground, clearBackground, setMode, BackgroundErro
 import * as wsapi from './workspaces.js';
 import { createLimits } from './limits.js';
 import { createAi } from './ai.js';
+import { planPalette, runCommands } from './ai-palette.js';
 import { parseProxyPath, proxyHttp, proxyUpgrade } from './proxy.js';
 import { acquireLock } from './instance-guard.js';
 import { createConfigGuard } from './config-guard.js';
@@ -773,11 +774,14 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       if ((g = /^\/api\/ai\/([a-z-]+)$/.exec(p)) && m === 'POST') {
         // AI suggestions: the answer is data for the page to show, never applied here. Full token only (not in VIEW_POST).
         const b = await readJson(req, 256 * 1024);
+        // running the commands the user just confirmed is not a model call; every command is validated again here
+        if (g[1] === 'palette-run') return json(res, 200, { results: await runCommands(b?.commands, { cwd, stateDir, ws: b?.ws }) });
         if (aiBusy) throw new HttpError(429, 'another AI request is still running; wait for it to finish');
         aiBusy = true;
         try {
           if (g[1] === 'commit-message') return json(res, 200, await ai.commitMessage());
           if (g[1] === 'board') return json(res, 200, await ai.board(b));
+          if (g[1] === 'palette') return json(res, 200, await planPalette(ai, b, cwd));
         } finally { aiBusy = false; }
         throw new HttpError(404, `unknown AI task ${g[1]}`);
       }

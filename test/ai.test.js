@@ -7,6 +7,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { validateCommand, normalizePlan, promptFor } from '../src/ai-palette.js';
 import { startHatch, tmp } from './helpers.js';
 import { runClaude, claudeArgs, extractJson, ClaudeError } from '../src/claude-p.js';
 import { cleanCommitMessage, readAiSettings, normalizeBoardSuggestion, checkBoardRequest, AiError } from '../src/ai.js';
@@ -201,5 +202,48 @@ test('board: /api/ai/board sends only the selection to the fake model, returns a
       assert.equal((await h.call('POST', '/api/ai/board', { action: 'expand', cards: [] })).status, 400);
       assert.equal(f.calls(), before, 'an invalid request never reaches the model');
     });
+  } finally { await h.close(); }
+});
+
+// ---- natural-language palette ----
+test('palette validation: only allowlisted hatch commands, no code-running flags, no shell syntax needed', () => {
+  assert.deepEqual(validateCommand(['widget', 'open', 'git']), { ok: true, argv: ['widget', 'open', 'git'], text: 'hatch widget open git' });
+  assert.equal(validateCommand(['hatch', 'fx', 'rain', '--intensity', '30']).text, 'hatch fx rain --intensity 30', 'a leading hatch is tolerated');
+  assert.equal(validateCommand(['note', 'it\'s; rm -rf x']).text, "hatch note 'it'\\''s; rm -rf x'", 'text is quoted for display only; it is never run through a shell');
+  for (const bad of [['run', 'rm -rf /'], ['rm', '-rf', '/'], ['widget', 'rm', 'git'], ['widget', 'generate', 'x'], ['widget'], ['every', '5m', 'x'], ['term', 'a', '--cmd', 'x'], ['tasks', '--run', 'x'], ['host', 'a.html'], ['set', 'background', 'x.png'],
+    ['note', 'x', '--yes'], ['open', 'x', '--state', '/tmp/other'], ['workspace', 'close', 'a'], ['progress', 'set', '-'], [], 'widget open git', ['note', 'a\0b'], ['note', 5], ['fx', ...Array(40).fill('a')]]) {
+    assert.equal(validateCommand(bad).ok, false, JSON.stringify(bad));
+  }
+  const p = normalizePlan({ say: 'ok', commands: [['widget', 'open', 'git'], ['run', 'whoami'], ['fx', 'off'], 'nonsense', ...Array(8).fill(['panels'])] });
+  assert.deepEqual(p.commands.slice(0, 2).map((c) => c.text), ['hatch widget open git', 'hatch fx off']); assert.equal(p.commands.length, 6);
+  assert.match(p.rejected[0].reason, /not a command the palette may run/); assert.ok(p.rejected.length >= 4);
+  assert.throws(() => normalizePlan({}), /did not return a command list/);
+  assert.match(promptFor('close all', '/work/dir'), /\/work\/dir/);
+});
+
+test('palette: /api/ai/palette plans with the fake model (nothing runs); /api/ai/palette-run re-validates and runs approved commands without a shell', async () => {
+  const f = fakeClaude('```json\n{"say":"Opens git and a note","commands":[["widget","open","git"],["run","whoami"],["note","hello from the palette","--title","Hi"]]}\n```');
+  const h = await startHatch({ limitsProbe: okLimits });
+  try {
+    await withFake(f, async () => {
+      const r = await h.call('POST', '/api/ai/palette', { text: 'open git and a note' });
+      assert.equal(r.status, 200); assert.equal(r.data.say, 'Opens git and a note');
+      assert.deepEqual(r.data.commands.map((c) => c.text), ['hatch widget open git', "hatch note 'hello from the palette' --title Hi"]);
+      assert.equal(r.data.rejected.length, 1); assert.match(r.data.rejected[0].reason, /run/);
+      assert.match(f.call(1).input, /open git and a note/); assert.deepEqual(f.call(1).args.slice(0, 5), ['-p', '--model', 'haiku', '--tools', '']);
+      assert.equal((await h.call('GET', '/api/panels')).data.length, 0, 'planning changes nothing');
+      assert.equal((await h.call('POST', '/api/ai/palette', { text: '' })).status, 400);
+      assert.equal((await h.call('POST', '/api/ai/palette', { text: 'x'.repeat(501) })).status, 400);
+      f.setReply('no json here'); assert.equal((await h.call('POST', '/api/ai/palette', { text: 'x' })).status, 502);
+    });
+    // the page sends back only what the user confirmed; the server still refuses anything off the list
+    const bad = await h.call('POST', '/api/ai/palette-run', { commands: [['note', 'x'], ['run', 'touch /tmp/hatch-should-not-exist']] });
+    assert.equal(bad.status, 403); assert.match(bad.data.error, /refused/); assert.equal((await h.call('GET', '/api/panels')).data.length, 0, 'one bad command stops the whole batch');
+    assert.equal((await h.call('POST', '/api/ai/palette-run', { commands: [] })).status, 400);
+    const ok = await h.call('POST', '/api/ai/palette-run', { commands: [['note', 'hello from the palette', '--title', 'Hi']] });
+    assert.equal(ok.status, 200, JSON.stringify(ok.data)); assert.equal(ok.data.results[0].code, 0);
+    const panels = (await h.call('GET', '/api/panels')).data; assert.equal(panels.length, 1); assert.equal(panels[0].type, 'note');
+    const fail = await h.call('POST', '/api/ai/palette-run', { commands: [['close', 'no-such-window'], ['note', 'never runs']] });
+    assert.equal(fail.data.results.length, 1, 'stops at the first failure'); assert.notEqual(fail.data.results[0].code, 0);
   } finally { await h.close(); }
 });
