@@ -129,7 +129,7 @@ workspaces (named sets of windows with their own terminal and background, in thi
 background effects (behind the terminal text, visible at any transparency)
   fx                                show the active effect, its intensity and the list
   fx list                           all effects, the active one marked with *
-  fx NAME | off                     switch the effect of this workspace (--ws NAME or $HATCH_WORKSPACE, else main; matrix rain goo snow starfield aurora fireflies embers waves; saved in fx.json; open pages update by themselves)
+  fx NAME | off                     switch the effect of this workspace (--ws NAME or $HATCH_WORKSPACE, else main; matrix rain goo snow starfield aurora fireflies embers waves ripples; saved in fx.json; open pages update by themselves)
   fx [NAME] --intensity 0-100       how strong the effect is (default 50, kept per effect; no NAME = the active one)
 desktop
   windows transparency 0..100       set the transparency of every window that is open right now (each kept per window, like leader o)

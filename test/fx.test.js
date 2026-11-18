@@ -407,7 +407,7 @@ test('every listed effect has a loader in public/fx.js and a module in public/fx
   }
 });
 
-test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, waves) run on a stub canvas: still frame, animation, odd sizes and intensities, hidden tab, stop', async () => {
+test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, waves, ripples) run on a stub canvas: still frame, animation, odd sizes and intensities, hidden tab, stop', async () => {
   const calls = {}, bad = []; let queued = null, rafs = 0; const saved = { document: globalThis.document, raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame };
   const ctx2d = () => new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...a) => { calls[k] = (calls[k] || 0) + 1; if (a.some((v) => typeof v === 'number' && !Number.isFinite(v))) bad.push([k, a]); return String(k).startsWith('create') ? { addColorStop() {} } : undefined; }), set: (t, k, v) => { t[k] = v; return true; } });
   const canvas = (w, h) => { const c = ctx2d(); return { clientWidth: w, clientHeight: h, width: 0, height: 0, getContext: () => c, c }; };
@@ -417,7 +417,7 @@ test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, waves) 
     assert.deepEqual(levelOf(50), { count: 1, alpha: 1 }); assert.equal(levelOf(0).count, 0); assert.deepEqual(levelOf(NaN), levelOf(50));
     assert.equal(countFor(0, 0, 5000, levelOf(50)), 0); assert.equal(countFor(1000, 800, 5000, levelOf(0)), 0); assert.equal(countFor(1e7, 1e7, 5000, levelOf(100), 500), 500, 'capped');
     assert.ok(countFor(1000, 800, 5000, levelOf(100)) > countFor(1000, 800, 5000, levelOf(50)));
-    for (const name of ['snow', 'starfield', 'aurora', 'fireflies', 'embers', 'waves']) {
+    for (const name of ['snow', 'starfield', 'aurora', 'fireflies', 'embers', 'waves', 'ripples']) {
       const mod = (await import(`../public/fx/${name}.js`)).default;
       for (const [w, h] of [[0, 0], [1, 1], [900, 500]]) {
         for (const intensity of [0, 50, 100, undefined]) {
@@ -446,4 +446,22 @@ test('idle: effects skip frames in a hidden tab or after IDLE_MS without input, 
     handlers.keydown(); assert.equal(paused(performance.now() + 1000), false, 'a key wakes it');
     globalThis.document.hidden = true; assert.equal(paused(), true, 'hidden tab');
   } finally { Object.assign(globalThis, saved); if (!saved.document) delete globalThis.document; if (!saved.addEventListener) delete globalThis.addEventListener; }
+});
+
+test('ripples: a window pointerdown listener (passive, read-only) is added while it runs and removed on stop; clicks outside the canvas are ignored', async () => {
+  const saved = { document: globalThis.document, raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame, add: globalThis.addEventListener, rem: globalThis.removeEventListener };
+  const live = new Map(); let opts = null;
+  globalThis.addEventListener = (e, f, o) => { if (e === 'pointerdown') { live.set(f, e); opts = o; } }; globalThis.removeEventListener = (e, f) => { live.delete(f); };
+  globalThis.document = { hidden: false }; globalThis.requestAnimationFrame = () => 1; globalThis.cancelAnimationFrame = () => {};
+  try {
+    const mod = (await import('../public/fx/ripples.js')).default;
+    const ctx = new Proxy({}, { get: (t, k) => (k in t ? t[k] : () => undefined), set: (t, k, v) => { t[k] = v; return true; } });
+    const c = { clientWidth: 400, clientHeight: 300, width: 0, height: 0, getContext: () => ctx, getBoundingClientRect: () => ({ left: 10, top: 10, right: 410, bottom: 310, width: 400, height: 300 }) };
+    const before = [...live.keys()].length;
+    mod.start(c, { animate: true, intensity: 50 }); assert.equal(live.size, before + 1); assert.equal(opts.passive, true);
+    const [on] = [...live.keys()].slice(-1); let prevented = false;
+    on({ clientX: 100, clientY: 100, preventDefault() { prevented = true; } }); on({ clientX: 900, clientY: 900 }); assert.equal(prevented, false);
+    mod.stop(); assert.equal(live.size, before, 'listener removed on stop');
+    mod.start(c, { animate: false }); assert.equal(live.size, before, 'no listener for a still frame'); mod.stop();
+  } finally { Object.assign(globalThis, { document: saved.document, requestAnimationFrame: saved.raf, cancelAnimationFrame: saved.caf }); for (const [k, v] of [['addEventListener', saved.add], ['removeEventListener', saved.rem]]) { if (v) globalThis[k] = v; else delete globalThis[k]; } if (!saved.document) delete globalThis.document; }
 });
