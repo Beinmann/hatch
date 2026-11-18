@@ -63,7 +63,9 @@ code{font-family:var(--mono);font-size:.92em;background:var(--accent-soft);paddi
 #fx{display:none}
 html.has-fx #termwrap{isolation:isolate}
 html.has-fx #fx{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
-#fxhint{font:12px var(--mono);color:var(--muted)} #fxhint[hidden]{display:none}
+#fxwrap{position:relative} #fxhint{display:inline-flex;align-items:center;gap:6px;background:transparent} #fxhint[hidden],#fxpop[hidden]{display:none}
+.fxdot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:fxpulse 2s infinite} @keyframes fxpulse{50%{opacity:.3}} @media(prefers-reduced-motion:reduce){.fxdot{animation:none}}
+#fxpop{left:0;right:auto;width:200px;z-index:60;font-size:12px;margin-top:4px} #fxpop .fxrow{display:flex;justify-content:space-between;color:var(--muted)} #fxpop input{width:100%;accent-color:var(--accent)} #fxpop #fxoff:hover{border-color:var(--bad);color:var(--bad)}
 #hint{margin:0;padding:3px 10px;background:var(--surface);border-top:1px solid var(--line)}
 #floats{position:absolute;inset:0;isolation:isolate;pointer-events:none;overflow:hidden}
 #dropmsg{position:absolute;inset:8px;border:2px dashed var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;background:#0008;color:#fff;font-size:18px;pointer-events:none}

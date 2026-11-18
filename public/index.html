@@ -18,7 +18,12 @@
   <strong class="brand">Hatch</strong>
   <span id="conn" class="chip" title="terminal connection">connecting</span>
   <span id="session" class="muted"></span>
-  <button id="fxhint" type="button" hidden title="Background effect is on; click to turn it off"></button>
+  <span id="fxwrap"><button id="fxhint" type="button" class="chip ok" hidden aria-expanded="false" aria-controls="fxpop" title="Background effect is on; click for options"><span class="fxdot" aria-hidden="true"></span><span id="fxname"></span></button>
+  <div id="fxpop" class="menu" role="dialog" aria-label="Background effect" hidden>
+    <label class="fxrow">Intensity <output id="fxival">50</output></label>
+    <input id="fxint" type="range" min="0" max="100" value="50" aria-label="Effect intensity">
+    <button id="fxoff" type="button">Turn effect off</button>
+  </div></span>
   <span id="wsbar" class="chips" title="Workspaces: switch with the palette (workspace: switch) or leader ] [ / w 1-9"></span>
   <button id="wsnotice" type="button" class="chip warn" hidden></button>
   <span class="grow"></span>
