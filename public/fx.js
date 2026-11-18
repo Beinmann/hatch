@@ -7,7 +7,8 @@ import { terminalAdapter } from './fx-terminal.js';
 const LOADERS = { matrix: () => import('./fx/matrix.js'), rain: () => import('./fx/rain.js'), goo: () => import('./fx/goo.js'),
   snow: () => import('./fx/snow.js'), starfield: () => import('./fx/starfield.js'), aurora: () => import('./fx/aurora.js'), fireflies: () => import('./fx/fireflies.js'), embers: () => import('./fx/embers.js'), waves: () => import('./fx/waves.js'),
   ripples: () => import('./fx/ripples.js'),
-  breathing: () => import('./fx/breathing.js') };
+  breathing: () => import('./fx/breathing.js'),
+  constellation: () => import('./fx/constellation.js') };
 
 /** True when the user asked the system for less motion: effects then draw one still frame. */
 export const reducedMotion = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
