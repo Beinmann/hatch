@@ -86,7 +86,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const title = el('span', { class: 't' }, panel.title);
     w.title = title;
     const mkBtn = (label, tip, fn) => el('button', { type: 'button', title: tip, 'aria-label': tip, onclick: (e) => { e.stopPropagation(); fn(); } }, label);
-    w.tb = el('div', { class: 'tb' }, chipIcon(panel.type), title,
+    w.tb = el('div', { class: 'tb', 'data-type': panel.type }, chipIcon(panel.type), title,
       mkBtn(panel.placement === 'dock' ? '⇱' : '⇲', 'Move between dock and floating', () => {
         const to = w.panel.placement === 'dock' ? 'float' : 'dock';
         patch(w.panel.id, { placement: to }).catch(() => {});
@@ -286,7 +286,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   const draggable = (btn, id) => { if (isViewOnly()) return; btn.draggable = true; btn.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-hatch-window', id); e.dataTransfer.effectAllowed = 'move'; }); };
   function chipFor(w) {
     const hidden = !onScreen(w);
-    const btn = el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, title: w.panel.title, disabled: isViewOnly() && w.panel.minimized,
+    const btn = el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, 'data-type': w.panel.type, title: w.panel.title, disabled: isViewOnly() && w.panel.minimized,
       onclick: () => {
         const act = chipClickAction({ minimized: !!w.panel.minimized, onScreen: !hidden, focused: w.node.classList.contains('focus') });
         if (act === 'restore') { setMinimized(w.panel.id, false).catch((e) => ctx.toast(e.message, 'bad')); return; }
