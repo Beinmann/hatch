@@ -49,13 +49,11 @@
 
   /* ---- node types (look from the node prototypes; colors that carry meaning are fixed, the rest follows the theme) */
   .card { --surface: color-mix(in srgb, var(--fg, #ddd) 8%, var(--bg, #1b1b1b)); --line: color-mix(in srgb, var(--muted, #888) 45%, transparent); --amber: #e8b84a; --red: #ef6b6b; --green: #5fcf80; }
-  /* sticky note: colored paper, tape strip, slight tilt, handwriting font, no title bar */
-  .card.t-note { --paper: #e9d874; --ink: #3b3412; background: var(--paper); color: var(--ink); border: 0; border-radius: 2px 2px 12px 2px; box-shadow: 2px 4px 10px #0008;
-    font-family: 'Segoe Print', 'Comic Sans MS', cursive, var(--sans, system-ui); transform: rotate(-1.5deg); }
-  .card.t-note.col-b { --paper: #9fe0c4; --ink: #10382a; transform: rotate(1.2deg); }
-  .card.t-note.col-c { --paper: #f2a7b4; --ink: #47121e; transform: rotate(-.6deg); }
-  .card.t-note:before { content: ""; position: absolute; top: -7px; left: 50%; width: 44px; height: 14px; margin-left: -22px; background: #fff6; transform: rotate(2deg); pointer-events: none; }
-  .card.t-note.sel { box-shadow: 0 0 0 2px var(--accent, #6af), 2px 4px 10px #0008; }
+  /* note: a plain flat square in a muted color, no tilt, shadow or tape; dark ink on a light paper stays readable in light and dark themes */
+  .card.t-note { --paper: #e6dc9c; --ink: #2f2b14; background: var(--paper); color: var(--ink); border: 0; border-radius: 0; box-shadow: none; }
+  .card.t-note.col-b { --paper: #b8dccb; --ink: #14302a; }
+  .card.t-note.col-c { --paper: #e6bcc4; --ink: #3c1a22; }
+  .card.t-note.sel { box-shadow: 0 0 0 2px var(--accent, #6af); }
   .card.t-note .top { background: transparent; }
   .card.t-note .x, .card.t-note .clr { color: var(--ink); }
   .card .clr { position: absolute; left: 4px; top: 1px; width: 11px; height: 11px; padding: 0; border-radius: 50%; border: 1.5px solid var(--ink, currentColor); background: var(--paper); opacity: .55; }
@@ -182,7 +180,7 @@
     stage.style.backgroundSize = (24 * v.zoom) + 'px ' + (24 * v.zoom) + 'px'; stage.style.backgroundPosition = v.x + 'px ' + v.y + 'px'; }
   function place(el, c) { el.style.left = c.x + 'px'; el.style.top = c.y + 'px'; el.style.width = c.w + 'px'; el.style.height = c.h + 'px'; }
   var VISIBLE_TYPES = M.TYPE_ORDER;
-  var TYPE_SWATCH = { note: '#e9d874', task: 'var(--accent, #6af)', code: '#0a1010', link: 'linear-gradient(135deg,#1f6f78,#d9778a)', milestone: 'var(--amber, #e8b84a)', group: 'transparent', quote: '#c792ea', board: 'var(--muted, #888)' };
+  var TYPE_SWATCH = { note: '#e6dc9c', task: 'var(--accent, #6af)', code: '#0a1010', link: 'linear-gradient(135deg,#1f6f78,#d9778a)', milestone: 'var(--amber, #e8b84a)', group: 'transparent', quote: '#c792ea', board: 'var(--muted, #888)' };
   var PLACEHOLDER = { note: 'text', task: 'Title\n- [ ] step', code: 'code', link: 'Title\nsource or caption', milestone: 'milestone', group: 'group', quote: 'quote\n— source', board: 'title' };
   function cardEl(c) {
     var type = M.typeOf(c), el = mk('div', 'card t-' + type); el.dataset.id = c.id;
@@ -283,7 +281,7 @@
       svg.setAttribute('viewBox', (x0 - pad) + ' ' + (y0 - pad) + ' ' + (x1 - x0 + 2 * pad) + ' ' + (y1 - y0 + 2 * pad));
       rects.forEach(function (r) {
         var q = document.createElementNS(SVGNS, 'rect'); q.setAttribute('x', r[0]); q.setAttribute('y', r[1]); q.setAttribute('width', r[2]); q.setAttribute('height', r[3]); q.setAttribute('rx', 6);
-        var t = r[4]; q.setAttribute('fill', t === 'note' ? '#e9d874' : t === 'group' ? 'none' : t === 'quote' ? '#c792ea' : t === 'code' ? '#2a3a3c' : t === 'board' ? '#6a8fb0' : '#4fd1c0');
+        var t = r[4]; q.setAttribute('fill', t === 'note' ? '#e6dc9c' : t === 'group' ? 'none' : t === 'quote' ? '#c792ea' : t === 'code' ? '#2a3a3c' : t === 'board' ? '#6a8fb0' : '#4fd1c0');
         if (t === 'group') { q.setAttribute('stroke', '#4fd1c0'); q.setAttribute('stroke-width', 6); q.setAttribute('stroke-dasharray', '14 10'); }
         q.setAttribute('opacity', '.85'); svg.appendChild(q);
       });
