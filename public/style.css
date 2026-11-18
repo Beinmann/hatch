@@ -171,21 +171,29 @@ body.zen #bar,body.zen #hint,body.zen #dock,body.zen #split,body.zen .win.flash{
 body.zen #taskbar{display:none}
 /* Peek (hold Alt alone): only the floating windows are made invisible; the dock, fx layer and background image stay. visibility, not display, so nothing reflows or refits and the layout comes back untouched. */
 html.peek #floats{visibility:hidden!important}
-/* taskbar: tabs on a rail. Full-height cells split by 1px dividers; the focused window gets an accent underline and tint. */
-#taskbar{border-top:1px solid var(--line);background:var(--surface);padding:0 6px;min-height:34px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
-#chips{display:flex;align-items:stretch;gap:0;flex-wrap:nowrap;max-width:none;overflow:visible}
-#chips button{font:12px var(--mono);white-space:nowrap;flex:none;cursor:pointer;border:0;border-right:1px solid var(--line);border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);padding:8px 16px;transition:background .12s,color .12s}
-#chips button:first-child{border-left:1px solid var(--line)}
-#chips button:hover:not(:disabled){background:var(--accent-soft);color:var(--fg)}
-#chips button.ok{color:var(--fg);font-weight:600;border-bottom-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
-#chips button.min{font-style:italic;opacity:.75}
-#chips button.off{opacity:.75}
-#chips button.min.off{opacity:.75}
+/* taskbar: Windows-style. Icon + name per window; on screen = tinted with an accent underline (the focused one a longer one), minimized = faded icon, dimmed italic label and a short grey dash; "N hidden" on the right. */
+#taskbar{border-top:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,transparent);padding:0 6px;min-height:42px;gap:2px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
+#chips{display:flex;align-items:stretch;gap:2px;flex-wrap:nowrap;max-width:none;overflow:visible}
+#chips button{position:relative;display:flex;align-items:center;gap:7px;font:12px var(--mono);white-space:nowrap;flex:none;cursor:pointer;border:0;border-radius:6px;margin:4px 0;background:transparent;color:var(--fg);padding:0 12px 0 10px;transition:background .12s,color .12s}
+#chips button .cico{width:15px;height:15px;flex:none}
+#chips button::after{content:"";position:absolute;left:30%;right:30%;bottom:-4px;height:3px;border-radius:3px;background:var(--accent);transition:left .15s,right .15s}
+#chips button:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 10%,transparent)}
+#chips button:not(.min){background:color-mix(in srgb,var(--accent) 12%,transparent)}
+#chips button.ok{font-weight:600;background:color-mix(in srgb,var(--accent) 20%,transparent)}
+#chips button.ok::after{left:18%;right:18%}
+#chips button.min{color:var(--muted)}
+#chips button.min .cico{opacity:.45}
+#chips button.min .nm{font-style:italic;opacity:.85}
+#chips button.min::after{left:46%;right:46%;background:var(--muted)}
+#chips button.off:not(.min){opacity:.75}
 #chips button:disabled{cursor:not-allowed;opacity:.45}
-#chips button:focus-visible,#chips button.sel{outline:2px solid var(--accent);outline-offset:-3px;opacity:1}
+#chips button:focus-visible,#chips button.sel{outline:2px solid var(--accent);outline-offset:-2px}
+#hiddencount{margin-left:auto;align-self:center;flex:none;font:11px var(--mono);color:var(--muted);padding:0 8px 0 12px;white-space:nowrap}
+#hiddencount[hidden]{display:none}
 /* folders: one chip for a group of windows (a drop target while dragging), and the bubble listing the members */
 #chips button.drop{background:var(--accent-soft);outline:2px dashed var(--accent);outline-offset:-3px}
 #chips button.folder{font-weight:600}
+#chips button.folder.min::after{background:var(--muted)}
 .folderpop{position:fixed;z-index:60;min-width:200px;max-width:min(360px,92vw);background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 32px #0006;padding:6px;font:12px var(--mono)}
 .folderpop .fhead{color:var(--muted);padding:2px 6px 6px}
 .folderpop .frow{display:flex;gap:4px;align-items:stretch} .folderpop .frow.min .fgo{font-style:italic;opacity:.8}
@@ -194,7 +202,7 @@ html.peek #floats{visibility:hidden!important}
 .folderpop button:hover:not(:disabled){background:var(--accent-soft)}
 .folderpop .ftools{display:flex;gap:4px;border-top:1px solid var(--line);margin-top:4px;padding-top:4px} .folderpop .ftools button{color:var(--muted)}
 /* windows not on screen (minimized, dock folded) sit after a stronger divider */
-.chipsep{align-self:stretch;width:2px;margin:0;background:var(--muted);opacity:.5;flex:none}
+.chipsep{align-self:center;width:1px;height:20px;margin:0 4px;background:var(--line);flex:none}
 #welcome{position:absolute;right:18px;bottom:18px;width:min(340px,80%);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;box-shadow:0 6px 24px #0004;z-index:4;font-size:13px} #welcome[hidden]{display:none}
 #welcome h3{margin:0 0 6px;font-size:14px;display:flex;justify-content:space-between} #welcome ul{margin:0 0 8px;padding-left:18px} #welcome li{margin:2px 0} #welcome .row{display:flex;gap:6px;flex-wrap:wrap}
 body.zen #welcome{display:none}
