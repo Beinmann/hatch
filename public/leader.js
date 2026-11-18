@@ -65,3 +65,19 @@ export function leaderAction(e) {
   if (!action || (e.shiftKey && action !== 'next')) return null;
   return { action, repeat: action === 'next' };
 }
+
+// Hold-to-show window numbers: ONE modifier drives both the badges and the direct jump (modifier + 1..9). Switch to 'alt' to
+// move it off Ctrl (browsers reserve Ctrl+digit for tab switching). Alt alone is also the peek key by default, so change one of them.
+export const NUMBER_MODIFIER = 'ctrl'; // 'ctrl' | 'alt'
+const MOD_KEY = { ctrl: 'Control', alt: 'Alt' };
+const modFlag = (e, m) => !!e[`${m}Key`];
+/** True for the bare press of the number modifier (no other modifier held): the badges should show. */
+export const isNumberModKey = (e, m = NUMBER_MODIFIER) => e.key === MOD_KEY[m] && !['ctrl', 'alt'].filter((x) => x !== m).some((x) => modFlag(e, x)) && !e.metaKey && !e.shiftKey;
+/** The window number 1-9 when `e` is modifier+digit (nothing else held), else 0. Main-row digits only. */
+export function numberChordDigit(e, m = NUMBER_MODIFIER) {
+  if (!modFlag(e, m) || e.shiftKey || e.metaKey || ['ctrl', 'alt'].filter((x) => x !== m).some((x) => modFlag(e, x))) return 0;
+  const d = /^Digit([1-9])$/.exec(e.code || '');
+  return d ? Number(d[1]) : 0;
+}
+/** Whether releasing this key ends the number display. */
+export const isNumberModRelease = (e, m = NUMBER_MODIFIER) => e.key === MOD_KEY[m];
