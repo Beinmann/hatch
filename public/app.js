@@ -15,6 +15,7 @@ import output from './panels/output.js';
 import terminalPanel from './panels/terminal.js';
 import gitPanel from './panels/git.js';
 import trashPanel from './panels/trash.js';
+import { countAgents, agentChipView } from './agent-count.js';
 import { initLimits } from './limits.js';
 import { createPalette } from './palette.js';
 import { calc, formatResult } from './calc.js';
@@ -187,6 +188,14 @@ function paintProgressStrip() {
 function toggleProgress() { progressVisible = !progressVisible; store.set('progress-visible', progressVisible); paintProgressStrip(); }
 $('progressbtn').addEventListener('click', toggleProgress);
 progressListeners.add(paintProgressStrip);
+// Agents chip: counts progress plans with a running step (see agent-count.js); repaints on every plan change.
+function paintAgentChip() {
+  const v = agentChipView(countAgents([progressState, ...plansState.values()]));
+  const b = $('agentchip'); b.className = `chip ${v.state}`; b.setAttribute('aria-label', v.label); b.title = v.label; $('agenttext').textContent = v.text;
+}
+progressListeners.add(paintAgentChip); planListeners.add(paintAgentChip);
+$('agentchip').addEventListener('click', openProgress);
+paintAgentChip();
 paintProgressStrip();
 
 const dockEl = $('dock'); const splitEl = $('split');
