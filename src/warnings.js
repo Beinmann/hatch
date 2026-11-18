@@ -11,7 +11,11 @@ export function outdatedWidgets({ stateDir }) {
   const root = path.join(stateDir, 'widgets');
   const names = shippedWidgets().filter((n) => fs.existsSync(path.join(root, n)) && widgetStatus(stateDir, n) === 'stale');
   for (const n of staleProjectCopies(stateDir)) if (!names.includes(n)) names.push(n); // per-project git widgets (git-<folder>)
-  return names.sort().map((n) => ({ source: 'widgets', id: `widget:${n}`, message: `The ${n} widget is older than the version shipped with Hatch.`, fix: `hatch-server update-widgets ${n}` }));
+  names.sort();
+  if (!names.length) return [];
+  if (names.length === 1) return [{ source: 'widgets', id: `widget:${names[0]}`, message: `The ${names[0]} widget is older than the version shipped with Hatch.`, fix: `hatch-server update-widgets ${names[0]}` }];
+  // Several outdated widgets are one warning with one fix (the names are listed, not --all, so per-project copies are covered too).
+  return [{ source: 'widgets', id: 'widgets-outdated', message: `${names.length} widgets are outdated: ${names.join(', ')}`, fix: `hatch-server update-widgets ${names.join(' ')}` }];
 }
 
 /** The login token has not changed for more than 30 days. */

@@ -19,6 +19,19 @@ test('outdated widgets: current and unused ones are quiet, a copy older than the
   assert.match(w.message, /clock/);
 });
 
+test('several outdated widgets make one warning with one fix', () => {
+  const dir = tmp();
+  for (const n of ['analog-clock', 'clock']) {
+    const w = path.join(dir, 'widgets', n); fs.cpSync(new URL(`../examples/widgets/${n}`, import.meta.url), w, { recursive: true });
+    fs.appendFileSync(path.join(w, 'index.html'), '\n<!-- old copy -->');
+  }
+  fs.writeFileSync(path.join(dir, 'shipped-widgets.json'), JSON.stringify({ clock: 'older-version', 'analog-clock': 'older-version' }));
+  const got = outdatedWidgets({ stateDir: dir });
+  assert.equal(got.length, 1);
+  assert.equal(got[0].message, '2 widgets are outdated: analog-clock, clock');
+  assert.equal(got[0].fix, 'hatch-server update-widgets analog-clock clock');
+});
+
 test('old token source, and collectWarnings skips a source that throws', () => {
   const dir = tmp();
   assert.deepEqual(oldToken({ stateDir: dir, now: Date.now() }), [], 'unknown age is never a warning');
