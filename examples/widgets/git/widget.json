@@ -26,15 +26,6 @@
    "name": "commit",
    "kind": "exec",
    "cmd": "cd {{cwd}} 2>/dev/null || { echo @@nodir; exit 0; }\ntop=$(git rev-parse --show-toplevel 2>/dev/null) || { echo @@norepo; exit 0; }\ncommand -v claude >/dev/null 2>&1 || { echo @@noclaude; exit 0; }\nf=\"${TMPDIR:-/tmp}/hatch-commit-$(printf %s \"$top\" | cksum | cut -d' ' -f1)\"\nif [ -f \"$f.s\" ]; then read -r st pid <\"$f.s\"; if [ \"$st\" = running ] && kill -0 \"$pid\" 2>/dev/null; then echo @@running; exit 0; fi; fi\nrm -f \"$f.s\" \"$f.err\"\nnohup /bin/sh -c 'cd \"$1\" || exit 1; echo \"running $$\" >\"$2.s\"; out=$(claude -p \"Commit the current state of the git repository at $1 (work there). Look at git status and git diff, decide which changes belong together, stage them, and write a commit message in the style of the recent commits (git log -n 10). Before committing, check the staged diff for private information (secrets, tokens, hostnames, usernames, emails, absolute home paths, private project names); if the repository is public, leave such content out or stop and say so. Do not push, do not amend or rewrite history, do not switch branches. Reply with one short line saying what you committed.\" --permission-mode auto </dev/null 2>\"$2.err\"); rc=$?; { echo \"done $rc $(date +%s)\"; printf %s \"$out\" | tail -n 1; tail -n 1 \"$2.err\"; } >\"$2.t\"; mv \"$2.t\" \"$2.s\"' sh \"$top\" \"$f\" >/dev/null 2>&1 </dev/null &\necho @@started\n"
-  },
-  {
-   "name": "commit-with",
-   "kind": "exec",
-   "arg": "any",
-   "cmd": "cd {{cwd}} 2>/dev/null || { echo @@nodir; exit 0; }\ncd \"$(git rev-parse --show-toplevel 2>/dev/null)\" 2>/dev/null || { echo @@norepo; exit 0; }\no=$(git commit -m \"$HATCH_ARG\" 2>&1); [ $? -eq 0 ] || echo @@failed; printf '%s\\n' \"$o\" | tail -n 5"
   }
- ],
- "ai": [
-  "commit-message"
  ]
 }

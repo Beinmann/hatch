@@ -127,26 +127,6 @@ test('AI gating: off switch, limits gate and view-only links all refuse before a
   } finally { await h.close(); }
 });
 
-test('git widget: suggest and commit-with helpers, the commit-with source commits only the staged changes with the given message', async () => {
-  assert.ok(gitMeta.ai.includes('commit-message'));
-  const v = (o) => J(G.msgView(o));
-  assert.equal(v({ staged: 0, dirty: true, text: 'x' }).commit.disabled, true, 'nothing staged');
-  assert.equal(v({ staged: 1, dirty: true, text: '  ' }).commit.disabled, true, 'empty message');
-  assert.equal(v({ staged: 1, dirty: true, text: 'ok' }).commit.disabled, false);
-  assert.equal(v({ staged: 1, dirty: false, text: 'ok', busy: 'suggest' }).suggest.disabled, true);
-  assert.equal(v({ staged: 0, dirty: false, text: '' }).suggest.disabled, true, 'clean tree');
-  assert.equal(G.suggestNote({ message: ' a  b ', source: 'staged' }).message, 'a b');
-  assert.equal(G.suggestNote({}).ok, false);
-  const d = repo(); fs.writeFileSync(path.join(d, 'a.txt'), 'two\n'); fs.writeFileSync(path.join(d, 'b.txt'), 'b\n'); git(d, 'add', 'a.txt');
-  const src = gitMeta.sources.find((s) => s.name === 'commit-with');
-  const run = (arg, dir = d) => { try { return { out: execFileSync('/bin/sh', ['-c', src.cmd.replaceAll('{{cwd}}', `'${dir}'`)], { encoding: 'utf8', env: { ...process.env, HATCH_ARG: arg } }), code: 0 }; } catch (e) { return { out: e.stdout, code: e.status }; } };
-  const ok = run('Change a "quoted" $HOME `x`'); assert.equal(G.parseCommitWith({ out: ok.out.trim(), code: ok.code }).ok, true);
-  assert.equal(git(d, 'log', '-n1', '--format=%s').trim(), 'Change a "quoted" $HOME `x`');
-  assert.equal(git(d, 'status', '--porcelain').trim(), '?? b.txt', 'unstaged and untracked files are left alone');
-  const again = run('nothing staged'); assert.equal(G.parseCommitWith({ out: again.out.trim(), code: 0 }).ok, false);
-  assert.equal(G.parseCommitWith({ out: run('x', path.join(d, 'missing')).out.trim() }).ok, false);
-});
-
 // ---- board assistant ----
 const sel = [{ id: 'c1', type: 'task', text: 'Write the parser' }, { id: 'c2', text: 'Test it' }];
 const expandReply = '```json\n' + JSON.stringify({ cards: [{ ref: 'n1', type: 'task', text: 'Handle errors' }, { ref: 'n2', type: 'bogus', text: 'Docs' }, { ref: 'c1', text: 'clashes with a selected id' }, { ref: 'n3', text: '  ' }, { ref: 'n1', text: 'duplicate ref' }],
