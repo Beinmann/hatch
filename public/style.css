@@ -197,6 +197,8 @@ html.peek #floats{visibility:hidden!important}
 #hiddencount[hidden]{display:none}
 /* folders: one chip for a group of windows (a drop target while dragging), and the bubble listing the members */
 #chips button.drop{background:var(--accent-soft);outline:2px dashed var(--accent);outline-offset:-3px}
+#chips button.ins-before::before,#chips button.ins-after::before{content:"";position:absolute;top:-2px;bottom:-2px;width:3px;border-radius:2px;background:var(--accent)}
+#chips button.ins-before::before{left:-3px} #chips button.ins-after::before{right:-3px}
 #chips button.folder{font-weight:600}
 #chips button.folder.min::after{background:var(--muted)}
 .folderpop{position:fixed;z-index:60;min-width:200px;max-width:min(360px,92vw);background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 32px #0006;padding:6px;font:12px var(--mono)}

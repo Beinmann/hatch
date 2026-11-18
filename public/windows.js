@@ -5,6 +5,7 @@ import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE } from './folders.js';
+import { mergeOrder, moveItem, dropZone } from './taskbar-order.js';
 import { chipIcon } from './chip-icons.js';
 import { chipClickAction } from './chip-click.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
@@ -268,22 +269,47 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // Taskbar chips. A window in a folder has no chip of its own: its folder shows as one chip (name and count) whose
   // popover lists the members. Chips can be dragged onto each other (HTML5 drag and drop): onto a folder to join it,
   // onto a loose window to make a new folder of the two.
+  // The dragged order of the taskbar, per workspace, in localStorage like the other per-browser layout bits. Window numbers use it too.
+  const orderKey = () => `hatch.taskbar.${current}`;
+  const savedOrder = () => { try { const v = JSON.parse(localStorage.getItem(orderKey())); return Array.isArray(v) ? v : []; } catch { return []; } };
+  const taskbarOrder = () => { const m = mergeOrder(savedOrder(), [...wins.keys()]); return m.map((id) => wins.get(id)); };
+  function moveChip(id, beforeId) {
+    const loose = new Set(groupWindows([...wins.values()].map((x) => x.panel), current).loose);
+    const mine = taskbarOrder().filter((w) => (w.panel.sticky || wsOf(w.panel) === current) && loose.has(w.panel.id)).map((w) => w.panel.id);
+    const next = moveItem(mine, id, beforeId);
+    try { localStorage.setItem(orderKey(), JSON.stringify(next)); } catch { /* storage may be blocked: the order lasts until reload */ }
+    paintChips();
+  }
+  let dragId = null; // the window being dragged (dataTransfer content is unreadable during dragover)
+  const clearMarks = () => chips.querySelectorAll('.ins-before,.ins-after,.drop').forEach((n) => n.classList.remove('ins-before', 'ins-after', 'drop'));
+  const looseDrag = () => dragId && wins.has(dragId) && !folderOf(wins.get(dragId).panel);
   const setFolder = (ids, folder) => Promise.all(ids.map((id) => patch(id, { folder }))).catch((e) => ctx.toast(e.message, 'bad'));
   const dropOnChip = (btn, folderName) => {
     if (isViewOnly()) return;
-    btn.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('text/x-hatch-window')) { e.preventDefault(); btn.classList.add('drop'); } });
-    btn.addEventListener('dragleave', () => btn.classList.remove('drop'));
+    const zoneOf = (e) => (folderName || !looseDrag() ? 'mid' : dropZone(btn.getBoundingClientRect(), e.clientX));
+    btn.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer?.types.includes('text/x-hatch-window')) return;
+      e.preventDefault(); clearMarks(); const z = zoneOf(e);
+      btn.classList.add(z === 'mid' ? 'drop' : `ins-${z}`);
+    });
+    btn.addEventListener('dragleave', () => btn.classList.remove('drop', 'ins-before', 'ins-after'));
     btn.addEventListener('drop', (e) => {
-      btn.classList.remove('drop');
+      const z = zoneOf(e); clearMarks();
       const id = e.dataTransfer?.getData('text/x-hatch-window'); if (!id || !wins.has(id)) return;
       e.preventDefault();
+      if (z !== 'mid') { // edge of a loose chip: reorder instead of joining a folder
+        const mine = [...btn.parentElement.querySelectorAll('.chip[data-id]')].map((n) => n.dataset.id);
+        const at = mine.indexOf(btn.dataset.id);
+        moveChip(id, z === 'before' ? btn.dataset.id : (mine[at + 1] || null));
+        return;
+      }
       const all = [...wins.values()].map((x) => x.panel);
       if (folderName) { if (folderOf(wins.get(id).panel) !== folderName) setFolder([id], folderName); return; }
       const other = btn.dataset.id; if (!other || other === id) return;
       const name = freeFolderName(all, current); setFolder([other, id], name);
     });
   };
-  const draggable = (btn, id) => { if (isViewOnly()) return; btn.draggable = true; btn.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-hatch-window', id); e.dataTransfer.effectAllowed = 'move'; }); };
+  const draggable = (btn, id) => { if (isViewOnly()) return; btn.draggable = true; btn.addEventListener('dragend', () => { dragId = null; clearMarks(); }); btn.addEventListener('dragstart', (e) => { dragId = id; e.dataTransfer.setData('text/x-hatch-window', id); e.dataTransfer.effectAllowed = 'move'; }); };
   function chipFor(w) {
     const hidden = !onScreen(w);
     const btn = el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, title: w.panel.title, disabled: isViewOnly() && w.panel.minimized,
@@ -341,16 +367,28 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   document.addEventListener('pointerdown', (e) => { if (pop && !pop.contains(e.target) && !e.target.closest?.('.chip.folder')) { closePop(); paintChips(); } }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pop) { closePop(); paintChips(); } });
+  // Dropping in the empty part of the bar (or on a separator) moves the window to the end of the loose chips.
+  if (!isViewOnly()) {
+    chips.addEventListener('dragover', (e) => {
+      if (e.target.closest('.chip') || !looseDrag() || !e.dataTransfer?.types.includes('text/x-hatch-window')) return;
+      e.preventDefault(); clearMarks(); [...chips.querySelectorAll('.chip[data-id]')].pop()?.classList.add('ins-after');
+    });
+    chips.addEventListener('dragleave', (e) => { if (!chips.contains(e.relatedTarget)) clearMarks(); });
+    chips.addEventListener('drop', (e) => {
+      if (e.target.closest('.chip')) return;
+      const id = e.dataTransfer?.getData('text/x-hatch-window'); clearMarks();
+      if (id && wins.has(id) && looseDrag()) { e.preventDefault(); moveChip(id, null); }
+    });
+  }
   const hiddenCount = chips.parentElement?.querySelector('#hiddencount');
   function paintChips() {
-    // Taskbar: windows of this workspace, visible ones first, a separator, then the ones not on screen. Folders sit after the loose windows.
-    const mine = [...wins.values()].filter((w) => w.panel.sticky || wsOf(w.panel) === current);
+    // Taskbar: windows of this workspace in one order (the user's dragged order, new windows last), minimized ones just greyed out. Folders sit after the loose windows.
+    const mine = taskbarOrder().filter((w) => w.panel.sticky || wsOf(w.panel) === current);
     chips.parentElement.hidden = !mine.length;
     const groups = groupWindows(mine.map((w) => w.panel), current);
     const loose = new Set(groups.loose); const looseWins = mine.filter((w) => loose.has(w.panel.id));
-    const vis = looseWins.filter(onScreen); const off = looseWins.filter((w) => !onScreen(w));
     const folders = groups.folders.map(folderChip);
-    chips.replaceChildren(...vis.map(chipFor), ...(vis.length && off.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...off.map(chipFor), ...(folders.length && looseWins.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...folders);
+    chips.replaceChildren(...looseWins.map(chipFor), ...(folders.length && looseWins.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...folders);
     const nHidden = mine.filter((w) => w.panel.minimized).length;
     if (hiddenCount) { hiddenCount.textContent = `${nHidden} hidden`; hiddenCount.hidden = !nHidden; }
     if (openFolder) paintPop(groups, chips.querySelector('.chip.folder.sel'));
@@ -464,8 +502,8 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   function blur() { for (const w of wins.values()) w.node.classList.remove('focus'); paintChips(); }
   const focused = () => [...wins.values()].find((o) => shown(o) && o.node.classList.contains('focus'));
-  // Windows that can be reached by number: visible and not minimized, in creation order (the same order the badges show).
-  const numbered = () => [...wins.values()].filter((w) => shown(w));
+  // Windows that can be reached by number: visible and not minimized, in taskbar order (the same order the badges show).
+  const numbered = () => taskbarOrder().filter((w) => shown(w));
   function showNumbers(on) { numbered().forEach((w, i) => { if (on) w.tb.dataset.n = String(i + 1); else delete w.tb.dataset.n; }); if (!on) for (const w of wins.values()) delete w.tb.dataset.n; }
   function focusNumber(n) { const w = numbered()[n - 1]; if (!w) return false; focus(w); return true; }
   // Leader Tab: raise the next visible window, docked ones included.
@@ -484,11 +522,10 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     if (!w || isViewOnly() || w.panel.placement !== 'float') return false;
     patch(w.panel.id, { maximized: !w.panel.maximized }).catch((e) => ctx.toast(e.message, 'bad')); return true;
   }
-  // Leader u: every window of this workspace, in taskbar order (on screen first, then minimized or folded); one is marked as the selection.
+  // Leader u: every window of this workspace, in taskbar order; one is marked as the selection.
   let dockSel = null;
   const selectableIds = () => {
-    const mine = [...wins.values()].filter((w) => w.panel.sticky || wsOf(w.panel) === current);
-    return [...mine.filter(onScreen), ...mine.filter((w) => !onScreen(w))].map((w) => w.panel.id);
+    return taskbarOrder().filter((w) => w.panel.sticky || wsOf(w.panel) === current).map((w) => w.panel.id);
   };
   // Minimized windows come first when picking, so the old "restore one" use stays one keypress away.
   const startSelection = () => {
