@@ -48,10 +48,11 @@ test('workspace API: create, background per workspace, switch events, rename, cl
     await h.call('POST', '/api/panels', { type: 'note', title: 'n', props: { markdown: 'a' }, ws: 'work' });
     const t = (await h.call('POST', '/api/panels', { type: 'terminal', title: 't', props: { name: 'wt' }, ws: 'work' })).data;
     await h.call('POST', '/api/pterm/wt', {});
-    // move a window to main: same id, terminal still known
-    assert.equal((await h.call('PATCH', `/api/panels/${t.id}`, { ws: 'main' })).data.ws, undefined);
+    // windows cannot be moved to another workspace; patching the same workspace is fine
+    assert.equal((await h.call('PATCH', `/api/panels/${t.id}`, { ws: 'main' })).status, 400);
+    assert.equal((await h.call('PATCH', `/api/panels/${t.id}`, { ws: 'work' })).status, 200);
+    assert.equal((await h.call('GET', `/api/panels/${t.id}`)).data.ws, 'work');
     assert.equal((await h.call('GET', '/api/pterm/wt/alive')).data.alive, true);
-    await h.call('PATCH', `/api/panels/${t.id}`, { ws: 'work' });
     // rename keeps windows and id
     assert.equal((await h.call('POST', '/api/workspaces/work/rename', { to: 'job' })).status, 200);
     assert.ok((await h.call('GET', '/api/panels')).data.every((p) => p.ws === 'job'));

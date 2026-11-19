@@ -647,14 +647,6 @@ function pick(labels, onPick, hint = () => '') {
   pal.open();
 }
 const pickWorkspace = (onPick, { exclude = [] } = {}) => pick(wsNames().filter((n) => !exclude.includes(n)), onPick, (n) => `${wm.all().filter((p) => (p.ws || 'main') === n).length} windows${attention.has(n) ? ' · attention' : ''}${(presenceCounts[n] || 0) ? ' · open in a tab' : ''}`);
-function moveWindowToWorkspace() {
-  const go = (p) => pickWorkspace((n) => ctx.patch(p.id, { ws: n === 'main' ? 'main' : n }).then(() => toast(`Moved ${p.title} to ${n}`, 'info', 2000)).catch((e) => toast(e.message, 'bad')), { exclude: [p.ws || 'main'] });
-  const f = wm.focusedPanel();
-  if (f) return go(f);
-  const here = wm.all().filter((p) => p.sticky || (p.ws || 'main') === wm.current());
-  if (!here.length) return toast('No windows in this workspace', 'info', 1500);
-  pick(here.map((p) => ({ label: `${p.title} (${p.id})`, p })), (x) => go(x.p), (x) => x.p.type);
-}
 function setWorkspaceBackground() {
   const input = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', hidden: true });
   input.addEventListener('change', async () => {
@@ -987,7 +979,6 @@ const palette = createPalette({
     add('workspace: rename', wm.current(), renameWorkspace);
     add('workspace: close', 'asks you to type the name', () => closeWorkspace());
     add('workspace: set background...', `for ${wm.current()} only`, setWorkspaceBackground);
-    add('window: move to workspace...', 'the terminal keeps running', moveWindowToWorkspace);
     add('Move all windows to the current workspace', '', () => allPanels((p) => ctx.patch(p.id, { ws: wm.current() })));
     add('Close focused widget', 'leader q', () => wm.dismiss());
     add('Minimize focused widget', 'leader m', () => wm.dismiss(true));

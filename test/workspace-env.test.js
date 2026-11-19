@@ -27,10 +27,8 @@ test('terminals get HATCH_WORKSPACE of their workspace and start in its cwd', as
     await h.call('POST', '/api/panels', { type: 'terminal', props: { name: 'tw', cwd: own }, ws: 'proj' });
     await h.call('POST', '/api/pterm/tw', {});
     assert.ok(t.lines().some((l) => l.startsWith('new-session') && l.includes('-s hatch') && l.includes('tw') && l.includes('HATCH_WORKSPACE=proj') && l.includes(`-c ${own}`)), t.lines().join('\n'));
-    // moved to another workspace: the next ensure refreshes the variable for new tmux windows
-    await h.call('POST', '/api/workspaces', { name: 'other' });
-    const p = (await h.call('GET', '/api/panels')).data.find((x) => x.props?.name === 'tw');
-    await h.call('PATCH', `/api/panels/${p.id}`, { ws: 'other' });
+    // its workspace renamed: the next ensure refreshes the variable for new tmux windows
+    assert.equal((await h.call('POST', '/api/workspaces/proj/rename', { to: 'other' })).status, 200);
     await h.call('POST', '/api/pterm/tw', {});
     assert.ok(t.lines().some((l) => /^set-environment .* HATCH_WORKSPACE other$/.test(l)), t.lines().join('\n'));
   } finally { await h.close(); }

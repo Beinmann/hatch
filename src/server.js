@@ -734,7 +734,12 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       if (p === '/api/trash/restore' && m === 'POST') { const b = await readJson(req); return json(res, 200, state.restoreTrash(typeof b?.trashId === 'string' ? b.trashId : undefined)); }
       if ((g = /^\/api\/panels\/([\w-]+)$/.exec(p))) {
         if (m === 'GET') { const pn = state.getPanel(g[1]); if (!pn) throw new HttpError(404, `no panel ${g[1]}`); return json(res, 200, pn); }
-        if (m === 'PATCH') return json(res, 200, state.patchPanel(g[1], await readJson(req)));
+        if (m === 'PATCH') {
+          const b = await readJson(req);
+          // windows do not move between workspaces (open the widget in the other workspace instead: it gets its own copy)
+          if (b && b.ws !== undefined) { const cur = state.getPanel(g[1]); if (cur && (b.ws || 'main') !== (cur.ws || 'main')) throw new HttpError(400, 'a window cannot be moved to another workspace; open it there instead (widgets get their own copy per workspace)'); }
+          return json(res, 200, state.patchPanel(g[1], b));
+        }
         if (m === 'DELETE') { state.deletePanel(g[1]); return json(res, 200, { ok: true }); }
       }
 
@@ -933,7 +938,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
           fs.rmSync(path.join(l.widgets, g[1]), { recursive: true, force: true }); state.rescan(); return json(res, 200, { ok: true });
         }
       }
-      if ((g = /^\/api\/widgets\/([\w-]+)\/reload$/.exec(p)) && m === 'POST') { if (!state.bumpWidget(g[1])) throw new HttpError(404, `no widget ${g[1]}`); return json(res, 200, { ok: true }); }
+      if ((g = /^\/api\/widgets\/([\w-]+)\/reload$/.exec(p)) && m === 'POST') { if (!state.bumpWidget(g[1])) throw new HttpError(404, `no widget ${g[1]}`); for (const n of state.widgetNames()) if (state.widgetMeta(n)?.copyOf === g[1]) state.bumpWidget(n); return json(res, 200, { ok: true }); } // a widget's per-workspace copies reload with it
       if ((g = /^\/api\/source\/([\w-]+)\/([\w-]+)$/.exec(p)) && m === 'GET') {
         const def = widgetSource(g[1], g[2]);
         return sse(req, res, (fn) => sources.subscribe(def, fn));
