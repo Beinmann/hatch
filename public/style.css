@@ -21,7 +21,7 @@
 [data-type=files],[data-type=files-preview],[data-type=progress]{--tc:var(--hue-cyan)}
 [data-type=note]{--tc:var(--hue-violet)}
 [data-type=editor]{--tc:var(--hue-indigo)}
-[data-type=image],[data-type=annotate]{--tc:var(--hue-rose)}
+[data-type=image]{--tc:var(--hue-rose)}
 /* slim themed scroll bars everywhere (panel bodies, inner lists, dock). Standard properties only: Chromium 121+ and Firefox.
    scrollbar-width is not inherited so it goes on every element; the gutter is reserved so the bar sits beside content, never over it. */
 *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 55%,transparent) transparent}

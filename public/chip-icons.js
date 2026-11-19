@@ -5,7 +5,6 @@ const P = {
   files: '<path d="M2 4.5V12a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1H8L6.5 3.5H3a1 1 0 00-1 1z"/>',
   'files-preview': '<path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/>',
   image: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1"/><path d="M2.5 12l3.5-3.5 2.5 2.5 2-2 3 3"/>',
-  annotate: '<path d="M3 13l.7-3L11 2.7a1.4 1.4 0 012 2L5.7 12z"/><path d="M9.8 3.9l2 2"/>',
   note: '<path d="M3.5 2.5h9v11h-9z"/><path d="M5.5 6h5M5.5 8.5h5M5.5 11h3"/>',
   editor: '<path d="M6 4L2.5 8 6 12M10 4l3.5 4L10 12"/>',
   output: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M4.5 6.5h5M4.5 9h3"/>',

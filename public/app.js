@@ -171,7 +171,6 @@ async function answerScreenshot(d) {
 const ctx = {
   registerScreenshot: (id, fn) => { screenshotters.set(id, fn); return () => { if (screenshotters.get(id) === fn) screenshotters.delete(id); }; },
   typePath: (p) => typePath(p),
-  uploadImage: (blob, name) => uploadImage(blob, name),
   openFile: (p, line) => term.openFileHook?.(p, line),
   subscribeSource,
   callSource: (widget, source, arg) => api('POST', '/api/call', { widget, source, ...(arg !== undefined && { arg }) }).then((r) => r.value),

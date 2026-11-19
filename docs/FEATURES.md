@@ -57,7 +57,6 @@ removing its files and its CLI case, palette entry and README bullet.
 | Scheduled checks (every) | 059 | src/schedules.js | CLI + tests | |
 | Export / import of your setup | 076 | ui.js | tests | |
 | Bookmarks | 058 | server /api/bookmarks, ui.js | CLI only | |
-| Image annotation | 013 | panels/annotate.js | yes (mouse) | |
 | Runnable notes (Run button on shell blocks) | 063 | md.js, panels/note.js | yes | |
 | Editable notes | 022 | note.js | no | |
 | Named progress plans (--plan, HATCH_PLAN, one window each) | - | plans.js, state.js, server.js, panels/progress.js | server and CLI | window not browser-tested |
