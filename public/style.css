@@ -14,7 +14,8 @@
 *{box-sizing:border-box}
 /* window type -> hue, used by the taskbar chips and the title-bar icon tile; unknown types set no --tc and stay neutral */
 [data-type=git]{--tc:var(--hue-amber)}
-[data-type=widget],[data-type=iframe],[data-type=page]{--tc:var(--hue-blue)}
+[data-type=iframe],[data-type=page]{--tc:var(--hue-blue)}
+[data-type=widget]{--tc:var(--hue-violet)} /* generic widgets: not the blue of web pages, so a label never sits blue on a blue tint */
 [data-type=terminal],[data-type=output]{--tc:var(--hue-green)}
 [data-type=files],[data-type=files-preview],[data-type=progress]{--tc:var(--hue-cyan)}
 [data-type=note]{--tc:var(--hue-violet)}
@@ -189,8 +190,8 @@ html.peek #floats{visibility:hidden!important}
 html #taskbar,html.has-bg #taskbar,html.has-tr #taskbar{background:var(--surface)} /* always solid, whatever the transparency or background setting; the chips' tints are mixed against the surface, so they must sit on a solid bar */
 #taskbar{border-top:1px solid var(--line);padding:0 6px;min-height:42px;gap:2px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
 #chips{display:flex;align-items:stretch;gap:2px;flex-wrap:nowrap;max-width:none;overflow:visible}
-#chips button{position:relative;display:flex;align-items:center;gap:7px;font:12px var(--mono);white-space:nowrap;flex:none;width:160px;box-sizing:border-box;cursor:pointer;border:0;border-radius:6px;margin:4px 0;background:transparent;color:var(--tc,var(--fg));padding:0 12px 0 10px;transition:background .12s,color .12s}
-#chips button .cico{width:15px;height:15px;flex:none}
+#chips button{position:relative;display:flex;align-items:center;gap:7px;font:12px var(--mono);white-space:nowrap;flex:none;width:160px;box-sizing:border-box;cursor:pointer;border:0;border-radius:6px;margin:4px 0;background:transparent;color:color-mix(in srgb,var(--tc,var(--fg)) 30%,var(--fg));padding:0 12px 0 10px;transition:background .12s,color .12s}
+#chips button .cico{width:15px;height:15px;flex:none;color:var(--tc,currentColor)} /* the icon carries the hue; the label is mostly neutral (30% hue: contrast 7+ on the chip tint in both themes) */
 /* every chip is the same width; a longer name is cut off with an ellipsis (the full title is the tooltip) */
 #chips button .nm{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;text-align:left}
 #chips button::after{content:"";position:absolute;left:30%;right:30%;bottom:-4px;height:3px;border-radius:3px;background:var(--accent);transition:left .15s,right .15s}
