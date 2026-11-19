@@ -68,7 +68,7 @@
   // Keyboard events do not bubble out of an iframe, so forward Hatch's reserved keys: Ctrl+Shift+G and P, Ctrl+G (and the older Ctrl+Shift+Space) and Ctrl+B, the leader chord
   // (sent in init) and, while the host says the leader is armed, every key after it. The host decides what they mean.
   let leader = null; let armed = false;
-  // Hold Ctrl shows window numbers and Ctrl+1..9 jumps to a window; the host opts in (init numberKeys) so an older host never swallows Ctrl+digit.
+  // Ctrl+1..9 jumps to a window; the host opts in (init numberKeys) so an older host never swallows Ctrl+digit.
   let numberKeys = false; let ctrlDown = false;
   const fields = (e) => ({ type: 'hatch-shortcut', code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey });
   const isLeader = (e) => !!leader && e.code === leader.code && !!e.ctrlKey === leader.ctrl && !!e.altKey === leader.alt && !!e.shiftKey === leader.shift && !!e.metaKey === leader.meta;
