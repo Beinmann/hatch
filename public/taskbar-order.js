@@ -26,17 +26,34 @@ export function dropZone(rect, x) {
 }
 
 /**
- * The chip positions of the taskbar, in order: loose windows in `order`, then the folder chips (as drawn). Window numbers are
- * the 1-based index into this list, minimized chips included, so Ctrl+3 always means the third chip.
- * `looseIds` = ids that have a chip of their own; `folders` = [{ name, ids }] in drawn order.
+ * Stable positions for the loose chips: `prev` is the last layout (ids, null = open spot). Closed or foldered windows leave
+ * an open spot, new ones (taken from `order`) fill the first open spot or go to the end; trailing open spots vanish.
  */
-export function chipSlots(order, looseIds, folders) {
+export function placeLoose(prev, order, looseIds) {
   const loose = new Set(looseIds);
-  return [...order.filter((id) => loose.has(id)).map((id) => ({ kind: 'win', id })), ...folders.map((f) => ({ kind: 'folder', name: f.name, ids: f.ids.slice() }))];
+  const out = (Array.isArray(prev) ? prev : []).map((id) => (loose.has(id) ? id : null));
+  const placed = new Set(out.filter((id) => id !== null));
+  for (const id of order) {
+    if (!loose.has(id) || placed.has(id)) continue;
+    const gap = out.indexOf(null);
+    if (gap >= 0) out[gap] = id; else out.push(id);
+    placed.add(id);
+  }
+  while (out.length && out[out.length - 1] === null) out.pop();
+  return out;
+}
+
+/**
+ * The chip positions of the taskbar: the loose layout from `placeLoose` ({ kind: 'empty' } for an open spot), then the folder
+ * chips (as drawn). Window numbers are the 1-based index into this list, minimized chips included, so Ctrl+3 always means slot 3.
+ * `folders` = [{ name, ids }] in drawn order.
+ */
+export function chipSlots(layout, folders) {
+  return [...layout.map((id) => (id === null ? { kind: 'empty' } : { kind: 'win', id })), ...folders.map((f) => ({ kind: 'folder', name: f.name, ids: f.ids.slice() }))];
 }
 
 /** The number (1-9) shown for window `id`: its own chip's position, or its folder chip's. 0 when it has no chip. */
 export function slotNumber(slots, id) {
-  const i = slots.findIndex((s) => (s.kind === 'win' ? s.id === id : s.ids.includes(id)));
+  const i = slots.findIndex((s) => (s.kind === 'win' ? s.id === id : s.kind === 'folder' && s.ids.includes(id)));
   return i >= 0 && i < 9 ? i + 1 : 0;
 }

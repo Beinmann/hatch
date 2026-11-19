@@ -5,7 +5,7 @@ import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE } from './folders.js';
-import { mergeOrder, moveItem, dropZone, chipSlots, slotNumber } from './taskbar-order.js';
+import { mergeOrder, moveItem, dropZone, placeLoose, chipSlots, slotNumber } from './taskbar-order.js';
 import { chipIcon, iconKey } from './chip-icons.js';
 import { chipClickAction, numberKeyAction, createChipPress, windowFocused } from './chip-click.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
@@ -273,10 +273,14 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   const orderKey = () => `hatch.taskbar.${current}`;
   const savedOrder = () => { try { const v = JSON.parse(localStorage.getItem(orderKey())); return Array.isArray(v) ? v : []; } catch { return []; } };
   const taskbarOrder = () => { const m = mergeOrder(savedOrder(), [...wins.keys()]); return m.map((id) => wins.get(id)); };
+  // Loose-chip layout per workspace (ids, null = open spot), in memory: closing a window leaves its number free and the next new
+  // window takes the lowest free one. After a reload the numbers are packed again from the saved order.
+  const layouts = new Map();
   function moveChip(id, beforeId) {
     const loose = new Set(groupWindows([...wins.values()].map((x) => x.panel), current).loose);
     const mine = taskbarOrder().filter((w) => (w.panel.sticky || wsOf(w.panel) === current) && loose.has(w.panel.id)).map((w) => w.panel.id);
     const next = moveItem(mine, id, beforeId);
+    layouts.set(current, next); // a drag re-packs the numbers; closing a window never does
     try { localStorage.setItem(orderKey(), JSON.stringify(next)); } catch { /* storage may be blocked: the order lasts until reload */ }
     paintChips();
   }
@@ -396,6 +400,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     for (const w of wins.values()) delete w.tb.dataset.n;
     if (!numbersOn) return;
     slots.slice(0, 9).forEach((s, i) => {
+      if (s.kind === 'empty') return;
       const btn = s.kind === 'win' ? chips.querySelector(`.chip[data-id="${CSS.escape(s.id)}"]`) : chips.querySelector(`.chip.folder[data-folder="${CSS.escape(s.name)}"]`);
       btn?.append(el('span', { class: 'cnum', 'aria-hidden': 'true' }, String(i + 1)));
     });
@@ -408,8 +413,9 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const mine = taskbarOrder().filter((w) => w.panel.sticky || wsOf(w.panel) === current);
     chips.parentElement.hidden = !mine.length;
     const groups = groupWindows(mine.map((w) => w.panel), current);
-    const loose = new Set(groups.loose); const looseWins = mine.filter((w) => loose.has(w.panel.id));
-    slots = chipSlots(mine.map((w) => w.panel.id), groups.loose, groups.folders);
+    const layout = placeLoose(layouts.get(current), mine.map((w) => w.panel.id), groups.loose); layouts.set(current, layout);
+    const looseWins = layout.filter((id) => id !== null).map((id) => wins.get(id));
+    slots = chipSlots(layout, groups.folders);
     const folders = groups.folders.map(folderChip);
     chips.replaceChildren(...looseWins.map(chipFor), ...(folders.length && looseWins.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...folders);
     const nHidden = mine.filter((w) => w.panel.minimized).length;
@@ -533,7 +539,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   function showNumbers(on) { numbersOn = on; paintNumbers(); }
   // With toggle (the Ctrl+N hotkey), a window that is already open (shown, not minimized) is minimized instead of refocused.
   function focusNumber(n, toggle = false) {
-    const s = slots[n - 1]; if (!s) return false;
+    const s = slots[n - 1]; if (!s || s.kind === 'empty') return false;
     const ws = (s.kind === 'win' ? [s.id] : s.ids).map((id) => wins.get(id)).filter(Boolean);
     const w = ws.find((x) => shown(x)) || ws[0]; if (!w) return false;
     const act = numberKeyAction({ minimized: !!w.panel.minimized, onScreen: onScreen(w), toggle });
