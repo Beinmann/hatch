@@ -24,15 +24,15 @@ Use `hatch progress show --json` to get their IDs. Mark the current step running
 then done only after verifying it: `hatch progress step ID running --detail "What I am doing now"`.
 Update details at meaningful transitions (a discovery, completed change, test result, or blocker),
 not on a timer. Split large tasks into smaller steps using `hatch progress steps set -` with a JSON array:
-`[{"id":"inspect","title":"Inspect the layout","status":"running","group":"Discovery","detail":"Tracing popup focus"}]`.
+`[{"id":"inspect","title":"Inspect the layout","status":"running","group":"Discovery","detail":"Tracing widget focus"}]`.
 Preserve existing work when adjusting the plan. Mark blocked steps with the reason and what is needed.
 If several agents share this Hatch, give yours its own plan: `export HATCH_PLAN=my-task` (or `--plan my-task` on each `hatch progress` command). With two or more plans a command without a name fails and lists them.
 Never guess progress percentages or mark work complete just because a command was started.
 Steps are the primary visual; a Mermaid diagram is optional. `hatch progress open` opens details.
 The user can also change a step's status in the browser; read the latest plan before replacing it.
 
-Useful popup commands: `hatch image PATH`, `hatch open FILE|DIR|URL`, `hatch popup examples`,
-`hatch popup open cpu`, `hatch popup generate "DESCRIPTION" --name NAME` (uses Claude Code),
+Useful widget commands: `hatch image PATH`, `hatch open FILE|DIR|URL`, `hatch widget examples`,
+`hatch widget open cpu`, `hatch widget generate "DESCRIPTION" --name NAME` (uses Claude Code),
 `hatch panels`, `hatch minimize ID`, `hatch restore ID`, `hatch close ID`.
 
 With MCP, use `hatch_progress_get`, `hatch_progress_plan`, and `hatch_progress_step` (with detail/group) for the same workflow. `hatch_progress_open` explicitly opens details; updates leave keyboard focus alone.

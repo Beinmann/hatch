@@ -1,4 +1,4 @@
-// Which minimized popup Leader u brings back: floating windows of the shown workspace (or sticky ones),
+// Which minimized widget Leader u brings back: floating windows of the shown workspace (or sticky ones),
 // most recently minimized first. `order` maps panel id -> a rising counter set when it was minimized;
 // windows minimized before this page loaded have no entry and come last, in list order.
 export function pickRestore(panels, order, workspace) {

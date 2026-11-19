@@ -171,7 +171,6 @@ async function answerScreenshot(d) {
 const ctx = {
   registerScreenshot: (id, fn) => { screenshotters.set(id, fn); return () => { if (screenshotters.get(id) === fn) screenshotters.delete(id); }; },
   typePath: (p) => typePath(p),
-  uploadImage: (blob, name) => uploadImage(blob, name),
   openFile: (p, line) => term.openFileHook?.(p, line),
   subscribeSource,
   callSource: (widget, source, arg) => api('POST', '/api/call', { widget, source, ...(arg !== undefined && { arg }) }).then((r) => r.value),
@@ -422,7 +421,7 @@ addEventListener('focus', (e) => {
   if (e.target !== window) return;
   winFocusAt = Date.now();
   // Coming back to the tab: put the cursor in the terminal, but only when nothing specific had focus
-  // (a popup, editor, input or widget frame keeps it, so we never steal typing from them).
+  // (a window, editor, input or widget frame keeps it, so we never steal typing from them).
   const a = document.activeElement;
   if (!a || a === document.body || a === document.documentElement) term.focus();
 });
@@ -666,7 +665,7 @@ function setWorkspaceBackground() {
 }
 
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused popup\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Hold Alt alone', 'Peek: hides the floating windows while held (dock, effects and background stay) (after about 0.2 s, so Alt+key chords do not flash); release brings everything back. Any other key ends it. Key is configurable in Settings'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+1 ... 9', 'Focuses that window at once (the numbers show only after the leader key) (browsers that keep Ctrl+digit for tab switching may not deliver it)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a window\'s title bar into or out of the dock', 'Dock it at the previewed slot, or float it at the previewed outline; inside the dock it reorders (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+G (or Ctrl+Shift+Space)', 'Focus the terminal from anywhere (windows, popups, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused widget\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Hold Alt alone', 'Peek: hides the floating windows while held (dock, effects and background stay) (after about 0.2 s, so Alt+key chords do not flash); release brings everything back. Any other key ends it. Key is configurable in Settings'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+1 ... 9', 'Focuses that window at once (the numbers show only after the leader key) (browsers that keep Ctrl+digit for tab switching may not deliver it)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a window\'s title bar into or out of the dock', 'Dock it at the previewed slot, or float it at the previewed outline; inside the dock it reorders (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+G (or Ctrl+Shift+Space)', 'Focus the terminal from anywhere (windows, widgets, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -976,8 +975,8 @@ const palette = createPalette({
     add('workspace: set background...', `for ${wm.current()} only`, setWorkspaceBackground);
     add('window: move to workspace...', 'the terminal keeps running', moveWindowToWorkspace);
     add('Move all windows to the current workspace', '', () => allPanels((p) => ctx.patch(p.id, { ws: wm.current() })));
-    add('Close focused popup', 'leader q', () => wm.dismiss());
-    add('Minimize focused popup', 'leader m', () => wm.dismiss(true));
+    add('Close focused widget', 'leader q', () => wm.dismiss());
+    add('Minimize focused widget', 'leader m', () => wm.dismiss(true));
     add('Show desktop: minimize all windows, again to restore', 'leader Shift+d', () => { if (wm.showDesktop() === 'none') toast('No windows to minimize', 'info', 1500); });
     try {
       const f = await get(`/api/fx?ws=${encodeURIComponent(wm.current())}`); const setFx = (body) => api('POST', '/api/fx', { ...body, ws: wm.current() }).catch((e) => toast(e.message, 'bad'));
@@ -985,13 +984,13 @@ const palette = createPalette({
       if (f.effect) for (const [label, d] of [['stronger', 20], ['weaker', -20]]) add(`Background effect: ${label}`, `intensity ${f.intensity}`, () => setFx({ intensity: Math.max(0, Math.min(100, f.intensity + d)) }));
     } catch { /* no effects list */ }
     add('Dock or release the focused window', 'leader d', () => toastPlace(wm.togglePlacement()));
-    add('Restore last minimized popup', 'leader u', () => { if (!wm.restoreNext()) toast('No minimized popups', 'info', 1500); });
+    add('Restore last minimized widget', 'leader u', () => { if (!wm.restoreNext()) toast('No minimized widgets', 'info', 1500); });
     add('Open URL in a window...', '', () => { const u = prompt2('URL to open (the browser must reach it)'); return u && api('POST', '/api/panels', { type: 'iframe', title: u, props: { url: u } }); });
-    add('Open all example widgets', 'every default popup at its default size', async () => { for (const x of await get('/api/examples')) await api('POST', `/api/examples/${x.name}/open`, {}); });
+    add('Open all example widgets', 'every default widget at its default size', async () => { for (const x of await get('/api/examples')) await api('POST', `/api/examples/${x.name}/open`, {}); });
     try { for (const x of await get('/api/examples')) add(`Example widget: ${x.title}`, x.stale ? `${x.name} (newer version shipped: hatch-server update-widgets ${x.name})` : x.name, () => api('POST', `/api/examples/${x.name}/open`, {}).then((r) => { if (x.stale) toast(x.hint, 'warn'); return r; })); } catch { /* none */ }
     for (const w of widgets.values()) add(`Open widget: ${w.name}`, w.meta?.title || '', () => api('POST', '/api/panels', { type: 'widget', props: { name: w.name } }));
     for (const p of wm.all()) {
-      add(`Switch to popup: ${p.title}`, `${p.type}${p.minimized ? ' · minimized' : ''} · ${p.ws || 'main'}`, () => {
+      add(`Switch to widget: ${p.title}`, `${p.type}${p.minimized ? ' · minimized' : ''} · ${p.ws || 'main'}`, () => {
         if (!p.sticky) switchWs(p.ws || 'main');
         if (p.minimized) return wm.restore(p.id);
         wm.focusPanel(p.id);

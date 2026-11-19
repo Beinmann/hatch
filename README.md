@@ -118,11 +118,10 @@ Going back: the project `.hatch` is as it was. Stop the per-user instance and st
   `uploads/N.ext` on the box, the absolute path is typed into the terminal (as a bracketed paste when the program asks
   for it, as Claude Code does). An image window only opens if you tick "Show pasted images in a window" in the settings (off by default). Claude Code can then read the file. No resizing happens.
 - **Any file.** Dropping or pasting a non-image file on the page saves it into `uploads/` under its own name (numbered if taken) and types its path; file rows in the files window can be dragged into the terminal to type their path.
-- **Image inspection.** Images fit the popup and show their dimensions and zoom. Click the image (once its window is focused; the first click only focuses) or the zoom button for fit/actual size, use the wheel or +/− to zoom, 0 to fit and 1 for actual size. Enlarged images remain scrollable. “Use path” pastes the quoted path back into the terminal. SVG display is supported alongside PNG, JPEG, GIF and WebP.
-- **Annotate.** An image window's Actions → Annotate command draws a pen, boxes and arrows (four colours, Undo) over the image; Save and paste path stores a marked-up PNG as a new upload and types its path. Failed saves keep the marks so you can retry; closing unsaved annotations asks before discarding them.
+- **Image inspection.** Images fit the widget and show their dimensions and zoom. Click the image (once its window is focused; the first click only focuses) or the zoom button for fit/actual size, use the wheel or +/− to zoom, 0 to fit and 1 for actual size. Enlarged images remain scrollable. “Use path” pastes the quoted path back into the terminal. SVG display is supported alongside PNG, JPEG, GIF and WebP.
 - **Windows.** Panels float over the terminal (drag, resize by the corner grip or the right and bottom edges, minimize, close) or dock in the right column. Drag a docked window by its title bar to reorder the dock (a line shows where it will land, Escape cancels); the order is saved and shared with other open tabs. Changing a window's type (note, widget, progress) has no title-bar button: use `hatch convert NAME --to TYPE` or `POST /api/panels/:id/convert`. The leader key then Shift+`d` is "show desktop": it minimizes every floating window; pressing it again before anything changed (no window opened, closed, moved, resized or restored in between) brings them all back as they were, the most recently focused one on top. After a change the second press just minimizes whatever is showing. Geometry is
   saved into the panel file.
-- **Progress.** The terminal fills the workspace. The Progress button or Ctrl+Shift+G unfolds a slim strip showing the current step and a segmented overview; click it for a connected step journey with expandable details, groups, update times and manual status controls. `hatch progress plan "Inspect" "Build" "Verify"` creates a plan; `hatch progress show --json` lists IDs; `hatch progress step ID running --detail "Checking popup focus" --group Verification` updates a step. `hatch progress open` opens details. Progress data updates leave keyboard focus and popup visibility alone; open details explicitly when wanted. Mermaid diagrams and their history remain available under “Diagram & history”; they are optional.
+- **Progress.** The terminal fills the workspace. The Progress button or Ctrl+Shift+G unfolds a slim strip showing the current step and a segmented overview; click it for a connected step journey with expandable details, groups, update times and manual status controls. `hatch progress plan "Inspect" "Build" "Verify"` creates a plan; `hatch progress show --json` lists IDs; `hatch progress step ID running --detail "Checking widget focus" --group Verification` updates a step. `hatch progress open` opens details. Progress data updates leave keyboard focus and widget visibility alone; open details explicitly when wanted. Mermaid diagrams and their history remain available under “Diagram & history”; they are optional.
 - **Background effects.** `hatch fx matrix|rain|goo|snow|starfield|aurora|fireflies|embers|ripples|breathing|constellation` (`hatch fx list` shows them) animates the area behind the terminal text (visible at any transparency; `--intensity 0-100` sets how strong, per effect); `hatch fx off` stops it. See `docs/CUSTOMIZE.md`.
 - **Several plans.** Parallel work (two agents in one instance) can keep one plan each: `--plan NAME` on any `hatch progress` command, or `export HATCH_PLAN=NAME` in a terminal, picks the plan; it is created on first use and gets its own progress window titled with the name. `hatch progress plans` lists them, `hatch progress close --plan NAME` removes one. With zero or one plan nothing changes (no name needed); with two or more and no name the command fails and lists the plans instead of guessing. The MCP progress tools take the same `plan` argument (or read `HATCH_PLAN`). Named plans have no diagram history; the plan name `default` means the classic unnamed plan.
 - **Command palette.** Ctrl+P (also Ctrl+Shift+P in Chrome, which Firefox reserves for a private window), or the leader key then p (or the Commands button), opens a searchable list (the entries you use most come first; type `!ls -la` to run a shell command in an output window, `/name` to open a file of the project in the editor, `@name` to type an `@path` mention for Claude Code, `=2*(3+4)` to calculate): open widgets and notes, minimize or close windows, terminal font size, and your saved commands (`hatch cmd add tests "npm test"`; they are typed into the terminal).
@@ -165,7 +164,7 @@ Going back: the project `.hatch` is as it was. Stop the per-user instance and st
 
 ## Terminal commands and shortcuts
 
-Use `hatch` for everyday interaction with the page. `hatch-ui` still works as a deprecated alias, and `hatch serve|start|stop|restart|status|url|service` still forward to `hatch-server` with a notice. Page commands also accept global options before the command, such as `hatch --state DIR open FILE`. `hatch popup`, `hatch progress --help`, and `hatch image --help` provide focused usage guides:
+Use `hatch` for everyday interaction with the page. `hatch-ui` still works as a deprecated alias, and `hatch serve|start|stop|restart|status|url|service` still forward to `hatch-server` with a notice. Page commands also accept global options before the command, such as `hatch --state DIR open FILE`. `hatch widget`, `hatch progress --help`, and `hatch image --help` provide focused usage guides:
 
 ```sh
 hatch image screenshot.png --size 800x550
@@ -178,23 +177,23 @@ hatch widget screenshot plan [--out plan.png] [--abstract] [--scale N]   # PNG o
 hatch widget save [DIR]         # write DIR/.hatch-widgets.json: name, position, size, placement of this workspace's widgets (layout only, no content)
 hatch widget restore [DIR]      # open the missing ones, move/resize the open ones, un-minimize them; closes nothing; a bad file only warns
 hatch widget examples              # bundled example widgets (hatch widget open NAME installs and opens one)
-hatch popup open progress
-hatch popup create my-clock --from clock
-hatch popup open cpu
-hatch popup generate "a small clock" --name my-clock  # requires Claude Code
+hatch progress open
+hatch widget new my-clock --from clock
+hatch widget open cpu
+hatch widget generate "a small clock" --name my-clock  # requires Claude Code
 hatch progress plan "Inspect" "Build" "Verify"
 hatch progress step Inspect running --detail "Reading the current layout"
 hatch progress open
-hatch popup list
+hatch panels
 hatch panels
 hatch minimize PANEL_ID
 hatch restore PANEL_ID
 hatch close PANEL_ID
 ```
 
-Opening commands accept `--size WIDTHxHEIGHT`, `--full` (or `--fullscreen`), and `--no-focus`. Text files (`hatch open`, `hatch edit`, the file browser, the palette) open in vim in a terminal window when vim is installed; set `"editor": "builtin"` in the same file for the textarea editor, or a command name such as `"nvim"`. In a file browser window, click it or press a key to focus it: `j`/`k` move, `h` goes up, `l` opens. Set `"imageSize": "800x550"` in `.hatch/config.json` for a default image window size; explicit `--size` wins. Reopening a widget or progress window restores it and brings it forward. Double-click a popup title bar to maximize or restore it; that state survives reloads.
+Opening commands accept `--size WIDTHxHEIGHT`, `--full` (or `--fullscreen`), and `--no-focus`. Text files (`hatch open`, `hatch edit`, the file browser, the palette) open in vim in a terminal window when vim is installed; set `"editor": "builtin"` in the same file for the textarea editor, or a command name such as `"nvim"`. In a file browser window, click it or press a key to focus it: `j`/`k` move, `h` goes up, `l` opens. Set `"imageSize": "800x550"` in `.hatch/config.json` for a default image window size; explicit `--size` wins. Reopening a widget or progress window restores it and brings it forward. Double-click a widget title bar to maximize or restore it; that state survives reloads.
 
-The header keeps secondary tools in the command palette. It opens immediately with primary actions while additional commands load; Escape returns to the previous focus. Search “Switch to popup” to restore a particular window. Progress and the dock start folded; their visibility is remembered per browser. Popups take focus when opened or restored. Minimized popups stay in the bottom taskbar. Minimize/restore responds immediately while saving state. Docking preserves editor buffers, and closing an editor with unsaved work asks before discarding it.
+The header keeps secondary tools in the command palette. It opens immediately with primary actions while additional commands load; Escape returns to the previous focus. Search “Switch to widget” to restore a particular window. Progress and the dock start folded; their visibility is remembered per browser. Widgets take focus when opened or restored. Minimized widgets stay in the bottom taskbar. Minimize/restore responds immediately while saving state. Docking preserves editor buffers, and closing an editor with unsaved work asks before discarding it.
 
 | Shortcut | Action |
 |---|---|
@@ -211,7 +210,7 @@ The header keeps secondary tools in the command palette. It opens immediately wi
 | Ctrl+Shift+G | Fold or unfold progress strip |
 | Ctrl+Shift+F / Z / 1..9 | Terminal find / Zen mode / workspaces |
 
-For agents, run `hatch agent init` once in your project. This adds a managed Hatch block to `CLAUDE.md` and `AGENTS.md`, preserving the project's other rules; rerunning updates only that block. Use `--target claude` or `--target codex` to configure one, and `--dir DIR` to choose the project. It works before the server starts. `hatch agent show` prints the instructions for manual setup, or you can install the supplied Hatch skill. The instructions ask the agent to maintain small steps and update details at meaningful transitions without repeated reminders. Hatch does not infer task completion from terminal output; the agent must report it. State lives in the per-user instance (`~/.hatch`); the project is a workspace. Keyboard shortcuts work inside widgets that load `/sdk.js`; an external website embedded in a popup can capture its own keyboard events.
+For agents, run `hatch agent init` once in your project. This adds a managed Hatch block to `CLAUDE.md` and `AGENTS.md`, preserving the project's other rules; rerunning updates only that block. Use `--target claude` or `--target codex` to configure one, and `--dir DIR` to choose the project. It works before the server starts. `hatch agent show` prints the instructions for manual setup, or you can install the supplied Hatch skill. The instructions ask the agent to maintain small steps and update details at meaningful transitions without repeated reminders. Hatch does not infer task completion from terminal output; the agent must report it. State lives in the per-user instance (`~/.hatch`); the project is a workspace. Keyboard shortcuts work inside widgets that load `/sdk.js`; an external website embedded in a widget can capture its own keyboard events.
 
 ## hatch
 

@@ -1,4 +1,4 @@
-// One searchable surface for commands, files and popups. Open immediately while remote entries load.
+// One searchable surface for commands, files and widgets. Open immediately while remote entries load.
 import { el } from './util.js';
 
 const score = (label, q) => {

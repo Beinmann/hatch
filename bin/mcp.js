@@ -15,10 +15,10 @@ const pq = (a) => { const n = a.plan || process.env.HATCH_PLAN; return n ? `?pla
 const str = (description) => ({ type: 'string', description });
 
 const TOOLS = [
-  { name: 'hatch_progress_set', description: 'Update an optional Mermaid diagram alongside the step journey. This does not open or focus a popup. Use hatch_progress_plan for granular work and hatch_progress_open to show details.',
+  { name: 'hatch_progress_set', description: 'Update an optional Mermaid diagram alongside the step journey. This does not open or focus a widget. Use hatch_progress_plan for granular work and hatch_progress_open to show details.',
     inputSchema: { type: 'object', properties: { ...PLAN, diagram: str('Mermaid source, e.g. "flowchart LR\\n  plan --> code --> test"') }, required: ['diagram'] },
     run: async (api, a) => { await api('PUT', `/api/progress/diagram${pq(a)}`, String(a.diagram)); return 'progress diagram updated'; } },
-  { name: 'hatch_progress_step', description: 'Update a granular progress step, its current detail or group (creates it when new). Use before starting work, after verifying a step and when blocked. Does not open a popup or steal focus.',
+  { name: 'hatch_progress_step', description: 'Update a granular progress step, its current detail or group (creates it when new). Use before starting work, after verifying a step and when blocked. Does not open a widget or steal focus.',
     inputSchema: { type: 'object', properties: { ...PLAN, name: str('Step id or title'), detail: str('Current finding, action, verification or blocker'), group: str('Optional phase or group'), status: { type: 'string', enum: ['todo', 'running', 'done', 'blocked', 'skipped'] } }, required: ['name', 'status'] },
     run: async (api, a) => {
       const step = await api('POST', `/api/progress/steps${pq(a)}`, { name: a.name, status: a.status, ...(a.detail !== undefined && { detail: a.detail }), ...(a.group !== undefined && { group: a.group }) });

@@ -1,7 +1,6 @@
 // An image is a usable terminal artifact: fit, inspect at actual size, zoom without clipping, and reuse its path.
 import { el, isViewOnly } from '../util.js';
 import { copyText } from '../terminal.js';
-import { createAnnotator } from './annotate.js';
 
 const urlFor = (src) => (src.startsWith('/') ? `/api/file?path=${encodeURIComponent(src)}` : `/files/uploads/${encodeURIComponent(src)}`);
 
@@ -15,10 +14,9 @@ export default {
     const canvas = el('div', { class: 'image-canvas' }, img);
     const stage = el('div', { class: 'stage image-viewport' }, canvas);
     const error = el('div', { class: 'image-error muted', hidden: true, role: 'status' });
-    let scale = 1; let mode = 'fit'; let annotation = null;
-    const action = (label, fn) => el('button', { type: 'button', disabled: isViewOnly() && label === 'Annotate', onclick: () => { menu.open = false; fn(); } }, label);
+    let scale = 1; let mode = 'fit';
+    const action = (label, fn) => el('button', { type: 'button', onclick: () => { menu.open = false; fn(); } }, label);
     const menu = el('details', { class: 'image-actions' }, el('summary', { title: 'Image actions' }, 'Actions'), el('div', { class: 'image-menu' },
-      action('Annotate', () => startAnnotate()),
       action('Copy path', async () => ctx.toast(await copyText(sourcePath()) ? 'Path copied' : 'Copy failed', 'info')),
       action('Fit to window', () => setZoom('fit')),
       action('Actual size', () => setZoom(1))));
@@ -27,7 +25,7 @@ export default {
         el('button', { type: 'button', title: 'Paste this image path into the terminal', hidden: isViewOnly(), onclick: () => { ctx.typePath(sourcePath()); ctx.term.focus(); } }, 'Use path'), menu));
 
     function setZoom(value, pointer) {
-      if (!img.naturalWidth || !stage.clientWidth || annotation) return;
+      if (!img.naturalWidth || !stage.clientWidth) return;
       const oldWidth = img.naturalWidth * scale; const oldHeight = img.naturalHeight * scale;
       const x = pointer?.x ?? stage.clientWidth / 2; const y = pointer?.y ?? stage.clientHeight / 2;
       const oldLeft = Math.max(0, (canvas.clientWidth - oldWidth) / 2); const oldTop = Math.max(0, (canvas.clientHeight - oldHeight) / 2);
@@ -47,25 +45,14 @@ export default {
     img.addEventListener('click', () => { if (root.closest('.win')?.dataset.hadFocus === '') return; setZoom(mode === 'fit' ? 1 : 'fit'); });
     stage.addEventListener('wheel', (e) => { e.preventDefault(); const r = stage.getBoundingClientRect(); setZoom(scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), { x: e.clientX - r.left, y: e.clientY - r.top }); }, { passive: false });
     root.addEventListener('keydown', (e) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || annotation || e.target.closest('button,summary')) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest('button,summary')) return;
       if (['+', '=', '-', '0', '1'].includes(e.key)) { e.preventDefault(); setZoom(e.key === '0' ? 'fit' : e.key === '1' ? 1 : scale * (e.key === '-' ? 1 / 1.15 : 1.15)); }
     });
     const observer = new ResizeObserver(() => setZoom(mode === 'fit' ? 'fit' : scale)); observer.observe(stage);
-    const normal = [...root.children];
-    function restore() { annotation = null; root.replaceChildren(...normal); setZoom(mode === 'fit' ? 'fit' : scale); }
-    function startAnnotate() {
-      if (isViewOnly()) return;
-      if (!img.naturalWidth) return ctx.toast('The image has not loaded', 'warn');
-      annotation = createAnnotator({ img, onCancel: restore, onError: (e) => ctx.toast(`Could not save annotation: ${e.message}`, 'bad'), onSave: async (blob) => {
-        if (!blob) return ctx.toast('Could not encode the annotated image', 'bad');
-        const saved = await ctx.uploadImage(blob, `annotated-${panel.title}`); if (saved) restore();
-      } });
-      root.replaceChildren(...annotation.el.children);
-    }
     const show = (p) => {
       const changed = p.props.src !== panel.props.src; panel = p;
       name.textContent = p.props.src.split('/').pop(); name.title = sourcePath(); img.alt = p.title;
-      if (changed || !img.getAttribute('src')) { if (annotation) restore(); zoom.disabled = true; dimensions.textContent = ''; error.hidden = true; canvas.style.width = canvas.style.height = ''; img.style.width = img.style.height = ''; let source = p.props.src;
+      if (changed || !img.getAttribute('src')) { zoom.disabled = true; dimensions.textContent = ''; error.hidden = true; canvas.style.width = canvas.style.height = ''; img.style.width = img.style.height = ''; let source = p.props.src;
         if (isViewOnly() && source.startsWith('/')) {
           const prefix = `${ctx.uploadsDir?.() || ''}/`;
           const name = source.startsWith(prefix) ? source.slice(prefix.length) : null;
@@ -75,6 +62,6 @@ export default {
         img.src = urlFor(source); }
     };
     show(panel);
-    return { el: root, update: show, focus() { root.focus({ preventScroll: true }); }, isDirty: () => !!annotation?.count(), beforeClose: () => !annotation?.count() || window.confirm('Discard unsaved image annotations?'), destroy() { observer.disconnect(); } };
+    return { el: root, update: show, focus() { root.focus({ preventScroll: true }); }, destroy() { observer.disconnect(); } };
   },
 };
