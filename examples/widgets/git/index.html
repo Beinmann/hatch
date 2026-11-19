@@ -95,7 +95,7 @@
   #bar .cs{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted,#888)}
   #bar .cs.done{color:var(--ok)}#bar .cs.failed{color:var(--bad)}
 </style>
-<div id="bar" hidden><button id="commit" type="button"></button><span class="cs" id="cs"></span></div>
+<div id="bar" hidden><button id="commit" type="button"></button><button id="push" type="button" hidden></button><span class="cs" id="cs"></span></div>
 <div id="app"><div class="msg">loading...</div></div>
 <script src="/sdk.js"></script>
 <script src="parse.js"></script>
@@ -292,7 +292,33 @@
     cbtn.textContent = v.button.label; cbtn.disabled = v.button.disabled; cbtn.className = v.button.confirm ? 'confirm' : ''; cbtn.title = v.button.title || '';
     cstat.textContent = v.status ? v.status.text : ''; cstat.className = `cs ${v.status ? v.status.kind : ''}`; cstat.title = v.status ? v.status.text : '';
     clearTimeout(cTimer); if (cui.armedUntil > now) cTimer = setTimeout(updateBar, cui.armedUntil - now + 20);
+    updatePush(s, now);
   }
+  // ---- Push button: same two-click confirm; the `push` source runs `git push` and answers when it is done ----
+  const pbtn = document.getElementById('push');
+  let pui = { armedUntil: 0 }, pRunning = false, pTimer = null, pmsg = null;
+  function updatePush(s, now) {
+    const can = G.canPush(s) && !pRunning;
+    pui = G.commitStep(pui, 'tick', now, can || pRunning).ui;
+    const v = G.pushView({ can: G.canPush(s), armed: pui.armedUntil > now, running: pRunning });
+    pbtn.hidden = !s.remotes;
+    pbtn.textContent = v.label; pbtn.disabled = v.disabled; pbtn.className = v.confirm ? 'confirm' : ''; pbtn.title = v.title || '';
+    if (pmsg && pmsg.until > now) { cstat.textContent = pmsg.text; cstat.className = `cs ${pmsg.ok ? 'done' : 'failed'}`; cstat.title = pmsg.text; }
+    clearTimeout(pTimer); if (pui.armedUntil > now) pTimer = setTimeout(updateBar, pui.armedUntil - now + 20);
+  }
+  function pushEvent(ev) {
+    const s = last && !last.error ? G.parse(last.out) : null; if (!s || s.state !== 'ok') return;
+    const r = G.commitStep(pui, ev, Date.now(), G.canPush(s) && !pRunning); pui = r.ui; pmsg = null;
+    if (r.run) {
+      pRunning = true;
+      const done = (ok, text) => { pRunning = false; pmsg = { ok, text, until: Date.now() + 30000 }; updateBar(); };
+      hatch.call('push').then((v) => { const c = G.parsePushCall(v); done(c.ok, c.text); }, (e) => done(false, `Could not push: ${e && e.message ? e.message : e}`));
+    }
+    updateBar();
+  }
+  pbtn.addEventListener('click', () => pushEvent('click'));
+  pbtn.addEventListener('blur', () => pushEvent('blur'));
+
   function commitEvent(ev) {
     const s = last && !last.error ? G.parse(last.out) : null; if (!s || s.state !== 'ok') return;
     const dirty = s.conflicts.length + s.unstaged.length + s.staged.length + s.untracked.length > 0;
@@ -338,6 +364,6 @@
     if ((x = t.closest('.row[data-hash]'))) return openCommit(x.dataset.hash);
     if ((x = t.closest('.row[data-path]'))) openFile(x.dataset.mode, x.dataset.path, x.dataset.from, x.dataset.code);
   });
-  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !detail && cui.armedUntil) { commitEvent('escape'); return; }
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !detail && (cui.armedUntil || pui.armedUntil)) { commitEvent('escape'); pushEvent('escape'); return; }
     if (e.key === 'Escape' && detail && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); back(); } });
 </script>

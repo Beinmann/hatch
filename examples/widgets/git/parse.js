@@ -93,12 +93,13 @@
   /** text: the source output. Returns { state: 'ok' | 'norepo' | 'nodir', ... } */
   function parse(text) {
     const secs = { head: [], status: [], log: [], activity: [], commit: [] }; let cur = 'head';
-    const st = { state: 'ok', home: '', top: '', branch: { head: '', oid: '', upstream: '', ahead: 0, behind: 0 }, conflicts: [], unstaged: [], staged: [], untracked: [], more: 0, commits: [], activity: [], commit: { state: 'none' } };
+    const st = { state: 'ok', home: '', top: '', remotes: 0, branch: { head: '', oid: '', upstream: '', ahead: 0, behind: 0 }, conflicts: [], unstaged: [], staged: [], untracked: [], more: 0, commits: [], activity: [], commit: { state: 'none' } };
     for (const line of String(text || '').split('\n')) {
       if (line === '@@nodir') { st.state = 'nodir'; continue; }
       if (line === '@@norepo') { st.state = 'norepo'; continue; }
       if (line.startsWith('@@home ')) { st.home = line.slice(7); continue; }
       if (line.startsWith('@@top ')) { st.top = line.slice(6); continue; }
+      if (line.startsWith('@@remotes ')) { st.remotes = Number(line.slice(10)) || 0; continue; }
       if (line === '@@status') { cur = 'status'; continue; }
       if (line === '@@log') { cur = 'log'; continue; }
       if (line === '@@activity') { cur = 'activity'; continue; }
@@ -164,6 +165,25 @@
     else if (running) status = { kind: 'running', text: 'agent is working...' };
     else if (commit && (commit.state === 'done' || commit.state === 'failed') && (commit.rc === -1 || (now / 1000) - commit.ts < COMMIT_SHOW_S)) status = { kind: commit.state, text: commit.text };
     return { button: b, status };
+  }
+
+  // ---- Push button: runs `git push` through the `push` source (never forces); same two-click confirm as Commit ----
+  /** Answer of the `push` source -> { ok, text } */
+  function parsePushCall(v) {
+    const out = String((v && v.out) || '').trim();
+    if (out.startsWith('@@ok')) return { ok: true, text: out.slice(4).trim() || 'Pushed.' };
+    if (out.startsWith('@@fail')) return { ok: false, text: out.slice(6).trim().slice(0, 300) || 'git push failed.' };
+    if (out === '@@nodir') return { ok: false, text: 'The folder this widget points at no longer exists.' };
+    if (out === '@@norepo') return { ok: false, text: 'Not a git repository.' };
+    return { ok: false, text: String((v && v.error) || out || 'git push failed.').slice(0, 300) };
+  }
+  /** Whether there is something to push (and a remote to push to): unpushed commits, or a branch with no upstream yet (the push then sets it). */
+  const canPush = (st) => st.remotes > 0 && !!st.branch.head && !st.branch.head.startsWith('(') && (st.branch.upstream ? st.branch.ahead > 0 : true);
+  /** Button state: `running` while a push is in flight, `armed` after the first click. */
+  function pushView({ can, armed, running }) {
+    if (running) return { label: 'Pushing...', disabled: true };
+    if (!can) return { label: 'Push', disabled: true, title: 'Nothing to push' };
+    return armed ? { label: 'Confirm push?', disabled: false, confirm: true } : { label: 'Push', disabled: false, title: 'Push the current branch (asks to confirm; never forces)' };
   }
 
   /** Home replaced by ~, then the middle replaced by an ellipsis when longer than `max` characters. */
@@ -285,6 +305,6 @@
   const splitPath = (p) => { const i = p.lastIndexOf('/'); return i < 0 ? { dir: '', name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) }; };
   const baseName = (p) => String(p || '').replace(/\/+$/, '').split('/').pop() || '/';
 
-  const api = { commitStep, commitView, parseCommitCall, parseCommitState, CONFIRM_MS, diffArg, parseDiff, parseNumstat, parseShow, parseFileDiff, statBars, rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
+  const api = { parsePushCall, canPush, pushView, commitStep, commitView, parseCommitCall, parseCommitState, CONFIRM_MS, diffArg, parseDiff, parseNumstat, parseShow, parseFileDiff, statBars, rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GitParse = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

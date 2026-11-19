@@ -342,3 +342,21 @@ test('commit source with a stand-in claude: dir stays quoted, prompt is constant
   if (!real) assert.equal(execFileSync('/bin/sh', ['-c', src('commit').cmd.replaceAll('{{cwd}}', `'${d.replaceAll("'", `'\\''`)}'`)], { encoding: 'utf8', env: noClaude }).trim(), '@@noclaude');
   assert.equal(execFileSync('/bin/sh', ['-c', src('commit').cmd.replaceAll('{{cwd}}', `'${tmp()}/missing'`)], { encoding: 'utf8', env }).trim(), '@@nodir');
 });
+
+test('push button: parsePushCall, canPush and pushView', () => {
+  const raw2 = raw;
+  assert.deepEqual(JSON.parse(JSON.stringify(raw2.parsePushCall({ out: '@@ok main -> main\n' }))), { ok: true, text: 'main -> main' });
+  assert.equal(raw2.parsePushCall({ out: '@@fail rejected' }).ok, false);
+  assert.equal(raw2.parsePushCall({ out: '@@norepo' }).ok, false);
+  const b = (o) => ({ remotes: 1, branch: { head: 'main', upstream: '', ahead: 0, ...o } });
+  assert.equal(raw2.canPush({ ...b({}), remotes: 0 }), false, 'no remote: no push');
+  assert.equal(raw2.parse('@@remotes 0\n@@status\n').remotes, 0);
+  assert.equal(raw2.parse('@@remotes 2\n@@status\n').remotes, 2);
+  assert.equal(raw2.canPush(b({ upstream: 'origin/main', ahead: 0 })), false, 'in sync');
+  assert.equal(raw2.canPush(b({ upstream: 'origin/main', ahead: 2 })), true, 'unpushed commits');
+  assert.equal(raw2.canPush(b({})), true, 'no upstream yet');
+  assert.equal(raw2.canPush(b({ head: '(detached)' })), false);
+  assert.equal(raw2.pushView({ can: false }).disabled, true);
+  assert.equal(raw2.pushView({ can: true, armed: true }).label, 'Confirm push?');
+  assert.equal(raw2.pushView({ can: true, running: true }).label, 'Pushing...');
+});
