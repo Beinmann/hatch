@@ -415,9 +415,11 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const groups = groupWindows(mine.map((w) => w.panel), current);
     const layout = placeLoose(layouts.get(current), mine.map((w) => w.panel.id), groups.loose); layouts.set(current, layout);
     const looseWins = layout.filter((id) => id !== null).map((id) => wins.get(id));
+    // open spots stay visible (inert, not a .chip) so the chips after a closed window do not slide left
+    const loose = layout.map((id) => (id === null ? el('span', { class: 'chipgap', 'aria-hidden': 'true' }) : chipFor(wins.get(id))));
     slots = chipSlots(layout, groups.folders);
     const folders = groups.folders.map(folderChip);
-    chips.replaceChildren(...looseWins.map(chipFor), ...(folders.length && looseWins.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...folders);
+    chips.replaceChildren(...loose, ...(folders.length && looseWins.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...folders);
     const nHidden = mine.filter((w) => w.panel.minimized).length;
     if (hiddenCount) { hiddenCount.textContent = `${nHidden} hidden`; hiddenCount.hidden = !nHidden; }
     if (openFolder) paintPop(groups, chips.querySelector('.chip.folder.sel'));
