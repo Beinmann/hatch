@@ -68,7 +68,7 @@
   // Keyboard events do not bubble out of an iframe, so forward Hatch's reserved keys: Ctrl+Shift+G and P, Ctrl+G (and the older Ctrl+Shift+Space) and Ctrl+B, the leader chord
   // (sent in init) and, while the host says the leader is armed, every key after it. The host decides what they mean.
   let leader = null; let armed = false;
-  // Ctrl+1..9 jumps to a window; the host opts in (init numberKeys) so an older host never swallows Ctrl+digit.
+  // Ctrl+1..9 jumps to a window and Ctrl+0 selects the terminal; while the host says a folder prompt waits (it answers armed) every key after is forwarded; the host opts in (init numberKeys) so an older host never swallows Ctrl+digit.
   let numberKeys = false; let ctrlDown = false;
   const fields = (e) => ({ type: 'hatch-shortcut', code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey });
   const isLeader = (e) => !!leader && e.code === leader.code && !!e.ctrlKey === leader.ctrl && !!e.altKey === leader.alt && !!e.shiftKey === leader.shift && !!e.metaKey === leader.meta;
@@ -78,7 +78,7 @@
   addEventListener('keydown', (e) => {
     // Bare Ctrl is only reported (the widget still sees it); Ctrl+digit is taken like the other reserved chords.
     if (numberKeys && bareCtrl(e)) { ctrlDown = true; post(fields(e)); return; }
-    const digit = numberKeys && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^Digit[1-9]$/.test(e.code || '');
+    const digit = numberKeys && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && /^Digit[0-9]$/.test(e.code || '');
     const fold = (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyG') || (e.code === 'KeyP' && e.ctrlKey && !e.altKey && !e.metaKey)
       || (e.code === 'Space' && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) || (e.code === 'KeyG' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) || (e.code === 'KeyB' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && !editable(e.target));
     if (!fold && !digit && !armed && !isLeader(e)) return;

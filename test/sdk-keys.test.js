@@ -80,3 +80,13 @@ test('without numberKeys (older host) Ctrl+digit and Ctrl stay in the widget', (
   assert.ok(!s.key({ code: 'ControlLeft', key: 'Control', ctrlKey: true }));
   assert.equal(s.posted.filter((m) => m.type === 'hatch-shortcut').length, 0);
 });
+
+test('Ctrl+0 is taken like Ctrl+1..9, and while the host answers armed (folder prompt) bare digits and Escape are forwarded too', () => {
+  const s = sandbox(); s.message({ type: 'init', numberKeys: true });
+  assert.ok(s.key({ code: 'Digit0', key: '0', ctrlKey: true }), 'Ctrl+0 is taken');
+  assert.ok(!s.key({ code: 'Digit1', key: '1' }), 'a bare digit stays in the widget while nothing waits');
+  s.message({ type: 'hatch-leader', armed: true });
+  assert.ok(s.key({ code: 'Digit1', key: '1' }), 'a bare digit is forwarded while the host waits for one');
+  assert.ok(s.key({ code: 'Digit0', key: '0', ctrlKey: true }));
+  assert.ok(s.key({ code: 'Escape', key: 'Escape' }));
+});
