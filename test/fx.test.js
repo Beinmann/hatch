@@ -52,6 +52,16 @@ test('fx.json intensity: per effect, plain files still work, hand edits and bad 
   put({ effect: 'matrix', intensity: { matrix: 99.6 } }); assert.equal(readFx(dir).intensity, 100);
 });
 
+test('a removed effect still named in fx.json (waves) means off with a warning, and its saved intensity is ignored', () => {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, 'fx.json'), '{"effect":"waves","intensity":{"waves":70,"rain":20}}');
+  const r = readFx(dir);
+  assert.equal(r.effect, null); assert.deepEqual(r.intensities, { rain: 20 }); assert.match(r.problem, /waves.*unknown|unknown.*waves/);
+  assert.throws(() => setFx(dir, 'waves'), FxError);
+  assert.equal(setFx(dir, 'rain').effect, 'rain'); // switching to a valid effect repairs the file
+  assert.equal(readFx(dir).problem, undefined);
+});
+
 test('server: fx is in the snapshot, POST /api/fx saves it and emits an event, a hand edit is picked up, a bad file warns', async () => {
   const h = await startHatch();
   try {
@@ -407,7 +417,7 @@ test('every listed effect has a loader in public/fx.js and a module in public/fx
   }
 });
 
-test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, waves, ripples, breathing, constellation, bokeh) run on a stub canvas: still frame, animation, odd sizes and intensities, hidden tab, stop', async () => {
+test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, ripples, breathing, constellation, bokeh) run on a stub canvas: still frame, animation, odd sizes and intensities, hidden tab, stop', async () => {
   const calls = {}, bad = []; let queued = null, rafs = 0; const saved = { document: globalThis.document, raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame };
   const ctx2d = () => new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...a) => { calls[k] = (calls[k] || 0) + 1; if (a.some((v) => typeof v === 'number' && !Number.isFinite(v))) bad.push([k, a]); return String(k).startsWith('create') ? { addColorStop() {} } : undefined; }), set: (t, k, v) => { t[k] = v; return true; } });
   const canvas = (w, h) => { const c = ctx2d(); return { clientWidth: w, clientHeight: h, width: 0, height: 0, getContext: () => c, c }; };
@@ -417,7 +427,7 @@ test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, waves, 
     assert.deepEqual(levelOf(50), { count: 1, alpha: 1 }); assert.equal(levelOf(0).count, 0); assert.deepEqual(levelOf(NaN), levelOf(50));
     assert.equal(countFor(0, 0, 5000, levelOf(50)), 0); assert.equal(countFor(1000, 800, 5000, levelOf(0)), 0); assert.equal(countFor(1e7, 1e7, 5000, levelOf(100), 500), 500, 'capped');
     assert.ok(countFor(1000, 800, 5000, levelOf(100)) > countFor(1000, 800, 5000, levelOf(50)));
-    for (const name of ['snow', 'starfield', 'aurora', 'fireflies', 'embers', 'waves', 'ripples', 'breathing', 'constellation', 'bokeh']) {
+    for (const name of ['snow', 'starfield', 'aurora', 'fireflies', 'embers', 'ripples', 'breathing', 'constellation', 'bokeh']) {
       const mod = (await import(`../public/fx/${name}.js`)).default;
       for (const [w, h] of [[0, 0], [1, 1], [900, 500]]) {
         for (const intensity of [0, 50, 100, undefined]) {
