@@ -43,3 +43,11 @@ test('windowFocused: focus class or real focus inside the window', () => {
   assert.equal(windowFocused(node(false, 'frame'), 'other'), false);
   assert.equal(windowFocused(null, null), false);
 });
+
+test('number key: Ctrl+N minimizes a window that is already open, restores a minimized one', async () => {
+  const { numberKeyAction } = await import('../public/chip-click.js');
+  assert.equal(numberKeyAction({ minimized: true, onScreen: false, toggle: true }), 'restore');
+  assert.equal(numberKeyAction({ minimized: false, onScreen: true, toggle: true }), 'minimize');
+  assert.equal(numberKeyAction({ minimized: false, onScreen: false, toggle: true }), 'focus', 'docked with the dock closed: bring it forward');
+  assert.equal(numberKeyAction({ minimized: false, onScreen: true, toggle: false }), 'focus', 'leader + number never minimizes');
+});

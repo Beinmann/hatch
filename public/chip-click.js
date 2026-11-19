@@ -5,6 +5,13 @@ export function chipClickAction({ minimized, onScreen, focused }) {
   return onScreen && focused ? 'minimize' : 'focus';
 }
 
+// What Ctrl+N does for the window behind number N: restore a minimized one, minimize one that is already open (on screen),
+// otherwise (e.g. a docked window while the dock is closed) bring it forward. Without toggle (leader + number) it never minimizes.
+export function numberKeyAction({ minimized, onScreen, toggle }) {
+  if (minimized) return 'restore';
+  return toggle && onScreen ? 'minimize' : 'focus';
+}
+
 // A press on a chip moves focus before the click arrives (the page or the widget frame loses it, the window-focus handler may
 // blur the windows and repaint the bar). So the focused state is captured on pointerdown, before any of that, and the click
 // uses it; while a press is open the bar must not be rebuilt, or the button under the pointer is replaced and the click is lost.

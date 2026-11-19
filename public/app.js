@@ -795,14 +795,14 @@ addEventListener('keydown', (e) => {
 }, true);
 addEventListener('blur', () => { if (leader.armed) leaderDisarm(); }); // switching tabs must not leave it armed
 
-// ---- Ctrl+1..9 focuses that window at once (holding Ctrl alone shows no badges; the leader key does) ----
+// ---- Ctrl+1..9 focuses that window at once (again on an open window: minimizes it) (holding Ctrl alone shows no badges; the leader key does) ----
 // Only a digit with a window of that number is taken; every other Ctrl combo (Ctrl+C ...) goes on to the terminal untouched.
 // Browsers may reserve Ctrl+digit for tab switching (Firefox, Chrome on Linux/Windows); preventDefault is best effort there.
 addEventListener('keydown', (e) => {
   if (e.isComposing || leader.armed || isViewOnly()) return;
   if (chordMatches(leaderChord, e)) return;
   const n = numberChordDigit(e);
-  if (n && wm.focusNumber(n)) { e.preventDefault(); e.stopPropagation(); }
+  if (n && wm.focusNumber(n, true)) { e.preventDefault(); e.stopPropagation(); }
 }, true);
 
 // ---- peek: hold Alt alone (key in Settings) to hide the floating windows; a CSS class on <html>, so layout and window state are never touched ----
