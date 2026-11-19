@@ -21,7 +21,7 @@ import { initLimits } from './limits.js';
 import { createPalette } from './palette.js';
 import { calc, formatResult } from './calc.js';
 import { createPeek, DEFAULT_PEEK, peekKeyOrNull } from './peek.js';
-import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget, numberChordDigit } from './leader.js';
+import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget, numberChordDigit, isNumberChordZero } from './leader.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -807,12 +807,14 @@ addEventListener('keydown', (e) => {
 }, true);
 addEventListener('blur', () => { if (leader.armed) leaderDisarm(); }); // switching tabs must not leave it armed
 
-// ---- Ctrl+1..9 focuses that window at once (again on the focused window: minimizes it) (holding Ctrl alone shows no badges; the leader key does) ----
+// ---- Ctrl+0 focuses the terminal. Ctrl+1..9 focuses that window at once (again on the focused window: minimizes it; on a folder with several windows: see the prompt) (holding Ctrl alone shows no badges; the leader key does) ----
 // Only a digit with a window of that number is taken; every other Ctrl combo (Ctrl+C ...) goes on to the terminal untouched.
 // Browsers may reserve Ctrl+digit for tab switching (Firefox, Chrome on Linux/Windows); preventDefault is best effort there.
 addEventListener('keydown', (e) => {
   if (e.isComposing || leader.armed || isViewOnly()) return;
   if (chordMatches(leaderChord, e)) return;
+  if (wm.promptKey(e) === 'handled') { e.preventDefault(); e.stopPropagation(); return; } // the Ctrl+N sub-number prompt of a folder
+  if (isNumberChordZero(e)) { e.preventDefault(); e.stopPropagation(); wm.blur(); term.focus(); return; } // Ctrl+0: the terminal
   const n = numberChordDigit(e);
   if (n && wm.focusNumber(n, true)) { e.preventDefault(); e.stopPropagation(); }
 }, true);

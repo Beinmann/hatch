@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget, NUMBER_MODIFIER, isNumberModKey, numberChordDigit, isNumberModRelease } from '../public/leader.js';
+import { parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget, NUMBER_MODIFIER, isNumberModKey, numberChordDigit, isNumberChordZero, isNumberModRelease } from '../public/leader.js';
 
 test('parseChord reads modifier chords and rejects unusable ones', () => {
   assert.deepEqual(parseChord('Ctrl+Space'), { ctrl: true, alt: false, shift: false, meta: false, code: 'Space' });
@@ -111,4 +111,12 @@ test('number modifier: bare press shows numbers, modifier+digit jumps, other com
   assert.equal(numberChordDigit({ code: 'KeyC', ctrlKey: true }), 0, 'Ctrl+C goes to the terminal');
   assert.equal(numberChordDigit({ code: 'Digit3' }), 0);
   assert.ok(isNumberModRelease({ key: 'Control' }));
+});
+
+test('Ctrl+0 (nothing else held) is the terminal chord, Ctrl+Shift+0 and plain 0 are not', () => {
+  assert.equal(isNumberChordZero({ ctrlKey: true, code: 'Digit0' }), true);
+  assert.equal(isNumberChordZero({ ctrlKey: true, shiftKey: true, code: 'Digit0' }), false);
+  assert.equal(isNumberChordZero({ ctrlKey: true, altKey: true, code: 'Digit0' }), false);
+  assert.equal(isNumberChordZero({ code: 'Digit0' }), false);
+  assert.equal(isNumberChordZero({ ctrlKey: true, code: 'Digit1' }), false);
 });

@@ -5,7 +5,7 @@ import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE, joinPatches, reorderPatches, renamePatches, orderFolders, renameInOrder } from './folders.js';
-import { folderToggle, hidePlan, showPlan, subNumbers, windowLabel, folderLeaderOpen, folderLeaderKey } from './folder-keys.js';
+import { folderToggle, ctrlFolderPress, ctrlPromptKey, hidePlan, showPlan, subNumbers, windowLabel, folderLeaderOpen, folderLeaderKey } from './folder-keys.js';
 import { mergeOrder, moveItem, dropZone, placeLoose, chipSlots, slotNumber } from './taskbar-order.js';
 import { chipIcon, iconKey } from './chip-icons.js';
 import { chipClickAction, numberKeyAction, createChipPress, windowFocused } from './chip-click.js';
@@ -380,7 +380,8 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   let openFolder = null; let pop = null;
   let popWait = null; // leader + N opened the popover: member ids while it waits for a digit
-  const closePop = () => { openFolder = null; popWait = null; pop?.remove(); pop = null; };
+  let ctrlPrompt = null; // Ctrl+N opened the popover: { n, timer }; digits (with or without Ctrl) pick a member, 0 hides all
+  const closePop = () => { openFolder = null; popWait = null; if (ctrlPrompt) { clearTimeout(ctrlPrompt.timer); ctrlPrompt = null; } pop?.remove(); pop = null; };
   const toastBad = (e) => ctx.toast(e.message, 'bad');
   const folderMembers = (f) => f.ids.map((id) => wins.get(id)).filter(Boolean).map((w) => ({ id: w.panel.id, minimized: !!w.panel.minimized }));
   const raise = (w) => { if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); } focus(w); };
@@ -628,9 +629,9 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // With toggle (the Ctrl+N hotkey), a window that is open and already focused is minimized instead of refocused (an open one without focus is just raised).
   function focusNumber(n, toggle = false) {
     const s = slots[n - 1]; if (!s || s.kind === 'empty') return false;
-    if (s.kind === 'folder' && toggle) { // Ctrl+N: any member visible -> hide the folder, else show all and focus the last-focused member
+    if (s.kind === 'folder' && toggle && s.ids.length > 1) { // Ctrl+N: all hidden -> show all; any visible -> ask for a sub number (see promptKey)
       const f = folderByName(s.name); if (!f) return false;
-      if (folderToggle(folderMembers(f)) === 'hide') hideFolder(f); else showFolder(f);
+      if (ctrlFolderPress(folderMembers(f)) === 'show') showFolder(f); else startPrompt(n, f);
       return true;
     }
     const ws = (s.kind === 'win' ? [s.id] : s.ids).map((id) => wins.get(id)).filter(Boolean);
@@ -639,6 +640,26 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     if (act === 'restore' || act === 'minimize') { setMinimized(w.panel.id, act === 'restore' ? false : true).catch((e) => ctx.toast(e.message, 'bad')); return true; }
     if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); }
     focus(w); return true;
+  }
+  // Ctrl+N prompt: the numbered popover waits 5 s for a digit (pick N.m, 0 hides the folder, Esc or Ctrl+N again cancels).
+  const promptTimer = () => setTimeout(() => { if (ctrlPrompt) { closePop(); paintChips(); } }, 5000);
+  function startPrompt(n, f) {
+    closePop(); openFolder = f.name; popWait = f.ids.slice(); paintChips();
+    if (pop) ctrlPrompt = { n, timer: promptTimer() };
+  }
+  // A key while the Ctrl+N prompt waits. 'handled' = the page should swallow the key, 'pass' = let it through, false = no prompt open.
+  function promptKey(e) {
+    if (!ctrlPrompt || !popWait || !pop) return false;
+    const a = ctrlPromptKey(popWait, ctrlPrompt.n, e);
+    if (a.action === 'ignore') { // a modifier alone passes; a digit with no member is swallowed and restarts the wait
+      if (!/^(Digit|Numpad)/.test(e.code || '')) return 'pass';
+      clearTimeout(ctrlPrompt.timer); ctrlPrompt.timer = promptTimer(); return 'handled';
+    }
+    const f = folderByName(openFolder);
+    closePop(); paintChips();
+    if (a.action === 'pick') openMember(a.id);
+    else if (a.action === 'hide' && f) hideFolder(f);
+    return a.action === 'pass' ? 'pass' : 'handled';
   }
   // Leader + N: a loose chip as before; a folder with one member goes straight to it; with several it opens the numbered popover
   // and waits for a digit (see folderKey). Never hides anything. Returns 'wait' when a digit is expected next, else 'done' / false.
@@ -807,7 +828,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     },
     restore: (id) => setMinimized(id, false), minimize: (id) => setMinimized(id, true),
     close: requestClose, hasUnsavedChanges: () => [...wins.values()].some((w) => w.view.isDirty?.()),
-    focusDirection, setDefaultTransparency, focusedTransparency, setTransparency, moveFocused, resizeFocused, folderApi, focusNumber, leaderNumber, folderKey, closeFolderPop, focusNext, toggleMaximize, togglePlacement, showNumbers, setAlwaysNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current, focusedPanel: () => focused()?.panel || null,
+    focusDirection, setDefaultTransparency, focusedTransparency, setTransparency, moveFocused, resizeFocused, folderApi, focusNumber, leaderNumber, folderKey, promptKey, closeFolderPop, focusNext, toggleMaximize, togglePlacement, showNumbers, setAlwaysNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current, focusedPanel: () => focused()?.panel || null,
     // a window was just opened live (not from a snapshot): unfold the dock when it is docked
     revealDock(id) { const w = wins.get(id); if (w && w.panel.placement === 'dock' && !w.panel.minimized && w.panel.autoFocus !== false) { openDock(); paintChips(); paintDock(); } },
     refit,

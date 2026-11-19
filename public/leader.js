@@ -79,5 +79,9 @@ export function numberChordDigit(e, m = NUMBER_MODIFIER) {
   const d = /^Digit([1-9])$/.exec(e.code || '');
   return d ? Number(d[1]) : 0;
 }
+/** True for modifier+0 (nothing else held): jumps to the terminal. Main-row 0 only. */
+export function isNumberChordZero(e, m = NUMBER_MODIFIER) {
+  return modFlag(e, m) && !e.shiftKey && !e.metaKey && !['ctrl', 'alt'].filter((x) => x !== m).some((x) => modFlag(e, x)) && e.code === 'Digit0';
+}
 /** Whether releasing this key ends the number display. */
 export const isNumberModRelease = (e, m = NUMBER_MODIFIER) => e.key === MOD_KEY[m];

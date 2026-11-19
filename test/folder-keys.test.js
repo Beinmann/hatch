@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { folderToggle, hidePlan, showPlan, subNumbers, folderLeaderOpen, folderLeaderKey } from '../public/folder-keys.js';
+import { folderToggle, hidePlan, showPlan, subNumbers, folderLeaderOpen, folderLeaderKey, ctrlFolderPress, ctrlPromptKey } from '../public/folder-keys.js';
 import { groupWindows, joinPatches, reorderPatches, orderFolders, renameInOrder } from '../public/folders.js';
 import { chipSlots, slotNumber } from '../public/taskbar-order.js';
 import { startHatch } from './helpers.js';
@@ -86,4 +86,25 @@ test('server keeps folderOrder only with a folder and rejects bad patches', asyn
     const out = (await h.call('PATCH', `/api/panels/${p.id}`, { folder: null })).data;
     assert.equal(out.folderOrder, undefined);
   } finally { await h.close(); }
+});
+
+test('Ctrl+N press on a folder: all hidden shows all, any visible asks', () => {
+  assert.equal(ctrlFolderPress([M('a', true), M('b', true)]), 'show');
+  assert.equal(ctrlFolderPress([M('a', true), M('b')]), 'prompt');
+  assert.equal(ctrlFolderPress([M('a'), M('b')]), 'prompt');
+});
+
+test('Ctrl+N prompt keys: digit with or without Ctrl, 0 hides, Esc and Ctrl+N cancel', () => {
+  const ids = ['a', 'b', 'c'];
+  const k = (code, extra = {}) => ctrlPromptKey(ids, 5, { key: code.replace('Digit', ''), code, ...extra });
+  assert.deepEqual(k('Digit2'), { action: 'pick', id: 'b' });
+  assert.deepEqual(k('Digit2', { ctrlKey: true }), { action: 'pick', id: 'b' });
+  assert.deepEqual(k('Digit0'), { action: 'hide' });
+  assert.deepEqual(k('Digit0', { ctrlKey: true }), { action: 'hide' });
+  assert.deepEqual(k('Digit5', { ctrlKey: true }), { action: 'cancel' }); // Ctrl+N again
+  assert.deepEqual(k('Digit5'), { action: 'ignore' }); // plain 5: no member 5, stay open
+  assert.deepEqual(k('Digit7'), { action: 'ignore' });
+  assert.deepEqual(ctrlPromptKey(ids, 5, { key: 'Escape', code: 'Escape' }), { action: 'cancel' });
+  assert.deepEqual(ctrlPromptKey(ids, 5, { key: 'Control', code: 'ControlLeft' }), { action: 'ignore' });
+  assert.deepEqual(ctrlPromptKey(ids, 5, { key: 'a', code: 'KeyA' }), { action: 'pass' });
 });
