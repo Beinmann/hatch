@@ -59,7 +59,7 @@ widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget new NAME [--from example]  scaffold widgets/NAME: from an example (cpu, log-tail, ...) or, without --from, a minimal one
   widget add NAME [DIR|FILE] [--dock]  register and open (a single HTML file becomes index.html)
   (short forms: ha for hatch, w for widget, o for open: ha w o git; top-level open is for files, folders and URLs)
-  widget list | open NAME [--dock] | close NAME | rm NAME | reload NAME   (open git [--name LABEL] [--dir PATH]: a git window for PATH or the current directory; one per directory per workspace, an existing one is brought forward)
+  widget list | open NAME [--dock] | close NAME | rm NAME | reload NAME   (a widget open in another workspace gets its own copy NAME-WS here; close closes this workspace's; rm deletes the named widget folder only; open git [--name LABEL] [--dir PATH]: a git window for PATH or the current directory; one per directory per workspace, an existing one is brought forward)
   widget save [DIR] | restore [DIR]   write / apply the layout (name, position, size, placement) of this workspace's widgets in DIR/.hatch-widgets.json (default .);
                                     restore opens missing widgets, moves and resizes open ones, un-minimizes them, closes nothing
   widget boards                      list known board files (open or not); reopen one with widget open board FILE
@@ -539,7 +539,13 @@ async function main(argv) {
         need(fs.existsSync(path.join(target, 'index.html')), `widgets/${name}/index.html is missing: pass a file or directory, or run \`widget new ${name}\` first`);
       }
       if (sub === 'rm') { await api('DELETE', `/api/widgets/${name}`); return console.log(`removed ${name}`); }
-      if (sub === 'close') { await api('DELETE', `/api/panels/w-${name}`); return console.log(`closed ${name}`); }
+      if (sub === 'close') { // this workspace's window of the widget: the widget itself or its per-workspace copy (NAME-WS)
+        const here = ws || 'main'; const meta = new Map((await api('GET', '/api/widgets')).map((w) => [w.name, w]));
+        const wins = (await api('GET', '/api/panels')).filter((p) => p.type === 'widget' && (p.props?.name === name || meta.get(p.props?.name)?.copyOf === name));
+        const mine = wins.find((p) => (p.ws || 'main') === here) || wins.find((p) => p.sticky);
+        need(mine || !wins.length, `widget ${name} is not open in workspace ${here} (it is open in ${wins.map((p) => p.ws || 'main').join(', ')}); use --ws NAME`);
+        await api('DELETE', `/api/panels/${encodeURIComponent(mine ? mine.id : `w-${name}`)}`); return console.log(`closed ${mine ? mine.props.name : name}`);
+      }
       if (sub === 'reload') { await api('POST', `/api/widgets/${name}/reload`, {}); return console.log(`reloaded ${name}`); }
       // add and open: wait briefly for the watcher so the server knows the widget (it reads widget.json for defaults)
       await new Promise((r) => setTimeout(r, 250));

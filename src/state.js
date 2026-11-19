@@ -369,13 +369,45 @@ export function createState(dir, { emit = () => {}, poll = false, log = () => {}
     return `p${max + 1}`;
   }
 
+  /** The widget of this workspace that stands for `name`: `name` itself or one of its per-workspace copies (copyOf: name), if a window of it is open (or sticky) here. */
+  function widgetWindowIn(name, ws) {
+    const hit = [...panels.values()].find((p) => p.type === 'widget' && (p.ws || 'main') === ws && (p.props?.name === name || readWidgetMeta(p.props?.name)?.copyOf === name));
+    if (hit) return hit.props.name;
+    const sticky = panels.get(`w-${name}`);
+    return sticky?.sticky ? name : null;
+  }
+  /** A widget keeps one window per instance (id w-NAME). Opening it in a second workspace makes a copy of its folder as
+   *  NAME-WS (-2, -3 if taken): same code, empty data/, widget.json marked copyOf. An unused copy of this workspace is reused. */
+  function copyWidgetFor(name, ws) {
+    const base = readWidgetMeta(name)?.copyOf || name; // a copy of a copy is a copy of the original
+    const src = path.join(l.widgets, name);
+    const slug = String(ws).replace(/[^\w-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '') || 'ws';
+    const stem = `${base}-${slug}`.slice(0, 60);
+    let pick = null;
+    for (let i = 1; !pick; i++) {
+      const c = i === 1 ? stem : `${stem}-${i}`; const dest = path.join(l.widgets, c);
+      if (!fs.existsSync(dest)) { pick = c; fs.cpSync(src, dest, { recursive: true, filter: (f) => path.relative(src, f).split(path.sep)[0] !== 'data' && !f.endsWith('.bak') }); const mf = path.join(dest, 'widget.json'); const m = readWidgetMeta(name) || {}; atomicWrite(mf, `${JSON.stringify({ ...m, title: m.title || name, copyOf: base }, null, 2)}\n`); }
+      else if (readWidgetMeta(c)?.copyOf === base && !panels.has(`w-${c}`)) pick = c; // an earlier copy nobody shows right now
+    }
+    rescan();
+    return pick;
+  }
+
   /** Creates a panel file (or returns the existing singleton). Throws Error with .status 400 on bad input. */
   function createPanel(input) {
     const type = input?.type;
     const singleton = type === 'progress' ? (typeof input?.props?.plan === 'string' && NAME_RE.test(input.props.plan) ? `progress-${input.props.plan}` : 'progress') : type === 'terminal' && NAME_RE.test(String(input?.props?.name)) ? `t-${input.props.name}` : type === 'widget' && NAME_RE.test(String(input?.props?.name)) ? `w-${input.props.name}` : null;
+    if (type === 'widget' && singleton) {
+      // One window per widget per workspace: a widget open in another workspace is not moved here, this workspace gets its own copy
+      const mine = widgetWindowIn(input.props.name, input.ws || 'main');
+      if (mine && mine !== input.props.name) return createPanel({ ...input, props: { ...input.props, name: mine } });
+      const other = panels.get(singleton);
+      if (other && !other.sticky && (other.ws || 'main') !== (input.ws || 'main')) return createPanel({ ...input, title: input.title || readWidgetMeta(input.props.name)?.title || input.props.name, props: { ...input.props, name: copyWidgetFor(input.props.name, input.ws || 'main') } });
+    }
     if (singleton && panels.has(singleton)) {
       // An explicit open should bring a minimized singleton back, without resetting its saved geometry.
       const changes = { minimized: false, autoFocus: input.autoFocus !== false, activation: crypto.randomUUID(), ws: input.ws || 'main' };
+      if ((panels.get(singleton).ws || 'main') !== changes.ws) { changes.folder = null; changes.folderOrder = null; } // a folder belongs to its workspace: never carried along
       for (const key of ['maximized', 'w', 'h', 'placement']) if (input[key] !== undefined) changes[key] = input[key];
       return patchPanel(singleton, changes);
     }

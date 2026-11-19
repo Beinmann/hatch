@@ -92,7 +92,37 @@ function refreshProjectCopy(stateDir, name) {
   }
   const metaFile = path.join(dest, 'widget.json'); const old = readJson(metaFile) || {};
   const next = gitProjectMeta(readJson(path.join(src, 'widget.json')), old.dir, old.title || `Git: ${path.basename(old.dir)}`);
-  for (const k of ['w', 'h', 'placement']) if (old[k] !== undefined) next[k] = old[k]; // window size the user chose stays
+  for (const k of ['w', 'h', 'placement', 'copyOf']) if (old[k] !== undefined) next[k] = old[k]; // window size the user chose stays
+  const text = `${JSON.stringify(next, null, 2)}\n`;
+  if (!fs.existsSync(metaFile) || fs.readFileSync(metaFile, 'utf8') !== text) { if (fs.existsSync(metaFile)) fs.copyFileSync(metaFile, `${metaFile}.bak`); atomicWrite(metaFile, text); files.push('widget.json'); }
+  return { name, files, backups };
+}
+
+// ---- per-workspace copies ----
+// Opening a widget in a second workspace copies it as NAME-WS with copyOf: NAME in its widget.json (see state.js). They are
+// refreshed from the shipped example of the original, keeping their title, size and copyOf; data/ is never touched.
+/** Copies (name -> original) of shipped widgets; git project copies are handled by their own refresh. */
+export function workspaceCopies(stateDir) {
+  const root = path.join(stateDir, 'widgets'); if (!fs.existsSync(root)) return new Map();
+  const shipped = shippedWidgets(); const git = projectGitCopies(stateDir); const out = new Map();
+  for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!e.isDirectory() || git.includes(e.name)) continue;
+    const m = readJson(path.join(root, e.name, 'widget.json'));
+    if (m && typeof m.copyOf === 'string' && shipped.includes(m.copyOf)) out.set(e.name, m.copyOf);
+  }
+  return out;
+}
+function refreshWorkspaceCopy(stateDir, name, base) {
+  const src = path.join(EXAMPLES, base); const dest = path.join(stateDir, 'widgets', name); const files = []; const backups = [];
+  for (const f of walk(src)) {
+    if (f === 'widget.json' || f.split(path.sep)[0] === 'data') continue;
+    const to = path.join(dest, f); const next = fs.readFileSync(path.join(src, f));
+    if (fs.existsSync(to)) { const cur = fs.readFileSync(to); if (cur.equals(next)) continue; fs.writeFileSync(`${to}.bak`, cur); backups.push(f); }
+    fs.mkdirSync(path.dirname(to), { recursive: true }); fs.writeFileSync(to, next); files.push(f);
+  }
+  const metaFile = path.join(dest, 'widget.json'); const old = readJson(metaFile) || {};
+  const next = { ...readJson(path.join(src, 'widget.json')), copyOf: base };
+  for (const k of ['title', 'w', 'h', 'placement']) if (old[k] !== undefined) next[k] = old[k];
   const text = `${JSON.stringify(next, null, 2)}\n`;
   if (!fs.existsSync(metaFile) || fs.readFileSync(metaFile, 'utf8') !== text) { if (fs.existsSync(metaFile)) fs.copyFileSync(metaFile, `${metaFile}.bak`); atomicWrite(metaFile, text); files.push('widget.json'); }
   return { name, files, backups };
@@ -101,12 +131,12 @@ function refreshProjectCopy(stateDir, name) {
 /** names: widget names, or null for all. Returns { updated: [{name, files, backups}], unchanged: [name], missing: [name] }. */
 export function updateWidgets(stateDir, names = null) {
   const shipped = shippedWidgets();
-  const copies = projectGitCopies(stateDir);
-  const unknown = (names || []).filter((n) => !shipped.includes(n) && !copies.includes(n));
+  const copies = projectGitCopies(stateDir); const wsCopies = workspaceCopies(stateDir);
+  const unknown = (names || []).filter((n) => !shipped.includes(n) && !copies.includes(n) && !wsCopies.has(n));
   if (unknown.length) throw new Error(`no example widget ${unknown.join(', ')}; available: ${shipped.join(', ')}`);
   const res = { updated: [], unchanged: [], missing: [] };
   for (const name of names || shipped) {
-    if (copies.includes(name)) continue; // handled below
+    if (copies.includes(name) || wsCopies.has(name)) continue; // handled below
     const dest = path.join(stateDir, 'widgets', name);
     if (!fs.existsSync(dest)) { res.missing.push(name); continue; } // never opened in this instance: nothing to update
     const src = path.join(EXAMPLES, name); const files = []; const backups = [];
@@ -127,6 +157,12 @@ export function updateWidgets(stateDir, names = null) {
   // Per-project git copies: named directly, or refreshed along with "git" and --all
   for (const name of copies.filter((n) => !names || names.includes(n) || names.includes(GIT))) {
     const u = refreshProjectCopy(stateDir, name);
+    (u.files.length ? res.updated.push(u) : res.unchanged.push(name));
+  }
+  // Per-workspace copies: named directly, or refreshed along with their original and --all
+  for (const [name, base] of wsCopies) {
+    if (names && !names.includes(name) && !names.includes(base)) continue;
+    const u = refreshWorkspaceCopy(stateDir, name, base);
     (u.files.length ? res.updated.push(u) : res.unchanged.push(name));
   }
   return res;
