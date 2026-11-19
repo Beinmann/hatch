@@ -2,7 +2,7 @@
 // window files stay the source of truth and a hand edit works); a folder exists while it has at least one member in the
 // workspace. Folders are flat for now. Names have no "/" (see FOLDER_RE) so a path such as "a/b" could mean nesting later.
 // Pure helpers shared by the page and the CLI.
-import { mergeOrder, moveItem } from './taskbar-order.js';
+import { moveItem } from './taskbar-order.js';
 export const FOLDER_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 // Member order inside a folder: the optional integer `folderOrder` of each window (a hand edit works; a bad value counts as absent).
 // Windows without one keep the list order and come first, so old window files behave as before.
@@ -62,10 +62,3 @@ export function reorderPatches(panels, memberIds, id, beforeId) {
   const next = moveItem(memberIds, id, beforeId); const by = new Map(panels.map((p) => [p.id, p]));
   return next.map((x, i) => ({ id: x, folderOrder: i + 1 })).filter((u) => by.get(u.id)?.folderOrder !== u.folderOrder);
 }
-/** Folders in the user's dragged order (`saved` = names, per workspace). Unsaved ones keep their alphabetical order after the saved ones, so a first load looks as before. */
-export function orderFolders(folders, saved) {
-  const by = new Map(folders.map((f) => [f.name, f]));
-  return mergeOrder(saved, folders.map((f) => f.name)).map((n) => by.get(n));
-}
-/** The saved folder order after renaming `from` to `to`. */
-export const renameInOrder = (saved, from, to) => (Array.isArray(saved) ? saved.map((n) => (n === from ? to : n)) : []);

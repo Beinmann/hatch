@@ -309,8 +309,7 @@ function connectEvents() {
     warnings.clear(); for (const w of s.warnings) warnings.set(w.file, w.message);
     paintWarnings();
     const ids = new Set(s.panels.map((p) => p.id));
-    for (const p of wm.all()) if (!ids.has(p.id)) wm.remove(p.id);
-    for (const p of s.panels) wm.upsert(p);
+    wm.batch(() => { for (const p of wm.all()) if (!ids.has(p.id)) wm.remove(p.id); for (const p of s.panels) wm.upsert(p); });
     routeOnce();
     reportPresence();
   });
