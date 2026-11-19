@@ -43,3 +43,18 @@ export function folderLeaderKey(ids, e) {
   const hit = subNumbers(ids).find((s) => s.n === n);
   return hit ? { action: 'pick', id: hit.id } : { action: 'ignore' };
 }
+
+/**
+ * The number shown on a window's title bar: its slot number ("3") when loose, "N.m" for the m-th member of folder slot N
+ * (first 9 members only). '' when the window is not shown, is in no slot, its slot is 10 or higher, or it has no sub number.
+ * `slots` = chipSlots(...) ({ kind: 'win', id } | { kind: 'folder', ids } | { kind: 'empty' }), the same numbering as Ctrl+N.
+ */
+export function windowLabel(slots, id, shown = true) {
+  if (!shown) return '';
+  const i = slots.findIndex((s) => (s.kind === 'win' ? s.id === id : s.kind === 'folder' && s.ids.includes(id)));
+  if (i < 0 || i >= MAX_SUB) return '';
+  const s = slots[i];
+  if (s.kind === 'win') return String(i + 1);
+  const m = subNumbers(s.ids).find((x) => x.id === id);
+  return m ? `${i + 1}.${m.n}` : '';
+}

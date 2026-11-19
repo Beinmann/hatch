@@ -506,6 +506,8 @@ $('optLeader').addEventListener('change', (e) => {
   if (!c) { toast(`"${v}" is not a leader key. Use modifiers plus a key, for example Ctrl+Space, Ctrl+A or Alt+Space`, 'warn', 7000); e.target.value = store.get('leader', DEFAULT_LEADER); return; }
   store.set('leader', v); leaderChord = c; e.target.value = v; toast(`Leader key is now ${v}`);
 });
+$('optNums').checked = store.get('windowNumbers', true); wm.setAlwaysNumbers($('optNums').checked);
+$('optNums').addEventListener('change', (e) => { store.set('windowNumbers', e.target.checked); wm.setAlwaysNumbers(e.target.checked); });
 $('optSound').checked = store.get('sound', false);
 $('optSound').addEventListener('change', (e) => store.set('sound', e.target.checked));
 $('optNotify').addEventListener('click', async () => {

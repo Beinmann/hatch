@@ -5,7 +5,7 @@ import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE, joinPatches, reorderPatches, renamePatches, orderFolders, renameInOrder } from './folders.js';
-import { folderToggle, hidePlan, showPlan, subNumbers, folderLeaderOpen, folderLeaderKey } from './folder-keys.js';
+import { folderToggle, hidePlan, showPlan, subNumbers, windowLabel, folderLeaderOpen, folderLeaderKey } from './folder-keys.js';
 import { mergeOrder, moveItem, dropZone, placeLoose, chipSlots, slotNumber } from './taskbar-order.js';
 import { chipIcon, iconKey } from './chip-icons.js';
 import { chipClickAction, numberKeyAction, createChipPress, windowFocused } from './chip-click.js';
@@ -469,17 +469,22 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   let slots = []; // chip positions as last painted (see chipSlots); window numbers index into it
   let numbersOn = false;
-  // Hold-Ctrl / leader numbers: a small badge on every chip (minimized ones too) and the same number on the title bars of shown windows.
+  let alwaysNumbers = true; // Settings: number on every shown window's title bar, dimmed (emphasised while numbersOn)
+  // Title-bar numbers of shown windows: always (dimmed) when alwaysNumbers, else only while Ctrl/leader numbers are on (emphasised).
+  // Only while numbersOn: a small badge on every chip (minimized ones too).
   function paintNumbers() {
     chips.querySelectorAll('.cnum').forEach((n) => n.remove());
     for (const w of wins.values()) delete w.tb.dataset.n;
-    if (!numbersOn) return;
-    slots.slice(0, 9).forEach((s, i) => {
-      if (s.kind === 'empty') return;
-      const btn = s.kind === 'win' ? chips.querySelector(`.chip[data-id="${CSS.escape(s.id)}"]`) : chips.querySelector(`.chip.folder[data-folder="${CSS.escape(s.name)}"]`);
-      btn?.append(el('span', { class: 'cnum', 'aria-hidden': 'true' }, String(i + 1)));
-    });
-    for (const w of wins.values()) { const n = shown(w) ? slotNumber(slots, w.panel.id) : 0; if (n) w.tb.dataset.n = String(n); }
+    document.body.classList.toggle('numbers', numbersOn);
+    if (numbersOn) {
+      slots.slice(0, 9).forEach((s, i) => {
+        if (s.kind === 'empty') return;
+        const btn = s.kind === 'win' ? chips.querySelector(`.chip[data-id="${CSS.escape(s.id)}"]`) : chips.querySelector(`.chip.folder[data-folder="${CSS.escape(s.name)}"]`);
+        btn?.append(el('span', { class: 'cnum', 'aria-hidden': 'true' }, String(i + 1)));
+      });
+    }
+    if (!numbersOn && !alwaysNumbers) return;
+    for (const w of wins.values()) { const n = windowLabel(slots, w.panel.id, shown(w)); if (n) w.tb.dataset.n = n; }
   }
   const hiddenCount = chips.parentElement?.querySelector('#hiddencount');
   function paintChips() {
@@ -619,6 +624,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // Number n = the n-th chip of the taskbar, minimized or not (a folder chip counts as one). Ctrl+N on a minimized chip restores it;
   // on a folder chip it raises the folder's first shown window, or restores its first window when all are minimized.
   function showNumbers(on) { numbersOn = on; paintNumbers(); }
+  function setAlwaysNumbers(on) { alwaysNumbers = !!on; paintNumbers(); }
   // With toggle (the Ctrl+N hotkey), a window that is open and already focused is minimized instead of refocused (an open one without focus is just raised).
   function focusNumber(n, toggle = false) {
     const s = slots[n - 1]; if (!s || s.kind === 'empty') return false;
@@ -801,7 +807,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     },
     restore: (id) => setMinimized(id, false), minimize: (id) => setMinimized(id, true),
     close: requestClose, hasUnsavedChanges: () => [...wins.values()].some((w) => w.view.isDirty?.()),
-    focusDirection, setDefaultTransparency, focusedTransparency, setTransparency, moveFocused, resizeFocused, folderApi, focusNumber, leaderNumber, folderKey, closeFolderPop, focusNext, toggleMaximize, togglePlacement, showNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current, focusedPanel: () => focused()?.panel || null,
+    focusDirection, setDefaultTransparency, focusedTransparency, setTransparency, moveFocused, resizeFocused, folderApi, focusNumber, leaderNumber, folderKey, closeFolderPop, focusNext, toggleMaximize, togglePlacement, showNumbers, setAlwaysNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current, focusedPanel: () => focused()?.panel || null,
     // a window was just opened live (not from a snapshot): unfold the dock when it is docked
     revealDock(id) { const w = wins.get(id); if (w && w.panel.placement === 'dock' && !w.panel.minimized && w.panel.autoFocus !== false) { openDock(); paintChips(); paintDock(); } },
     refit,
