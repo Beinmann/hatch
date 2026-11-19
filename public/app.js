@@ -19,6 +19,7 @@ import trashPanel from './panels/trash.js';
 import { countAgents, agentChipView } from './agent-count.js';
 import { initLimits } from './limits.js';
 import { createPalette } from './palette.js';
+import { moreMenuItems, showWorkspaceChips, menuFocusIndex } from './more-menu.js';
 import { calc, formatResult } from './calc.js';
 import { createPeek, DEFAULT_PEEK, peekKeyOrNull } from './peek.js';
 import { DEFAULT_LEADER, REPEAT_MS, parseChord, chordMatches, leaderAction, isEnter, isPaletteKey, isTermKey, isPrefixKey, isTextTarget, numberChordDigit, isNumberChordZero } from './leader.js';
@@ -192,8 +193,7 @@ function openProgress() {
 function paintProgressStrip() {
   const { done, skipped, total, current, percent } = progressSummary(progressState.steps);
   $('progress-strip').hidden = !progressVisible;
-  $('progressbtn').setAttribute('aria-expanded', String(progressVisible));
-  $('progressbtn').classList.toggle('active', progressVisible);
+  const pb = $('progressbtn'); if (pb) { pb.setAttribute('aria-expanded', String(progressVisible)); pb.classList.toggle('active', progressVisible); }
   const segments = el('div', { class: 'strip-segments', 'aria-hidden': 'true' }, ...progressState.steps.map((s) => el('span', { class: s.status, title: `${s.title}: ${s.status}` })));
   $('progress-strip').replaceChildren(el('button', { type: 'button', class: 'strip-open', onclick: openProgress, title: 'Open progress details' },
     el('span', { class: 'strip-label' }, current?.status === 'blocked' ? 'Blocked' : current?.status === 'running' ? 'Now' : total && !current ? 'Complete' : 'Next'),
@@ -202,7 +202,6 @@ function paintProgressStrip() {
     el('button', { type: 'button', title: 'Fold progress strip (Ctrl+Shift+G)', 'aria-label': 'Fold progress strip', onclick: toggleProgress }, '⌃'));
 }
 function toggleProgress() { progressVisible = !progressVisible; store.set('progress-visible', progressVisible); paintProgressStrip(); }
-$('progressbtn').addEventListener('click', toggleProgress);
 progressListeners.add(paintProgressStrip);
 // Agents chip: counts progress plans with a running step (see agent-count.js); repaints on every plan change.
 function paintAgentChip() {
@@ -254,7 +253,7 @@ function paintWarnings() {
   if (!list.length) $('warnlist').hidden = true;
 }
 $('warnbtn').addEventListener('click', () => { $('warnlist').hidden = !$('warnlist').hidden; });
-$('setbtn').addEventListener('click', () => { $('settings').hidden = !$('settings').hidden; });
+const toggleSettings = () => { $('settings').hidden = !$('settings').hidden; };
 
 let srvSeen = Date.now(); let srvUp = true;
 // The server pings the event stream every 3 s; ~8 s of silence (or the browser's own offline event) marks it unreachable.
@@ -302,7 +301,7 @@ function connectEvents() {
     pendingAsks.length = 0; pendingAsks.push(...(s.asks || []));
     for (const id of askDrafts.keys()) if (!pendingAsks.some((question) => question.id === id)) askDrafts.delete(id);
     showAsk();
-    gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); $('conn').title = 'view-only mirror'; } loadCustom(s.info.custom); info = s.info; loadBell(); $('session').textContent = `tmux: ${s.info.session}`;
+    gotSnapshot = true; if (s.info.viewOnly) { document.body.classList.add('viewonly'); } loadCustom(s.info.custom); info = s.info; loadBell(); $('session').textContent = `tmux: ${s.info.session}`;
     setBackgrounds(s.backgrounds || {}); setWorkspaces(s.workspaces || [{ name: 'main', id: 'main' }]); presenceCounts = s.presence || {}; paintPresence(); applyTransparency(s.transparency); wm.setDefaultTransparency(s.windowTransparency); fxs = { ...(s.fxs || (s.fx?.effect ? { main: s.fx } : {})) }; applyFx();
     widgets.clear(); for (const w of s.widgets) widgets.set(w.name, w);
     progressState = s.progress; for (const f of progressListeners) f(progressState);
@@ -374,7 +373,6 @@ async function clipboardIn(text, label) {
 }
 
 // ---- terminal ----
-const conn = $('conn');
 // One terminal per workspace, created the first time the workspace is shown and kept connected afterwards (switching only
 // shows another one; the programs run in tmux either way). `term` stays one stable object that forwards to the shown one.
 let wsList = [{ name: 'main', id: 'main' }]; // workspaces [{ name, id }] from the server
@@ -382,7 +380,7 @@ const terms = new Map(); // workspace name -> { host, id, ctl, status, rc }
 let activeTerm = null;
 const term = new Proxy({}, { get: (_, k) => activeTerm?.[k], set: (_, k, v) => { if (activeTerm) activeTerm[k] = v; return true; } });
 const bellOnce = (() => { let last = 0; return () => { if (document.hidden && Date.now() - last > 10000) { last = Date.now(); notify({ text: 'Terminal bell', level: 'info' }); } }; })(); // a finished job that rings pings you when the tab is in the background; at most once per 10 s
-const paintStatus = (s) => { conn.textContent = s || ''; conn.className = `chip ${s === 'connected' ? 'ok' : s === 'connecting' ? '' : 'bad'}`; };
+const paintStatus = () => {}; // the terminal's own state shows in the terminal (reconnect bar); the header shows the server state only
 const paintReconnect = (msg) => { $('reconnect').hidden = !msg; if (msg) $('rcmsg').textContent = msg; };
 function makeTerm(w) {
   const host = el('div', { class: 'termhost' }); $('term').append(host);
@@ -532,8 +530,10 @@ let numbering = false; // leader w: chips show their number
 const wsNames = () => { const n = wsList.map((w) => w.name); const cur = wm.current(); return n.includes(cur) ? n : [...n, cur]; };
 function paintWorkspaces() {
   const cur = wm.current(); const names = wsNames();
+  $('wsbar').hidden = !showWorkspaceChips(names.length);
   $('wsbar').replaceChildren(...names.map((n, i) => el('button', { type: 'button', class: `chip${n === cur ? ' on' : ''}${attention.has(n) ? ' attn' : ''}`, title: `Workspace ${n}${attention.has(n) ? ' (something happened there)' : ''}`, onclick: () => switchWs(n) }, numbering && i < 9 ? `${i + 1} ${n}` : n)),
     el('button', { type: 'button', class: 'chip', title: 'New workspace', onclick: () => newWorkspace() }, '+'));
+  if (!$('moremenu').hidden) paintMoreMenu();
   document.title = cur === 'main' && names.length === 1 ? baseTitle : `${cur} · ${baseTitle}`;
 }
 const markAttention = (n) => { if (n !== wm.current() && !attention.has(n)) { attention.add(n); paintWorkspaces(); } };
@@ -1035,7 +1035,6 @@ const palette = createPalette({
 });
 // a prompt replacement: the real prompt() is unavailable in some embedded viewers and blocks the page
 function prompt2(msg) { return window.prompt(msg) || ''; }
-$('palbtn').addEventListener('click', () => palette.open());
 
 wm.setWorkspace('main'); paintWorkspaces(); // the right workspace is chosen after the first snapshot (URL hash, else last used)
 connectEvents();
@@ -1063,3 +1062,33 @@ window.hatchApp = { wm, term, api, widgets, wsNames, switchWs };
 // Claude plan limits in the header (hidden without the Claude CLI)
 const limitsUi = initLimits({ el, api, toast, node: $('limits') });
 if (!isViewOnly()) limitsUi.start();
+
+// ---- more-options menu (header, right): Commands, Progress, Settings and workspace management ----
+const moreActions = {
+  palette: () => palette.open(), progress: toggleProgress, settings: toggleSettings,
+  'ws-new': () => newWorkspace(), 'ws-rename': () => renameWorkspace(), 'ws-switch': () => pickWorkspace((n) => switchWs(n), { exclude: [wm.current()] }),
+};
+function paintMoreMenu() {
+  const items = moreMenuItems({ workspaces: wsNames().length, viewOnly: isViewOnly() });
+  $('moremenu').replaceChildren(...items.map((it) => {
+    if (!it) return el('hr', { role: 'separator' });
+    const b = el('button', { type: 'button', role: 'menuitem', id: it.id, tabindex: '-1', onclick: () => { closeMore(); moreActions[it.action](); } }, el('span', {}, it.label), it.hint ? el('span', { class: 'kbd' }, it.hint) : '');
+    if (it.id === 'progressbtn') { b.setAttribute('aria-expanded', String(progressVisible)); b.setAttribute('aria-controls', 'progress-strip'); b.classList.toggle('active', progressVisible); }
+    return b;
+  }));
+}
+const moreItems = () => [...$('moremenu').querySelectorAll('[role=menuitem]')];
+function closeMore(refocus = false) { $('moremenu').hidden = true; $('morebtn').setAttribute('aria-expanded', 'false'); if (refocus) $('morebtn').focus(); }
+function openMore(focusLast = false) {
+  paintMoreMenu(); $('moremenu').hidden = false; $('morebtn').setAttribute('aria-expanded', 'true');
+  const it = moreItems(); it[focusLast ? it.length - 1 : 0]?.focus();
+}
+$('morebtn').addEventListener('click', () => { if ($('moremenu').hidden) openMore(); else closeMore(); });
+$('morebtn').addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openMore(e.key === 'ArrowUp'); } });
+$('moremenu').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMore(true); return; }
+  if (e.key === 'Tab') { closeMore(); return; }
+  const it = moreItems(); const i = menuFocusIndex(e.key, it.indexOf(document.activeElement), it.length);
+  if (i >= 0) { e.preventDefault(); it[i].focus(); }
+});
+document.addEventListener('mousedown', (e) => { if (!$('moremenu').hidden && !$('morewrap').contains(e.target)) closeMore(); });

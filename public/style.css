@@ -234,16 +234,13 @@ html #taskbar,html.has-bg #taskbar,html.has-tr #taskbar{background:var(--surface
 #welcome h3{margin:0 0 6px;font-size:14px;display:flex;justify-content:space-between} #welcome ul{margin:0 0 8px;padding-left:18px} #welcome li{margin:2px 0} #welcome .row{display:flex;gap:6px;flex-wrap:wrap}
 body.zen #welcome{display:none}
 body.viewonly #bar::after{content:'VIEW ONLY';font:600 11px var(--mono);letter-spacing:.1em;color:var(--warn);border:1px solid var(--warn);border-radius:3px;padding:2px 8px;margin-left:8px}
-body.viewonly #palbtn,body.viewonly #keys,body.viewonly #hint,body.viewonly #welcome{display:none!important}
+body.viewonly #keys,body.viewonly #hint,body.viewonly #welcome{display:none!important}
 
 /* Compact chrome keeps the terminal as the working surface. */
 #bar{gap:8px;padding:5px 10px;min-height:36px;flex-wrap:nowrap;font-size:12px}
 #bar>button{background:transparent;border-color:transparent;font-size:12px;padding:3px 7px}
 #bar>button:hover,#bar>button.active{background:var(--accent-soft);color:var(--accent)}
-#conn{border:0;font-size:0;padding:0;width:7px;height:7px;background:var(--muted);border-radius:50%;flex:none}
-#conn.ok{background:var(--accent)}#conn.bad{background:var(--bad)}
 #session,#hint{display:none}
-#wsbar:has(button:nth-child(2):last-child){display:none}
 .win{border-radius:8px;box-shadow:0 12px 48px #0005}
 .win.focus{box-shadow:0 12px 48px #0006,0 0 0 1px var(--accent)}
 .win:focus{outline:none}
@@ -331,14 +328,27 @@ body.zen:not(.numbers) .win .tb[data-n]::before,html.peek body:not(.numbers) .wi
 #wsbar button.attn::after{content:"";display:inline-block;width:7px;height:7px;margin-left:6px;border-radius:50%;background:var(--warn,#f59e0b);vertical-align:middle}
 #wsnotice{cursor:pointer}
 button.danger:not(:disabled){background:#dc2626;color:#fff;border-color:#dc2626}
-#wsbar:has(button:nth-child(2):last-child){display:inline-flex}
+#wsbar[hidden]{display:none}
 
 .pathpop{position:fixed;z-index:60;max-width:min(90vw,520px);display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;box-shadow:0 4px 18px #0004}
 .pathpop code{font-family:var(--mono);font-size:12px;word-break:break-all;user-select:text}
 
-#srv{display:flex;align-items:center;gap:6px;font:12px var(--mono);color:var(--muted);margin:0 6px;white-space:nowrap}
+#srv{display:flex;align-items:center;gap:6px;font:12px var(--mono);color:var(--muted);margin:0;white-space:nowrap}
 #srv::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--ok,#3fb950)}
 #srv.down{color:var(--bad)} #srv.down::before{background:var(--bad)}
 
 /* warnings bell: list of {message, fix}; the fix is a command the user copies */
 #bell[hidden],#bellpop[hidden]{display:none} #bellpop{z-index:60;font-size:12px;max-width:min(480px,92vw)} #bellpop .bw{display:flex;flex-direction:column;gap:2px} #bellpop code{font:12px var(--mono);color:var(--accent);user-select:all;word-break:break-all}
+
+/* more-options menu and icon-only dock button */
+#bar>#dockbtn{display:inline-flex;align-items:center;padding:4px 6px}
+#dockbtn[hidden]{display:none}
+#morewrap{position:relative;display:inline-flex}
+#bar #morebtn{background:transparent;border-color:transparent;font-size:18px;line-height:1;padding:2px 8px}
+#bar #morebtn:hover,#bar #morebtn[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent)}
+#moremenu{right:0;top:100%;margin-top:4px;z-index:60;min-width:200px;padding:4px;gap:0;font-size:12px}
+#moremenu button{display:flex;justify-content:space-between;gap:24px;text-align:left;background:transparent;border-color:transparent;padding:6px 10px;white-space:nowrap}
+#moremenu button:hover,#moremenu button:focus-visible{background:var(--accent-soft);color:var(--accent)}
+#moremenu button.active{color:var(--accent)}
+#moremenu .kbd{color:var(--muted);font:11px var(--mono)}
+#moremenu hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}

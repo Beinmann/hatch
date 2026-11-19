@@ -16,7 +16,7 @@
 <body>
 <header id="bar">
   <strong class="brand">Hatch</strong>
-  <span id="conn" class="chip" title="terminal connection">connecting</span>
+  <span id="srv" class="srvdot" title="Hatch server reachable">online</span>
   <span id="session" class="muted"></span>
   <span id="fxwrap"><button id="fxhint" type="button" class="chip off" aria-expanded="false" aria-controls="fxpop" title="Background effect is off; click to choose one"><span class="fxdot" aria-hidden="true"></span><span id="fxname">fx: off</span></button>
   <div id="fxpop" class="menu" role="dialog" aria-label="Background effect" hidden>
@@ -29,14 +29,12 @@
   <span id="wsbar" class="chips" title="Workspaces: switch with the palette (workspace: switch) or leader ] [ / w 1-9"></span>
   <button id="wsnotice" type="button" class="chip warn" hidden></button>
   <span class="grow"></span>
-  <span id="srv" class="srvdot" title="Hatch server reachable">online</span>
   <button id="limits" type="button" hidden></button>
   <button id="bell" type="button" class="chip warn" hidden aria-expanded="false" aria-controls="bellpop" aria-label="Warnings: 0" title="Warnings"><span aria-hidden="true">&#128276;</span> <span id="bellcount">0</span></button>
   <button id="warnbtn" class="chip warn" hidden title="Files the page could not read"></button>
-  <button id="palbtn" type="button" title="Command palette (Ctrl+P, or leader key then p)">Commands</button>
-  <button id="progressbtn" type="button" title="Toggle progress (Ctrl+Shift+G)" aria-expanded="false" aria-controls="progress-strip">Progress</button>
-  <button id="dockbtn" type="button" title="Show or hide the dock">Dock</button>
-  <button id="setbtn" type="button" title="Settings">Settings</button>
+  <button id="dockbtn" type="button" title="Dock" aria-label="Dock"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="1.6"/><path d="M10 2.7v10.6"/><path d="M11.4 5.6h1.2M11.4 8h1.2M11.4 10.4h1.2" stroke-linecap="round"/></svg></button>
+  <span id="morewrap"><button id="morebtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moremenu" aria-label="More options" title="More options"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg></button>
+  <div id="moremenu" class="menu" role="menu" aria-label="More options" hidden></div></span>
   <div id="settings" class="menu" hidden>
     <label><input type="checkbox" id="optImage"> Show pasted images in a window</label>
     <label><input type="checkbox" id="optKeys"> Extra keys bar (Esc, Ctrl, arrows; for touch screens)</label>
