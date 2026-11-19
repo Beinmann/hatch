@@ -1,4 +1,4 @@
-// Breathing: two large soft glows (blue low left, teal high right) that swell and fade out of phase. Two radial gradients per frame.
+// Breathing: three large saturated glows (blue low left, teal high right, violet in the middle) that clearly swell and fade out of phase. Three radial gradients per frame.
 import { makeEffect } from './loop.js';
 
 function glow(ctx, w, h, x, y, r, rgb, a) {
@@ -14,9 +14,11 @@ export default makeEffect('breathing', {
       step(dt) { T += dt; },
       draw(ctx) {
         if (level.count <= 0) return;
-        const b = 0.5 + 0.5 * Math.sin(T * 0.5), b2 = 0.5 + 0.5 * Math.sin(T * 0.5 + 2.4), m = Math.max(w, h);
-        glow(ctx, w, h, w * 0.25, h * 0.8, m * (0.55 + 0.12 * b), '60,120,230', (0.05 + 0.07 * b) * level.alpha);
-        glow(ctx, w, h, w * 0.8, h * 0.25, m * (0.5 + 0.12 * b2), '60,220,190', (0.05 + 0.07 * b2) * level.alpha);
+        // Three saturated glows swell and fade out of phase (about a 9 s breath); at the default intensity each peaks around 0.4 alpha, still soft enough for text.
+        const ph = (o) => 0.5 + 0.5 * Math.sin(T * 0.7 + o), b = ph(0), b2 = ph(2.1), b3 = ph(4.2), m = Math.max(w, h);
+        glow(ctx, w, h, w * 0.22, h * 0.82, m * (0.5 + 0.3 * b), '50,110,255', (0.08 + 0.3 * b) * level.alpha);
+        glow(ctx, w, h, w * 0.82, h * 0.22, m * (0.45 + 0.3 * b2), '30,230,190', (0.08 + 0.3 * b2) * level.alpha);
+        glow(ctx, w, h, w * 0.55, h * 0.5, m * (0.35 + 0.25 * b3), '180,90,255', (0.05 + 0.24 * b3) * level.alpha);
       },
     };
   },
