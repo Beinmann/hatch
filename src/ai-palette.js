@@ -34,7 +34,7 @@ const COMMANDS = {
   log: { sub: null, usage: 'log [GIT-ARGS...]   (recent commits window)' },
   ports: { sub: null, usage: 'ports   (listening ports)' },
   notify: { sub: null, usage: 'notify "text" [--level info|warn|done]' },
-  folder: { sub: ['list', 'new', 'add', 'remove', 'rename'], usage: 'folder list | folder new NAME [WINDOW...] | folder add NAME WINDOW... | folder remove WINDOW... | folder rename OLD NEW' },
+  folder: { sub: ['list', 'new', 'add', 'remove', 'rename', 'show', 'hide'], usage: 'folder list | folder new NAME [WINDOW...] | folder add NAME WINDOW... | folder remove WINDOW... | folder rename OLD NEW | folder show NAME | folder hide NAME' },
   workspace: { sub: ['list', 'new'], usage: 'workspace list | workspace new NAME' },
   desktop: { sub: null, usage: 'desktop   (open a set of live gadgets)' },
 };

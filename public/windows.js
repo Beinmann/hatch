@@ -4,7 +4,8 @@ import { touch, pickAfterClose } from './focus-history.js';
 import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
-import { groupWindows, freeFolderName, folderOf, FOLDER_RE } from './folders.js';
+import { groupWindows, freeFolderName, folderOf, FOLDER_RE, joinPatches, reorderPatches, renamePatches, orderFolders, renameInOrder } from './folders.js';
+import { folderToggle, hidePlan, showPlan, subNumbers, folderLeaderOpen, folderLeaderKey } from './folder-keys.js';
 import { mergeOrder, moveItem, dropZone, placeLoose, chipSlots, slotNumber } from './taskbar-order.js';
 import { chipIcon, iconKey } from './chip-icons.js';
 import { chipClickAction, numberKeyAction, createChipPress, windowFocused } from './chip-click.js';
@@ -284,21 +285,62 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     try { localStorage.setItem(orderKey(), JSON.stringify(next)); } catch { /* storage may be blocked: the order lasts until reload */ }
     paintChips();
   }
+  // Folder chips keep the order the user dragged them into (names, per workspace, same storage as the loose layout). Folders
+  // not in the list yet (first load, new ones) come after the saved ones, alphabetical, so a new folder lands last.
+  const foldersKey = () => `hatch.taskbar.folders.${current}`;
+  const savedFolders = () => { try { const v = JSON.parse(localStorage.getItem(foldersKey())); return Array.isArray(v) ? v : []; } catch { return []; } };
+  const saveFolders = (names) => { try { localStorage.setItem(foldersKey(), JSON.stringify(names)); } catch { /* storage may be blocked: the order lasts until reload */ } };
+  const groupsNow = () => groupWindows([...wins.values()].map((x) => x.panel), current);
+  const orderedFolders = (groups = groupsNow()) => orderFolders(groups.folders, savedFolders());
+  function moveFolder(name, beforeName) {
+    const names = moveItem(orderedFolders().map((f) => f.name), name, beforeName);
+    saveFolders(names); paintChips();
+  }
+  let dragFolder = null; // the folder chip being dragged
   let dragId = null; // the window being dragged (dataTransfer content is unreadable during dragover)
   const clearMarks = () => chips.querySelectorAll('.ins-before,.ins-after,.drop').forEach((n) => n.classList.remove('ins-before', 'ins-after', 'drop'));
   const looseDrag = () => dragId && wins.has(dragId) && !folderOf(wins.get(dragId).panel);
-  const setFolder = (ids, folder) => Promise.all(ids.map((id) => patch(id, { folder }))).catch((e) => ctx.toast(e.message, 'bad'));
+  // Joining puts the windows at the end of the folder's member order; leaving clears it (the server drops folderOrder without a folder).
+  const setFolder = (ids, folder) => {
+    const all = [...wins.values()].map((x) => x.panel);
+    const patches = folder === null ? ids.map((id) => ({ id, folder: null })) : joinPatches(all, current, folder, ids);
+    return Promise.all(patches.map(({ id, ...f }) => patch(id, f))).catch((e) => ctx.toast(e.message, 'bad'));
+  };
+  // Ask for a folder name; null = cancelled or unusable (a toast says why).
+  function askFolderName(title, fallback, own) {
+    const to = (window.prompt(title, fallback) || '').trim();
+    if (!to) return null;
+    if (!FOLDER_RE.test(to)) { ctx.toast('A folder name is letters, digits, - and _', 'bad'); return null; }
+    if (groupsNow().folders.some((x) => x.name.toLowerCase() === to.toLowerCase() && x.name !== own)) { ctx.toast(`Folder ${to} already exists`, 'bad'); return null; }
+    return to;
+  }
+  function renameFolder(f) {
+    if (isViewOnly()) return;
+    const to = askFolderName('Rename folder', f.name, f.name);
+    if (!to || to === f.name) return;
+    const all = () => [...wins.values()].map((x) => x.panel);
+    saveFolders(renameInOrder(orderedFolders().map((x) => x.name), f.name, to));
+    if (openFolder === f.name) openFolder = to;
+    Promise.all(renamePatches(all(), current, f.name, to).map(({ id, ...x }) => patch(id, x))).catch((e) => ctx.toast(e.message, 'bad'));
+  }
   const dropOnChip = (btn, folderName) => {
     if (isViewOnly()) return;
-    const zoneOf = (e) => (folderName || !looseDrag() ? 'mid' : dropZone(btn.getBoundingClientRect(), e.clientX));
+    const zoneOf = (e) => (dragFolder ? (dropZone(btn.getBoundingClientRect(), e.clientX) === 'before' ? 'before' : 'after') : folderName || !looseDrag() ? 'mid' : dropZone(btn.getBoundingClientRect(), e.clientX));
     btn.addEventListener('dragover', (e) => {
-      if (!e.dataTransfer?.types.includes('text/x-hatch-window')) return;
+      if (dragFolder ? !folderName || folderName === dragFolder : !e.dataTransfer?.types.includes('text/x-hatch-window')) return; // folder chips only reorder among folder chips
       e.preventDefault(); clearMarks(); const z = zoneOf(e);
       btn.classList.add(z === 'mid' ? 'drop' : `ins-${z}`);
     });
     btn.addEventListener('dragleave', () => btn.classList.remove('drop', 'ins-before', 'ins-after'));
     btn.addEventListener('drop', (e) => {
       const z = zoneOf(e); clearMarks();
+      if (dragFolder) { // reorder folder chips
+        if (!folderName || folderName === dragFolder) return;
+        e.preventDefault();
+        const names = [...btn.parentElement.querySelectorAll('.chip.folder')].map((n) => n.dataset.folder);
+        moveFolder(dragFolder, z === 'before' ? folderName : (names[names.indexOf(folderName) + 1] || null));
+        return;
+      }
       const id = e.dataTransfer?.getData('text/x-hatch-window'); if (!id || !wins.has(id)) return;
       e.preventDefault();
       if (z !== 'mid') { // edge of a loose chip: reorder instead of joining a folder
@@ -310,7 +352,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       const all = [...wins.values()].map((x) => x.panel);
       if (folderName) { if (folderOf(wins.get(id).panel) !== folderName) setFolder([id], folderName); return; }
       const other = btn.dataset.id; if (!other || other === id) return;
-      const name = freeFolderName(all, current); setFolder([other, id], name);
+      const name = askFolderName('Name the new folder', freeFolderName(all, current)); if (name) setFolder([other, id], name);
     });
   };
   const draggable = (btn, id) => { if (isViewOnly()) return; btn.draggable = true; btn.addEventListener('dragend', () => { dragId = null; clearMarks(); }); btn.addEventListener('dragstart', (e) => { dragId = id; e.dataTransfer.setData('text/x-hatch-window', id); e.dataTransfer.effectAllowed = 'move'; }); };
@@ -337,42 +379,75 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     return btn;
   }
   let openFolder = null; let pop = null;
-  const closePop = () => { openFolder = null; pop?.remove(); pop = null; };
+  let popWait = null; // leader + N opened the popover: member ids while it waits for a digit
+  const closePop = () => { openFolder = null; popWait = null; pop?.remove(); pop = null; };
+  const toastBad = (e) => ctx.toast(e.message, 'bad');
+  const folderMembers = (f) => f.ids.map((id) => wins.get(id)).filter(Boolean).map((w) => ({ id: w.panel.id, minimized: !!w.panel.minimized }));
+  const raise = (w) => { if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); } focus(w); };
+  // Show all: restore every hidden member and leave the last-focused one on top. Hide all: minimize the visible ones.
+  async function showFolder(f) {
+    if (isViewOnly()) return;
+    const plan = showPlan(folderMembers(f), focusHistory);
+    try { for (const id of plan.restore) await setMinimized(id, false); } catch (e) { return toastBad(e); }
+    const top = wins.get(plan.top); if (top && !top.panel.minimized) raise(top);
+  }
+  const hideFolder = (f) => { if (!isViewOnly()) for (const id of hidePlan(folderMembers(f))) setMinimized(id, true).catch(toastBad); };
+  const folderByName = (name) => groupsNow().folders.find((x) => x.name === name);
   function folderChip(f) {
     const members = f.ids.map((id) => wins.get(id)).filter(Boolean);
-    const btn = el('button', { type: 'button', class: `chip folder${members.some((w) => w.node.classList.contains('focus')) ? ' ok' : ''}${openFolder === f.name ? ' sel' : ''}${members.every((w) => w.panel.minimized) ? ' min' : ''}`, 'data-folder': f.name, title: `Folder ${f.name} (${members.length}): click to list its windows`,
-      onclick: () => { if (openFolder === f.name) closePop(); else { openFolder = f.name; paintChips(); } } }, chipIcon('folder'), el('span', { class: 'nm' }, `${f.name} (${members.length})`));
+    const btn = el('button', { type: 'button', class: `chip folder${members.some((w) => w.node.classList.contains('focus')) ? ' ok' : ''}${openFolder === f.name ? ' sel' : ''}${members.every((w) => w.panel.minimized) ? ' min' : ''}`, 'data-folder': f.name, title: `Folder ${f.name} (${members.length}): click to list its windows, Shift+click shows all, Ctrl+click hides all, double-click renames, drag to reorder`,
+      onclick: (e) => {
+        if (e.shiftKey) { closePop(); paintChips(); showFolder(f); return; }
+        if (e.ctrlKey) { closePop(); paintChips(); hideFolder(f); return; }
+        if (openFolder === f.name) closePop(); else { openFolder = f.name; popWait = null; paintChips(); }
+      },
+      ondblclick: () => { closePop(); renameFolder(f); } }, chipIcon('folder'), el('span', { class: 'nm' }, `${f.name} (${members.length})`));
+    if (!isViewOnly()) { btn.draggable = true; btn.addEventListener('dragstart', (e) => { dragFolder = f.name; e.dataTransfer.setData('text/x-hatch-folder', f.name); e.dataTransfer.effectAllowed = 'move'; }); btn.addEventListener('dragend', () => { dragFolder = null; clearMarks(); }); }
     dropOnChip(btn, f.name);
     return btn;
   }
-  // The bubble above a folder chip: one row per member (click restores or raises it; the arrow takes it out of the folder),
-  // plus rename and dissolve. Rows can be dragged onto another folder chip to move the window there.
+  // The bubble above a folder chip: a header with the name and Rename, one row per member (click restores or raises it; the arrow takes it
+  // out of the folder; rows drag to reorder, or onto another folder chip), then Show all / Hide all / Ungroup all. Each row carries its
+  // fixed sub number (N.m, the first 9 members); a leader + N opens it and waits for that digit.
   function paintPop(groups, anchor) {
     pop?.remove(); pop = null;
     const f = groups.folders.find((x) => x.name === openFolder);
-    if (!f || !anchor) { openFolder = null; return; }
+    if (!f || !anchor) { openFolder = null; popWait = null; return; }
     const ro = isViewOnly();
+    const slotN = slotNumber(slots, f.ids[0]);
+    const subs = new Map(subNumbers(f.ids).map((x) => [x.id, x.n]));
     const rows = f.ids.map((id) => wins.get(id)).filter(Boolean).map((w) => {
-      const row = el('div', { class: `frow${w.panel.minimized ? ' min' : ''}` },
+      const sub = subs.get(w.panel.id);
+      const row = el('div', { class: `frow${w.panel.minimized ? ' min' : ''}`, 'data-id': w.panel.id },
+        ...(sub ? [el('span', { class: 'fnum', 'aria-hidden': 'true' }, slotN ? `${slotN}.${sub}` : String(sub))] : []),
         el('button', { type: 'button', class: 'fgo', title: w.panel.minimized ? 'Restore' : 'Bring to front', disabled: ro && w.panel.minimized, onclick: () => {
-          if (w.panel.minimized) setMinimized(w.panel.id, false).catch((e) => ctx.toast(e.message, 'bad'));
-          else { if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); } focus(w); }
+          if (w.panel.minimized) setMinimized(w.panel.id, false).catch(toastBad);
+          else raise(w);
           closePop(); paintChips();
         } }, w.panel.title + (w.panel.minimized ? ' (minimized)' : '')),
-        ...(ro ? [] : [el('button', { type: 'button', class: 'fout', title: 'Take out of the folder (back to the main bar)', onclick: () => setFolder([w.panel.id], null) }, '\u2197')]));
+        ...(ro ? [] : [el('button', { type: 'button', class: 'fout', title: 'Take out of the folder (back to the main bar)', onclick: () => setFolder([w.panel.id], null) }, '↗')]));
       draggable(row, w.panel.id);
+      if (!ro) { // reorder among this folder's rows: the upper half of a row drops before it, the lower half after it
+        const half = (e) => { const r = row.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 ? 'before' : 'after'; };
+        const mine = () => dragId && f.ids.includes(dragId) && dragId !== w.panel.id;
+        row.addEventListener('dragover', (e) => { if (!mine()) return; e.preventDefault(); pop.querySelectorAll('.ins-before,.ins-after').forEach((n) => n.classList.remove('ins-before', 'ins-after')); row.classList.add(`ins-${half(e)}`); });
+        row.addEventListener('dragleave', () => row.classList.remove('ins-before', 'ins-after'));
+        row.addEventListener('drop', (e) => {
+          if (!mine()) return; e.preventDefault(); row.classList.remove('ins-before', 'ins-after');
+          const at = f.ids.indexOf(w.panel.id);
+          const before = half(e) === 'before' ? w.panel.id : (f.ids[at + 1] || null);
+          Promise.all(reorderPatches([...wins.values()].map((x) => x.panel), f.ids, dragId, before).map(({ id, ...x }) => patch(id, x))).catch(toastBad);
+        });
+      }
       return row;
     });
+    const mem = folderMembers(f); const anyShown = mem.some((m) => !m.minimized); const anyHidden = mem.some((m) => m.minimized);
     const tools = ro ? [] : [el('div', { class: 'ftools' },
-      el('button', { type: 'button', onclick: () => {
-        const to = (window.prompt('Rename folder', f.name) || '').trim();
-        if (!to || to === f.name) return;
-        if (!FOLDER_RE.test(to)) return ctx.toast('A folder name is letters, digits, - and _', 'bad');
-        if (groups.folders.some((x) => x.name.toLowerCase() === to.toLowerCase())) return ctx.toast(`Folder ${to} already exists`, 'bad');
-        openFolder = to; setFolder(f.ids, to);
-      } }, 'Rename'),
+      el('button', { type: 'button', disabled: !anyHidden, title: 'Restore every member; the last-focused one ends up on top', onclick: () => { closePop(); paintChips(); showFolder(f); } }, 'Show all'),
+      el('button', { type: 'button', disabled: !anyShown, title: 'Minimize every member', onclick: () => { closePop(); paintChips(); hideFolder(f); } }, 'Hide all'),
       el('button', { type: 'button', title: 'Members go back to the main bar; no window is closed', onclick: () => { closePop(); setFolder(f.ids, null); } }, 'Ungroup all'))];
-    pop = el('div', { class: 'folderpop', role: 'dialog', 'aria-label': `Folder ${f.name}` }, el('div', { class: 'fhead' }, f.name), ...rows, ...tools);
+    const head = el('div', { class: 'fhead' }, el('span', { class: 'fname' }, f.name), ...(ro ? [] : [el('button', { type: 'button', class: 'frename', title: 'Rename this folder (double-click its chip does the same)', onclick: () => { closePop(); paintChips(); renameFolder(f); } }, 'Rename')]));
+    pop = el('div', { class: 'folderpop', role: 'dialog', 'aria-label': `Folder ${f.name}` }, head, ...rows, ...tools);
     document.body.append(pop);
     const r = anchor.getBoundingClientRect();
     pop.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - pop.offsetWidth - 4))}px`; pop.style.bottom = `${window.innerHeight - r.top + 4}px`;
@@ -417,8 +492,13 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const looseWins = layout.filter((id) => id !== null).map((id) => wins.get(id));
     // open spots stay visible (inert, not a .chip) so the chips after a closed window do not slide left
     const loose = layout.map((id) => (id === null ? el('span', { class: 'chipgap', 'aria-hidden': 'true' }) : chipFor(wins.get(id))));
-    slots = chipSlots(layout, groups.folders);
-    const folders = groups.folders.map(folderChip);
+    const ordered = orderedFolders(groups);
+    // Remember folders the first time they are seen, so a folder made later lands after them instead of sorting in alphabetically.
+    // Names that are not around right now stay in the list (windows may still be loading), so the user's order survives.
+    const known = savedFolders(); const fresh = ordered.map((f) => f.name).filter((n) => !known.includes(n));
+    if (fresh.length) saveFolders([...known, ...fresh]);
+    slots = chipSlots(layout, ordered);
+    const folders = ordered.map(folderChip);
     chips.replaceChildren(...loose, ...(folders.length && looseWins.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...folders);
     const nHidden = mine.filter((w) => w.panel.minimized).length;
     if (hiddenCount) { hiddenCount.textContent = `${nHidden} hidden`; hiddenCount.hidden = !nHidden; }
@@ -542,6 +622,11 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // With toggle (the Ctrl+N hotkey), a window that is open and already focused is minimized instead of refocused (an open one without focus is just raised).
   function focusNumber(n, toggle = false) {
     const s = slots[n - 1]; if (!s || s.kind === 'empty') return false;
+    if (s.kind === 'folder' && toggle) { // Ctrl+N: any member visible -> hide the folder, else show all and focus the last-focused member
+      const f = folderByName(s.name); if (!f) return false;
+      if (folderToggle(folderMembers(f)) === 'hide') hideFolder(f); else showFolder(f);
+      return true;
+    }
     const ws = (s.kind === 'win' ? [s.id] : s.ids).map((id) => wins.get(id)).filter(Boolean);
     const w = ws.find((x) => shown(x)) || ws[0]; if (!w) return false;
     const act = numberKeyAction({ minimized: !!w.panel.minimized, onScreen: onScreen(w), focused: windowFocused(w.node, document.activeElement), toggle });
@@ -549,6 +634,41 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); }
     focus(w); return true;
   }
+  // Leader + N: a loose chip as before; a folder with one member goes straight to it; with several it opens the numbered popover
+  // and waits for a digit (see folderKey). Never hides anything. Returns 'wait' when a digit is expected next, else 'done' / false.
+  function leaderNumber(n) {
+    const s = slots[n - 1]; if (!s || s.kind === 'empty') return false;
+    if (s.kind !== 'folder') return focusNumber(n, false) ? 'done' : false;
+    const f = folderByName(s.name); if (!f) return false;
+    const open = folderLeaderOpen(f.ids);
+    if (open.kind === 'none') return false;
+    if (open.kind === 'go') { openMember(open.id); return 'done'; }
+    openFolder = f.name; popWait = f.ids.slice(); paintChips(); return pop ? 'wait' : 'done';
+  }
+  function openMember(id) { const w = wins.get(id); if (!w) return; if (w.panel.minimized) setMinimized(id, false).catch(toastBad); else raise(w); }
+  // A key while the numbered popover waits: a digit picks that member, 0 shows all, Escape or another key cancels.
+  function folderKey(e) {
+    if (!popWait || !pop) return 'done';
+    const a = folderLeaderKey(popWait, e);
+    if (a.action === 'ignore') return 'wait';
+    const f = folderByName(openFolder);
+    closePop(); paintChips();
+    if (a.action === 'pick') openMember(a.id);
+    else if (a.action === 'all' && f) showFolder(f);
+    return 'done';
+  }
+  // Palette: folder new | rename | show | hide. New puts the focused window in a folder of the name you give.
+  const folderApi = {
+    names: () => orderedFolders().map((f) => f.name),
+    show: (name) => { const f = folderByName(name); if (f) showFolder(f); },
+    hide: (name) => { const f = folderByName(name); if (f) hideFolder(f); },
+    rename: (name) => { const f = folderByName(name); if (f) renameFolder(f); },
+    create: () => {
+      const w = focused(); if (!w || isViewOnly()) return ctx.toast('Focus a window first; it becomes the first member', 'info', 2000);
+      const name = askFolderName('Name the new folder', freeFolderName([...wins.values()].map((x) => x.panel), current)); if (name) setFolder([w.panel.id], name);
+    },
+  };
+  const closeFolderPop = () => { if (pop) { closePop(); paintChips(); } };
   // Leader Tab: raise the next visible window, docked ones included.
   function focusNext() { const list = numbered(); if (!list.length) return false; const i = list.findIndex((w) => w.node.classList.contains('focus')); focus(list[(i + 1) % list.length]); return true; }
   // Leader d: the title-bar dock/release button for the focused window. Returns 'dock', 'float', or null when no window is focused.
@@ -681,7 +801,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     },
     restore: (id) => setMinimized(id, false), minimize: (id) => setMinimized(id, true),
     close: requestClose, hasUnsavedChanges: () => [...wins.values()].some((w) => w.view.isDirty?.()),
-    focusDirection, setDefaultTransparency, focusedTransparency, setTransparency, moveFocused, resizeFocused, focusNumber, focusNext, toggleMaximize, togglePlacement, showNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current, focusedPanel: () => focused()?.panel || null,
+    focusDirection, setDefaultTransparency, focusedTransparency, setTransparency, moveFocused, resizeFocused, folderApi, focusNumber, leaderNumber, folderKey, closeFolderPop, focusNext, toggleMaximize, togglePlacement, showNumbers, selectableIds, startSelection, selectWindow, moveSelection, activate, setWorkspace, workspaces, current: () => current, focusedPanel: () => focused()?.panel || null,
     // a window was just opened live (not from a snapshot): unfold the dock when it is docked
     revealDock(id) { const w = wins.get(id); if (w && w.panel.placement === 'dock' && !w.panel.minimized && w.panel.autoFocus !== false) { openDock(); paintChips(); paintDock(); } },
     refit,

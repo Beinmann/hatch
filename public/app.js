@@ -665,7 +665,7 @@ function setWorkspaceBackground() {
 }
 
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number, Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused widget\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Hold Alt alone', 'Peek: hides the floating windows while held (dock, effects and background stay) (after about 0.2 s, so Alt+key chords do not flash); release brings everything back. Any other key ends it. Key is configurable in Settings'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+1 ... 9', 'Focuses that window at once; on the window that already has focus it minimizes it (the numbers show only after the leader key) (browsers that keep Ctrl+digit for tab switching may not deliver it)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a window\'s title bar into or out of the dock', 'Dock it at the previewed slot, or float it at the previewed outline; inside the dock it reorders (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+G (or Ctrl+Shift+Space)', 'Focus the terminal from anywhere (windows, widgets, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number (on a folder with several windows: then 1-9 picks one, 0 shows all), Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused widget\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window (Ctrl+h j k l resizes it)'], ['Click a folder chip', 'Opens its list (rows numbered N.1, N.2 ...; Rename, Show all, Hide all). Shift+click shows all members, Ctrl+click hides all, double-click renames, drag the chip to reorder folders, drag rows to reorder members'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Hold Alt alone', 'Peek: hides the floating windows while held (dock, effects and background stay) (after about 0.2 s, so Alt+key chords do not flash); release brings everything back. Any other key ends it. Key is configurable in Settings'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+1 ... 9', 'Focuses that window at once; on the window that already has focus it minimizes it. On a folder chip it hides the whole folder when any member is visible, otherwise shows all and focuses the last-focused member (the numbers show only after the leader key) (browsers that keep Ctrl+digit for tab switching may not deliver it)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a window\'s title bar into or out of the dock', 'Dock it at the previewed slot, or float it at the previewed outline; inside the dock it reorders (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+G (or Ctrl+Shift+Space)', 'Focus the terminal from anywhere (windows, widgets, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -713,9 +713,10 @@ addEventListener('keydown', (e) => {
 const leaderHint = el('div', { id: 'leaderhint', role: 'status', hidden: true });
 document.body.append(leaderHint);
 let leaderChord = parseChord(store.get('leader', DEFAULT_LEADER)) || parseChord(DEFAULT_LEADER);
-const leader = { armed: false, timer: null, dock: null, ws: false }; // dock: { id } while picking a window with Leader u
+const leader = { armed: false, timer: null, dock: null, ws: false, folder: false }; // folder: a numbered folder popover waits for a digit (leader + N) // dock: { id } while picking a window with Leader u
 function leaderDisarm() {
   leader.armed = false; leader.dock = null; leader.ws = false; clearTimeout(leader.timer);
+  if (leader.folder) { leader.folder = false; wm.closeFolderPop(); }
   if (numbering) { numbering = false; paintWorkspaces(); }
   leaderHint.hidden = true; wm.showNumbers(false); wm.selectWindow(null);
 }
@@ -745,7 +746,12 @@ function leaderWsKey(e) { // after leader w: a digit jumps to that workspace
   const n = a?.action === 'number' ? wsNames()[a.n - 1] : null;
   leaderDisarm(); if (n) switchWs(n);
 }
+function leaderFolderKey(e) { // after leader + N on a folder with several windows: digit picks a member, 0 all, Esc cancels
+  if (wm.folderKey(e) === 'wait') { clearTimeout(leader.timer); leader.timer = setTimeout(leaderDisarm, 5000); return; }
+  leader.folder = false; leaderDisarm();
+}
 function leaderKey(e) {
+  if (leader.folder) return leaderFolderKey(e);
   if (leader.dock) return leaderDockKey(e);
   if (leader.ws) return leaderWsKey(e);
   if (chordMatches(leaderChord, e)) return leaderArm(); // leader twice: stay in leader mode (the timer and hint restart)
@@ -755,7 +761,11 @@ function leaderKey(e) {
   const ro = isViewOnly();
   switch (a.action) {
     case 'focus': wm.focusDirection(a.dir, $('term'), () => term.focus()); break;
-    case 'number': wm.focusNumber(a.n); break;
+    case 'number': {
+      if (wm.leaderNumber(a.n) !== 'wait') break;
+      leader.folder = true; wm.showNumbers(false); leaderHint.textContent = 'window number in the folder (0 = show all, Esc cancels)';
+      clearTimeout(leader.timer); leader.timer = setTimeout(leaderDisarm, 5000); return;
+    }
     case 'next': wm.focusNext(); break;
     case 'terminal': wm.blur(); term.focus(); break;
     case 'close': if (!ro) wm.dismiss(); break; // no confirmation; the trash window can bring it back (unsaved editor or note changes still ask)
@@ -958,6 +968,8 @@ const palette = createPalette({
         add('Empty trash of closed windows', `${trash.length} kept`, () => api('DELETE', '/api/trash').then((r) => toast(`Trash emptied (${r.removed})`, 'info', 2500)));
       }
     } catch { /* no trash */ }
+    add('Folder: new (focused window)...', 'taskbar folder', () => wm.folderApi.create());
+    for (const n of wm.folderApi.names()) { add(`Folder ${n}: show all`, 'restore every window', () => wm.folderApi.show(n)); add(`Folder ${n}: hide all`, 'minimize every window', () => wm.folderApi.hide(n)); add(`Folder ${n}: rename...`, '', () => wm.folderApi.rename(n)); }
     add('Tile floating windows', '', tileWindows);
     add('Minimize all windows', '', () => allPanels((p) => ctx.patch(p.id, { minimized: true })));
     add('Restore all windows', '', () => allPanels((p) => ctx.patch(p.id, { minimized: false })));

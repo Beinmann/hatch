@@ -21,7 +21,7 @@ import * as wsapi from '../src/workspaces.js';
 import * as transparency from '../src/transparency.js';
 import { setFx, readFx, FxError, EFFECTS } from '../src/fx.js';
 import { parseEvery } from '../src/schedules.js';
-import { groupWindows, resolveWindow, folderNameProblem, deletePatches, renamePatches, folderOf } from '../public/folders.js';
+import { groupWindows, resolveWindow, folderNameProblem, deletePatches, renamePatches, folderOf, joinPatches } from '../public/folders.js';
 import { LAYOUT_FILE, entriesFromPanels, writeLayout, readLayout } from '../src/widget-layout.js';
 
 // Server commands used to live under `hatch`. Forward them to `hatch-server` with a one-line notice so running setups,
@@ -115,6 +115,8 @@ folders (a named group in the taskbar: a minimized member goes back into its fol
   folder add NAME WINDOW...         add windows to a folder (moves them out of any other folder)
   folder remove WINDOW...           take windows out of their folder, back to the main bar
   folder rename OLD NEW             rename a folder
+  folder show NAME                  restore every minimized member of a folder
+  folder hide NAME                  minimize every member of a folder
   folder delete NAME                dissolve a folder; its members go back to the main bar (no window is closed)
 workspaces (named sets of windows with their own terminal and background, in this one instance)
   workspace list                    names, window counts, which have a background
@@ -853,7 +855,7 @@ async function main(argv) {
       catch (e) { if (e instanceof FxError) throw new CliError(e.message); throw e; }
     }
     case 'folder': {
-      const usage = 'usage: folder list | new NAME [WINDOW...] | add NAME WINDOW... | remove WINDOW... | rename OLD NEW | delete NAME';
+      const usage = 'usage: folder list | new NAME [WINDOW...] | add NAME WINDOW... | remove WINDOW... | rename OLD NEW | show NAME | hide NAME | delete NAME';
       const fws = ws || 'main'; const enc = encodeURIComponent;
       const panels = await api('GET', '/api/panels');
       const find = (ref) => { try { return resolveWindow(panels, fws, ref); } catch (e) { throw new CliError(e.message); } };
@@ -870,7 +872,7 @@ async function main(argv) {
         if (sub === 'new') need(!known(rest[0]), `folder ${rest[0]} already exists; add to it with \`folder add ${rest[0]} WINDOW\``);
         if (sub === 'add') need(known(rest[0]), `no folder ${rest[0]} in workspace ${fws}; create it with \`folder new ${rest[0]} WINDOW\``);
         const ids = rest.slice(1).map((r) => find(r).id);
-        await setFolder(ids, rest[0]);
+        await Promise.all(joinPatches(panels, fws, rest[0], ids).map(({ id, ...f }) => api('PATCH', `/api/panels/${enc(id)}`, f)));
         return console.log(ids.length ? `${ids.length} window${ids.length === 1 ? '' : 's'} in folder ${rest[0]}` : `folders exist only while they hold a window; add one with \`folder add ${rest[0]} WINDOW\``);
       }
       if (sub === 'remove') {
@@ -883,6 +885,13 @@ async function main(argv) {
         need(rest[0] && rest[1], usage); badName(rest[1]); need(known(rest[0]), `no folder ${rest[0]} in workspace ${fws}`); need(!known(rest[1]), `folder ${rest[1]} already exists`);
         await Promise.all(renamePatches(panels, fws, rest[0], rest[1]).map((u) => api('PATCH', `/api/panels/${enc(u.id)}`, { folder: u.folder })));
         return console.log(`folder ${rest[0]} is now ${rest[1]}`);
+      }
+      if (sub === 'show' || sub === 'hide') {
+        need(rest[0], usage); const f = known(rest[0]); need(f, `no folder ${rest[0]} in workspace ${fws}`);
+        const hide = sub === 'hide'; const by = new Map(panels.map((p) => [p.id, p]));
+        const ids = f.ids.filter((id) => (by.get(id).minimized === true) !== hide);
+        await Promise.all(ids.map((id) => api('PATCH', `/api/panels/${enc(id)}`, { minimized: hide })));
+        return console.log(`folder ${rest[0]}: ${ids.length} window${ids.length === 1 ? '' : 's'} ${hide ? 'minimized' : 'restored'}`);
       }
       if (sub === 'delete') {
         need(rest[0], usage); need(known(rest[0]), `no folder ${rest[0]} in workspace ${fws}`);
