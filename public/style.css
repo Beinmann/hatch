@@ -40,7 +40,7 @@ html.has-bg #bar,html.has-bg #hint{background:color-mix(in srgb,var(--surface) 8
 /* transparency (--opa = 100 - percent, set by app.js): terminal and panel backgrounds; always active, so 0 is fully opaque (the image is hidden behind them) and overrides the has-bg tints above */
 html.has-tr #termwrap{background:color-mix(in srgb,var(--term) var(--opa),transparent)} html.has-tr #dock{background:color-mix(in srgb,var(--term) var(--opa),transparent)} /* the dock backdrop uses the terminal's tint, so only the split line separates them; the fx canvas lives inside #termwrap only */
 html.has-tr #term .xterm,html.has-tr #term .xterm-viewport,html.has-tr #term .xterm-screen{background-color:transparent!important}
-html.has-tr #bar,html.has-tr #hint,html.has-tr #keys,html.has-tr #taskbar,html.has-tr #progress-strip,html.has-tr .win,html.has-tr .win iframe{background:color-mix(in srgb,var(--surface) var(--opa),transparent)}
+html.has-tr #bar,html.has-tr #hint,html.has-tr #keys,html.has-tr #progress-strip,html.has-tr .win,html.has-tr .win iframe{background:color-mix(in srgb,var(--surface) var(--opa),transparent)}
 html.has-tr .win .tb{background:color-mix(in srgb,var(--bg) var(--opa),transparent)}
 button{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:3px 9px;cursor:pointer}
 button:hover{border-color:var(--accent)}
@@ -186,7 +186,8 @@ body.zen #taskbar{display:none}
 /* Peek (hold Alt alone): only the floating windows are made invisible; the dock, fx layer and background image stay. visibility, not display, so nothing reflows or refits and the layout comes back untouched. */
 html.peek #floats{visibility:hidden!important}
 /* taskbar: Windows-style. Icon + name per window; on screen = tinted with an accent underline (the focused one a longer one), minimized = faded icon, dimmed italic label and a short grey dash; "N hidden" on the right. */
-#taskbar{border-top:1px solid var(--line);background:var(--surface);padding:0 6px;min-height:42px;gap:2px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
+html #taskbar,html.has-bg #taskbar,html.has-tr #taskbar{background:var(--surface)} /* always solid, whatever the transparency or background setting; the chips' tints are mixed against the surface, so they must sit on a solid bar */
+#taskbar{border-top:1px solid var(--line);padding:0 6px;min-height:42px;gap:2px;display:flex;align-items:stretch;overflow-x:auto;scrollbar-width:thin;flex:none}
 #chips{display:flex;align-items:stretch;gap:2px;flex-wrap:nowrap;max-width:none;overflow:visible}
 #chips button{position:relative;display:flex;align-items:center;gap:7px;font:12px var(--mono);white-space:nowrap;flex:none;width:160px;box-sizing:border-box;cursor:pointer;border:0;border-radius:6px;margin:4px 0;background:transparent;color:var(--tc,var(--fg));padding:0 12px 0 10px;transition:background .12s,color .12s}
 #chips button .cico{width:15px;height:15px;flex:none}
