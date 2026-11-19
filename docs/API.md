@@ -109,7 +109,7 @@ input and resize before their first events snapshot.
 `/proxy/PORT/path` forwards (HTTP and WebSocket upgrade) to `127.0.0.1:PORT` on the box; needs the token.
 
 
-### Popup window preferences
+### Widget window preferences
 
 Panel JSON also accepts `maximized: true` and `autoFocus: false`. These survive reloads.
 PATCH either field to change it.

@@ -52,7 +52,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Terminal find (Ctrl+Shift+F) | 024 | terminal.js | yes | |
 | Leader key window control (Ctrl+Space, then h/j/k/l, 1-9, Tab, t, q, m, u, s toggle dock, d dock or release, Shift/Ctrl+hjkl, o per-window transparency, f, a, p; configurable in Settings) | 142 | leader.js, direction.js, windows.js, app.js | key mapping and focus selection | see ticket Summary for what was browser-checked |
 | Move focused window by keyboard (leader Shift+h/j/k/l) | 134 | windows.js, app.js | no | not browser-tested |
-| Restore minimized popup by keyboard (leader u) | 135 | restore.js, windows.js, app.js | selection logic only | not browser-tested |
+| Restore minimized widget by keyboard (leader u) | 135 | restore.js, windows.js, app.js | selection logic only | not browser-tested |
 | curl window, docker widget | 060 | ui.js, examples/widgets/docker | curl tested, docker not | |
 | Scheduled checks (every) | 059 | src/schedules.js | CLI + tests | |
 | Export / import of your setup | 076 | ui.js | tests | |

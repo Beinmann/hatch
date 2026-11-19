@@ -11,7 +11,7 @@ import { chipClickAction, createChipPress, windowFocused } from './chip-click.js
 import { fitFloat, clampMove, clampResize } from './fit.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
 // (stacked in the right column). Geometry changes are written back to the panel file (debounced), so the layout
-// survives reloads. New and restored popups take focus; the terminal has an explicit focus shortcut.
+// survives reloads. New and restored widgets take focus; the terminal has an explicit focus shortcut.
 const SAVE_MS = 300;
 const MIN_W = 180; const MIN_H = 90;
 
@@ -431,7 +431,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const old = w.panel; const heldFocus = w.node.contains(document.activeElement); w.panel = panel;
     if (old.title !== panel.title) w.title.textContent = panel.title;
     if (old.placement !== panel.placement) {
-      // Preserve the view: rebuilding discards unsaved editor buffers and other local popup state.
+      // Preserve the view: rebuilding discards unsaved editor buffers and other local widget state.
       w.tb.querySelector('button').textContent = panel.placement === 'dock' ? '⇱' : '⇲';
       mount(w); if (panel.autoFocus !== false) focus(w);
     } else {
@@ -663,7 +663,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
       if (!w) return;
       Promise.resolve(minimize ? setMinimized(w.panel.id, true) : requestClose(w.panel.id)).catch((e) => ctx.toast(e.message, 'bad'));
     },
-    // Leader u: restore the most recently minimized popup of this workspace; false when there is none.
+    // Leader u: restore the most recently minimized widget of this workspace; false when there is none.
     restoreNext() {
       if (isViewOnly()) return false;
       const p = pickRestore([...wins.values()].map((w) => w.panel), minOrder, current); if (!p) return false;

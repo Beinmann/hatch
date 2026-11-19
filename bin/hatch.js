@@ -67,7 +67,7 @@ widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget screenshot NAME [--out FILE.png] [--abstract] [--scale N]   PNG of an open board or widget window, drawn by the open browser tab (no headless browser; fails if no tab is open). NAME: window id, widget name, or board file name. Default 2x; --abstract replaces text with grey bars (layout and colors only). Prints the path, so an agent can read the PNG
   widget examples                   list the example widgets (also in the palette)
   widget generate "DESCRIPTION" [--name N]   ask \`claude -p\` to write a widget from a description, then open it
-                                    (alias: popup generate; set HATCH_CLAUDE to use another claude binary)
+                                    (set HATCH_CLAUDE to use another claude binary)
 panels
   term NAME [--cmd CMD]             another terminal in a window (its own tmux session; --cmd runs a command first)
   files [DIR]                       file browser (open images and text files, download, drop to upload)
@@ -164,7 +164,7 @@ In index.html load the helper and subscribe:
   <script>hatch.on('cpu', (v) => { el.textContent = v.total + '%'; });</script>
 hatch.on(source, fn) | hatch.off(source) | hatch.resize(w, h) | hatch.log(text) | hatch.theme (bg fg accent mono)
 Editing any file in the widget directory reloads the widget in the page.
-hatch widget open NAME --dock opens it in the dock column instead of as a floating window (also: widget add, widget generate, popup open).`;
+hatch widget open NAME --dock opens it in the dock column instead of as a floating window (also: widget add, widget generate).`;
 
 function parse(argv) {
   const o = { _: [] };
@@ -414,18 +414,18 @@ async function main(argv) {
       const name = rest[0];
       if (rawCmd === 'popup' && sub === 'list') {
         const list = await api('GET', '/api/panels');
-        return say(o, list, list.length ? list.map((p) => `${p.id.padEnd(14)} ${p.type.padEnd(9)} ${p.title}${p.minimized ? ' (minimized)' : ''}`).join('\n') : '(no popups open)');
+        return say(o, list, list.length ? list.map((p) => `${p.id.padEnd(14)} ${p.type.padEnd(9)} ${p.title}${p.minimized ? ' (minimized)' : ''}`).join('\n') : '(no windows open)');
       }
       if (rawCmd === 'popup' && sub === 'convert') return convertWindow(api, o, name);
       if (rawCmd === 'popup' && sub === 'close') {
-        need(name, 'usage: popup close NAME|ID');
+        need(name, 'usage: popup close NAME|ID (alias of widget; hatch close ID also works)');
         const list = await api('GET', '/api/panels');
         const exact = list.find((p) => p.id === name || p.id === `w-${name}`);
         const matches = exact ? [exact] : list.filter((p) => p.type === name);
-        need(matches.length === 1, matches.length ? `more than one ${name} popup is open; use hatch panels, then hatch close ID` : `no popup ${name}; use hatch popup list`);
+        need(matches.length === 1, matches.length ? `more than one ${name} window is open; use hatch panels, then hatch close ID` : `no window ${name}; use hatch panels`);
         await api('DELETE', `/api/panels/${encodeURIComponent(matches[0].id)}`); return console.log(`closed ${matches[0].id}`);
       }
-      if (rawCmd === 'popup' && sub === 'open' && ['progress', 'files', 'note'].includes(name)) {
+      if (rawCmd === 'popup' && sub === 'open' && ['progress', 'files', 'note'].includes(name)) { // old `popup open`: built-in windows (`widget open` opens the bundled examples of the same names)
         if (name === 'progress') {
           const p = await api('POST', '/api/panels', { type: 'progress', title: 'Progress', placement: 'float' });
           return console.log(`progress open as ${p.id}`);
@@ -439,7 +439,7 @@ async function main(argv) {
       if (rawCmd === 'popup' && sub === 'open' && rest[0] && name !== 'top') {
         // Examples now belong to `widget`; keep this working but point at the new command.
         const examples = await api('GET', '/api/examples');
-        if (examples.some((e) => e.name === rest[0])) console.error(`hatch: popup open ${rest[0]} for examples is deprecated; use: hatch widget open ${rest[0]}`);
+        if (examples.some((e) => e.name === rest[0])) console.error(`hatch: popup open ${rest[0]} is deprecated (popups are now widgets); use: hatch widget open ${rest[0]}`);
       }
       if (sub === 'examples') { const examples = await api('GET', '/api/examples'); const ex = rawCmd === 'popup' ? [{ name: 'progress', title: 'Progress' }, { name: 'files', title: 'Files' }, { name: 'note', title: 'Note' }, ...examples] : examples; return say(o, ex, ex.map((e) => `${e.name.padEnd(12)} ${e.title}`).join('\n')); }
       if (sub === 'list') {
@@ -506,7 +506,7 @@ async function main(argv) {
         const isExample = (await api('GET', '/api/examples')).some((e) => e.name === name);
         need(isExample, `no widget ${name}; see hatch widget list`);
         const p = await api('POST', `/api/examples/${encodeURIComponent(name)}/open`, { ...dockOpt });
-        return console.log(`${rawCmd === 'popup' ? 'popup' : 'widget'} ${name} open as ${p.id}`);
+        return console.log(`widget ${name} open as ${p.id}`);
       }
       if (sub === 'new') {
         const from = o.from;
@@ -522,7 +522,7 @@ async function main(argv) {
         }
         if (rawCmd === 'popup') {
           const p = await api('POST', '/api/panels', { type: 'widget', props: { name }, ...dockOpt });
-          return console.log(`created ${target}\npopup ${name} open as ${p.id}`);
+          return console.log(`created ${target}\nwidget ${name} open as ${p.id}`);
         }
         return console.log(`created ${target}\nedit it; the page reloads on save. Open it with: hatch widget open ${name}`);
       }
