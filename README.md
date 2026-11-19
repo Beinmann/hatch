@@ -40,8 +40,9 @@ Background control: `hatch-server start`, `hatch-server stop`, `hatch-server res
 `hatch-server service` prints a systemd user unit for starting it at login or boot (it installs nothing).
 
 Options: `hatch-server serve [--host H] [--port N] [--state DIR] [--session NAME] [--cwd DIR] [--root DIR] [--view-only] [--tmux-status] [--yes]` (`--tmux-status` mirrors the running progress step into the session's tmux status line).
-The default host is `0.0.0.0` (reachable from your LAN) and the server prints who can reach it; use `--host 127.0.0.1`
-to limit it. Requests with an unexpected `Host` header are refused (DNS rebinding guard): add names to
+The default host is `127.0.0.1` (this machine only). For access from your LAN or Tailscale start it with `--host 0.0.0.0`
+(or an address such as your Tailscale IP); the choice is saved in `config.json` and kept on later starts, and the server prints who
+can reach it. An instance that already has a `host` saved keeps it. Requests with an unexpected `Host` header are refused (DNS rebinding guard): add names to
 `HATCH_ALLOW_HOSTS`, `allowedHosts` in `config.json`, or one per line in `.hatch/allowed-hosts` (`hatch-server clear` keeps that file).
 
 Sharing and limiting:
@@ -60,7 +61,7 @@ The page itself carries a Content-Security-Policy (own scripts only, no inline s
   notifications may be blocked (Hatch falls back to a Copy button, toasts and a blinking title).
 - A private overlay network (Tailscale and the like) can give you HTTPS and a stable name without exposing anything:
   for example `tailscale serve --bg 7070` publishes the port inside your tailnet over HTTPS. Add that host name to
-  `allowedHosts` in `.hatch/config.json` (or `HATCH_ALLOW_HOSTS`) so the Host check lets it through, and start Hatch with
+  `allowedHosts` in `.hatch/config.json` (or `HATCH_ALLOW_HOSTS`) so the Host check lets it through, and keep the default
   `--host 127.0.0.1` so the plain port is not reachable from the LAN at all.
 - Failed logins show up in `.hatch/log/server.log` as `auth failed: ...` (address, path; at most 10 a minute).
 - Never put Hatch on the open internet: login is one shared token and plain HTTP (see the warning above and `docs/SECURITY.md`). Serving on a non-loopback address prints a warning at startup.

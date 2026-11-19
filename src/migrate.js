@@ -157,7 +157,7 @@ function createConfigIfMissing(target) {
   const file = layout(target).config;
   if (fs.existsSync(file)) return;
   // the same shape the server writes on first start, so the dir is a valid state dir right away
-  atomicWrite(file, `${JSON.stringify({ token: crypto.randomBytes(16).toString('hex'), port: DEFAULT_PORT, host: '0.0.0.0' }, null, 2)}\n`, { mode: 0o600 });
+  atomicWrite(file, `${JSON.stringify({ token: crypto.randomBytes(16).toString('hex'), port: DEFAULT_PORT, host: '127.0.0.1' }, null, 2)}\n`, { mode: 0o600 });
 }
 
 function sameTree(a, b) {

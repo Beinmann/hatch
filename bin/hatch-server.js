@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { createHatch } from '../src/server.js';
 import { DEFAULT_PORT, listenFromPort } from '../src/free-port.js';
 import { doctor, printChecks } from '../src/doctor.js';
-import { findStateDir, chooseStateDir, isValidStateDir, readConfig, lanAddress } from '../src/find.js';
+import { findStateDir, chooseStateDir, isValidStateDir, readConfig, linkHost, isLoopbackHost } from '../src/find.js';
 import { shortPath } from '../src/instance.js';
 
 const HELP = `hatch-server: run and administer the Hatch server. (To drive the page from the terminal use \`hatch\`.)
@@ -32,7 +32,7 @@ usage:
   hatch-server --help | --version
   (hatch migrate [DIR] imports a project's .hatch into the per-user instance; run it with hatch)
 
-serve defaults: host 0.0.0.0 (reachable from your LAN), port 7070 (the next free port when that is taken and no --port is given; it is saved in config.json), session derived from the state dir.
+serve defaults: host 127.0.0.1 (this machine only; the host saved in config.json by an earlier run is kept, and --host 0.0.0.0 or an address such as a Tailscale IP makes it reachable from the network and is remembered), port 7070 (the next free port when that is taken and no --port is given; it is saved in config.json), session derived from the state dir.
 state dir: --state DIR, else HATCH_STATE, else ~/.hatch (one instance per user, one token, workspaces for projects). The current directory is never searched: a project-local .hatch is ignored (hatch migrate imports it).
 A plain serve|start creates ~/.hatch silently the first time. An explicit --state DIR / HATCH_STATE that points at a missing or invalid dir is confirmed first (--yes creates it without asking; with no terminal to ask on it fails unless --yes is given).
 A second instance needs its own --state DIR and --port N.
@@ -153,16 +153,16 @@ if (cmd === 'url') {
   if (process.argv.includes('--revoke-view')) { delete c.viewToken; save(c); console.log('view token removed: existing watch-only links stop working'); process.exit(0); }
   if (process.argv.includes('--view')) {
     if (!c.viewToken) { c.viewToken = (await import('node:crypto')).randomBytes(16).toString('hex'); save(c); }
-    console.log(`http://${lanAddress()}:${c.port}/?t=${c.viewToken}`); console.log('Watch-only: this link can see the terminal and windows but cannot type, run, or read files.'); process.exit(0);
+    console.log(`http://${linkHost(c.host)}:${c.port}/?t=${c.viewToken}`); if (isLoopbackHost(c.host)) console.error('Note: the server listens on this machine only, so this link works only here. Start it with --host 0.0.0.0 (or a Tailscale address) for other devices.'); console.log('Watch-only: this link can see the terminal and windows but cannot type, run, or read files.'); process.exit(0);
   }
   if (process.argv.includes('--once')) {
     const r = await admin(dir, 'POST', '/api/auth/once');
     if (!r) fail('the server is not running: a single-use login link is kept in the running server\'s memory. Start it (`hatch-server start`) and run this again.');
-    console.log(`http://${lanAddress()}:${c.port}/login?code=${r.code}`);
+    console.log(`http://${linkHost(c.host)}:${c.port}/login?code=${r.code}`);
     console.error(`Single-use link: works once, expires in ${Math.round(r.expiresInSec / 60)} minutes. Open it in the browser you want to log in; it leaves no code in the address bar.`);
     process.exit(0);
   }
-  console.log(`http://${lanAddress()}:${c.port}/`);
+  console.log(`http://${linkHost(c.host)}:${c.port}/`);
   console.error('Log in with the token (`hatch-server token` prints it) or use `hatch-server url --once` for a single-use link.');
   process.exit(0);
 }
@@ -227,7 +227,6 @@ WantedBy=default.target
 }
 if (cmd !== 'serve') fail(`unknown command ${cmd}. Try \`hatch-server --help\`.`);
 
-const host = o.host || '0.0.0.0';
 const explicitPort = o.port !== undefined;
 const port = explicitPort ? Number(o.port) : DEFAULT_PORT;
 if (!Number.isInteger(port) || port < 0 || port > 65535) fail('--port must be a number between 0 and 65535');
@@ -238,6 +237,9 @@ localHatchHint(choice);
   const owner = liveOwner(stateDir); if (owner) fail(new OwnerError(stateDir, owner).message);
 }
 await confirmStateDir(choice);
+// --host, else the host an earlier run saved in config.json (so upgrading changes nothing), else this machine only
+const savedHost = (() => { try { const h = JSON.parse(fs.readFileSync(path.join(stateDir, 'config.json'), 'utf8')).host; return typeof h === 'string' && h ? h : undefined; } catch { return undefined; } })();
+const host = o.host || savedHost || '127.0.0.1';
 let hatch;
 try { hatch = createHatch({ tmuxStatus: o['tmux-status'] === 'true', viewOnly: o['view-only'] === 'true' || process.argv.includes('--view-only'), root: o.root, stateDir, host, port, session: o.session, cwd: path.resolve(o.cwd || process.cwd()) }); }
 catch (e) { fail(['EACCES', 'EROFS', 'EPERM', 'ENOENT'].includes(e.code) ? `cannot create the state dir ${stateDir} (${e.code}). Run hatch-server in a writable directory or pass --state DIR.` : e.message); }
@@ -252,12 +254,11 @@ const { createStop, installCrashHandlers } = await import('../src/shutdown.js');
 installCrashHandlers();
 const stop = createStop(() => hatch.close());
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
-const shown = host === '0.0.0.0' || host === '::' ? lanAddress() : host;
+const shown = linkHost(host);
 console.log(`Hatch ${hatch.config.session ? '' : ''}is running (tmux session "${hatch.session}", state ${stateDir})`);
 console.log(`\n  http://${shown}:${actual}/\n`);
 console.log('Log in with the token: `hatch-server token` prints it (paste it at /login), `hatch-server url --once` makes a single-use login link.');
-const loopbackHost = ['127.0.0.1', '::1', 'localhost'].includes(host);
-console.log(loopbackHost ? `Listening on ${host} only.`
+console.log(isLoopbackHost(host) ? `Listening on ${host} only: reachable from this machine, not from the network. Use --host 0.0.0.0 (or a Tailscale address) to allow other devices.`
   : `Listening on ${host === '0.0.0.0' || host === '::' ? 'all interfaces' : host} over plain HTTP: anyone on this network who learns the token can run commands on this box, and the token and login cookie can be read on the wire. Use --host 127.0.0.1 with Tailscale or an HTTPS reverse proxy (docs/SECURITY.md).`);
 if (hatch.viewOnly) console.log('VIEW-ONLY: this page mirrors the terminal and panels; it cannot type, run, read files or change anything.');
 if (o.root) console.log(`File access (browser, editor, downloads, uploads) is confined to ${path.resolve(o.root)}. Terminal, run and widget commands are NOT confined.`);
