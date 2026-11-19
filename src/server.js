@@ -82,7 +82,7 @@ function tokenOk(given, token) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-export function createHatch({ tmuxStatus = false, viewOnly = false, root = null, stateDir, port = 0, host = '0.0.0.0', session, cwd = process.cwd(), attach = null, tmuxBin = 'tmux', procRoot = '/proc', pollState = false, findBin = which, limitsProbe, configGuard: guardOpts, loginLimit } = {}) {
+export function createHatch({ tmuxStatus = false, viewOnly = false, root = null, stateDir, port = 0, host = '127.0.0.1', session, cwd = process.cwd(), attach = null, tmuxBin = 'tmux', procRoot = '/proc', pollState = false, findBin = which, limitsProbe, configGuard: guardOpts, loginLimit } = {}) {
   stateDir = path.resolve(stateDir);
   fsapi.setRoot(root || process.env.HATCH_ROOT || null); // module-level: one Hatch per process
   const configWarnings = [];

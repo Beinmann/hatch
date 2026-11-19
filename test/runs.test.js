@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createRuns } from '../src/runs.js';
 import { startHatch, readSse, waitFor } from './helpers.js';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 test('a run captures stdout and stderr, reports the exit code and notifies', async () => {
@@ -130,13 +131,16 @@ test('hatch runs lists runs and --open reattaches a window to a finished one', a
   } finally { await h.close(); }
 });
 
+// Ask the OS for a free port (bind to 0, read it, release it) instead of guessing one.
+const freePort = () => new Promise((res, rej) => { const s = net.createServer(); s.once('error', rej); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => res(port)); }); });
+
 test('hatch serve-dir serves a folder through the proxy; edit FILE:LINE sets the line', async () => {
   const fs = await import('node:fs'); const path = await import('node:path'); const { tmp } = await import('./helpers.js'); const { spawnSync } = await import('node:child_process');
   if (spawnSync('python3', ['-V']).status !== 0) return;
   const h = await startHatch(); const UI = fileURLToPath(new URL('../bin/hatch.js', import.meta.url)); const d = tmp(); fs.writeFileSync(path.join(d, 'index.html'), '<h1>served-by-hatch</h1>'); fs.writeFileSync(path.join(d, 'f.txt'), 'a\nb\nc\n');
   const cli = (args) => new Promise((res) => { const p = spawn('node', [UI, '--state', h.stateDir, ...args]); let out = ''; p.stdout.on('data', (x) => { out += x; }); p.stderr.on('data', (x) => { out += x; }); p.on('close', (code) => res({ code, out })); });
   try {
-    const r = await cli(['serve-dir', d, '38' + String(Math.floor(Math.random() * 900) + 100)]); assert.equal(r.code, 0, r.out);
+    const r = await cli(['serve-dir', d, String(await freePort())]); assert.equal(r.code, 0, r.out);
     const panel = (await h.call('GET', '/api/panels')).data.find((p) => p.type === 'iframe'); assert.match(panel.props.url, /^\/proxy\/\d+\/$/);
     await waitFor(async () => { const x = await fetch(`${h.base}${panel.props.url}`, { headers: { 'x-token': h.hatch.token } }); return (await x.text()).includes('served-by-hatch'); }, 6000);
     for (const run of (await h.call('GET', '/api/runs')).data) await h.call('DELETE', `/api/runs/${run.id}`);

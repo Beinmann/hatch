@@ -26,7 +26,7 @@ trust, not a hardened service.
 - **Anyone who can see the network path over plain HTTP.** Hatch serves HTTP. The token (typed at `/login`) and the session
   cookie cross the network in clear text. A listener on the path can log in. Use `--host 127.0.0.1` with Tailscale
   (`tailscale serve`) or an HTTPS reverse proxy (set `X-Forwarded-Proto: https` so the cookie is marked `Secure`). The server
-  prints a warning when it listens on a non-loopback address.
+  prints a warning when it listens on a non-loopback address. The default host is `127.0.0.1`; listening on the network is an explicit choice (`--host 0.0.0.0` or an address), saved in `config.json`.
 - **Malicious local users.** Another user on the box can read the process list, connect to the loopback port, and (with the same
   account) read `config.json`. The state dir files are mode 0600; that does not help against root or the same user.
 - **The terminal itself.** Whoever is logged in can run any command as the server's user. `--root` confines file APIs only, not

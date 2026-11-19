@@ -11,6 +11,15 @@ export function lanAddress() {
   return '127.0.0.1';
 }
 
+/** The address to show in links for a configured listen host: loopback stays 127.0.0.1, "all interfaces" (or no host saved)
+ * becomes the LAN address, any other address is shown as is. */
+export function linkHost(host) {
+  if (!host || host === '0.0.0.0' || host === '::') return lanAddress();
+  if (host === 'localhost' || host === '::1') return '127.0.0.1';
+  return host;
+}
+export const isLoopbackHost = (host) => ['127.0.0.1', '::1', 'localhost'].includes(host);
+
 export class CliError extends Error { constructor(message, code = 1) { super(message); this.code = code; } }
 
 /** The per-user default state dir. HOME is read at call time so tests can point it at a temp dir. */

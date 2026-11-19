@@ -143,7 +143,7 @@ setup (move your Hatch customisation to another box; never includes the token, u
   export [FILE.tgz]                 saves commands, prompts, watches, schedules, bookmarks, custom.css/js and your widgets
   import FILE.tgz [--force]         restores them into this box's state dir (existing files are kept unless --force)
 report
-  report [--open] [--out FILE]      markdown summary of the session (progress, TODO, runs, windows); --open shows it as a note
+  report [--open] [--out FILE]      markdown summary of the session (progress, runs, windows); --open shows it as a note
 clipboard (box -> your browser)
   copy "text" | copy -            put text (or stdin) on the clipboard of the browser; a Copy button appears if the browser needs a click
 other
