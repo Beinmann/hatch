@@ -6,7 +6,7 @@ import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE } from './folders.js';
 import { mergeOrder, moveItem, dropZone, chipSlots, slotNumber } from './taskbar-order.js';
-import { chipIcon } from './chip-icons.js';
+import { chipIcon, iconKey } from './chip-icons.js';
 import { chipClickAction, createChipPress, windowFocused } from './chip-click.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
 // Window manager, plain DOM. A panel is either `float` (draggable and resizable over the terminal) or `dock`
@@ -87,7 +87,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const title = el('span', { class: 't' }, panel.title);
     w.title = title;
     const mkBtn = (label, tip, fn) => el('button', { type: 'button', title: tip, 'aria-label': tip, onclick: (e) => { e.stopPropagation(); fn(); } }, label);
-    w.tb = el('div', { class: 'tb', 'data-type': panel.type }, chipIcon(panel.type), title,
+    w.tb = el('div', { class: 'tb', 'data-type': iconKey(panel) }, chipIcon(iconKey(panel)), title,
       mkBtn(panel.placement === 'dock' ? '⇱' : '⇲', 'Move between dock and floating', () => {
         const to = w.panel.placement === 'dock' ? 'float' : 'dock';
         patch(w.panel.id, { placement: to }).catch(() => {});
@@ -320,14 +320,14 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   for (const ev of ['pointerup', 'pointercancel', 'dragstart']) chips.addEventListener(ev, endPress);
   function chipFor(w) {
     const hidden = !onScreen(w);
-    const btn = el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, 'data-type': w.panel.type, title: w.panel.title, disabled: isViewOnly() && w.panel.minimized,
+    const btn = el('button', { type: 'button', class: `chip${w.panel.minimized ? ' min' : ''}${hidden ? ' off' : ''}${w.node.classList.contains('focus') ? ' ok' : ''}${w.panel.id === dockSel ? ' sel' : ''}`, 'data-id': w.panel.id, 'data-type': iconKey(w.panel), title: w.panel.title, disabled: isViewOnly() && w.panel.minimized,
       onclick: () => {
         const act = chipClickAction({ minimized: !!w.panel.minimized, onScreen: !hidden, focused: chipPress.focusedAt(w.panel.id, windowFocused(w.node, document.activeElement)) });
         if (act === 'restore') { setMinimized(w.panel.id, false).catch((e) => ctx.toast(e.message, 'bad')); return; }
         if (act === 'minimize') { setMinimized(w.panel.id, true).catch((e) => ctx.toast(e.message, 'bad')); return; }
         if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); } // the dock must be on screen before focusing into it
         focus(w); w.node.classList.add('flash'); setTimeout(() => w.node.classList.remove('flash'), 600);
-      } }, chipIcon(w.panel.type), el('span', { class: 'nm' }, w.panel.title));
+      } }, chipIcon(iconKey(w.panel)), el('span', { class: 'nm' }, w.panel.title));
     if (w.panel.minimized) btn.setAttribute('aria-label', `${w.panel.title} (minimized)`);
     draggable(btn, w.panel.id); dropOnChip(btn, null);
     return btn;

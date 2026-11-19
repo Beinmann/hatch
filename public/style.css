@@ -16,6 +16,7 @@
 [data-type=git]{--tc:var(--hue-amber)}
 [data-type=iframe],[data-type=page]{--tc:var(--hue-blue)}
 [data-type=widget]{--tc:var(--hue-violet)} /* generic widgets: not the blue of web pages, so a label never sits blue on a blue tint */
+[data-type=network]{--tc:var(--hue-blue)} [data-type=clock]{--tc:var(--hue-cyan)}
 [data-type=terminal],[data-type=output]{--tc:var(--hue-green)}
 [data-type=files],[data-type=files-preview],[data-type=progress]{--tc:var(--hue-cyan)}
 [data-type=note]{--tc:var(--hue-violet)}

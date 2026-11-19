@@ -13,6 +13,8 @@ const P = {
   iframe: '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11"/>',
   page: '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11"/>',
   widget: '<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>',
+  network: '<path d="M3 5.5h10M10.5 3L13 5.5 10.5 8M13 10.5H3M5.5 8L3 10.5 5.5 13"/>',
+  clock: '<circle cx="8" cy="8" r="5.5"/><path d="M8 4.5V8l2.5 1.5"/>',
   trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',
   folder: '<path d="M2 4.5V12a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1H8L6.5 3.5H3a1 1 0 00-1 1z"/>',
   window: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6h12"/>',
@@ -26,4 +28,15 @@ export function chipIcon(type) {
   s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
   s.innerHTML = P[type] || P.window;
   return s;
+}
+
+// A widget panel has the type `widget`; which widget it is lives in props.name (e.g. git, git-<project>, ports). Names here map to an icon (and with it the
+// window-type hue in the page styles) only where a matching icon exists; every other widget keeps the generic one.
+const WIDGET_ICON = { git: 'git', ports: 'network', clock: 'clock', 'analog-clock': 'clock', timer: 'clock', pomodoro: 'clock', files: 'files', 'log-tail': 'output', cpu: 'progress', top: 'progress', sysinfo: 'progress', graph: 'progress' };
+/** The icon/hue key of a panel: its type, or for a widget panel the key its widget name maps to ("git-app" -> git), else "widget". */
+export function iconKey(panel) {
+  if (panel?.type !== 'widget') return panel?.type;
+  const name = String(panel.props?.name ?? '').toLowerCase();
+  if (WIDGET_ICON[name]) return WIDGET_ICON[name];
+  return name.startsWith('git-') ? 'git' : 'widget'; // git-<project> style names
 }
