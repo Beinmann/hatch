@@ -1,7 +1,7 @@
 # Hatch
 
 > ⚠️ **Warning: this tool intentionally gives command-line access to the machine it runs on.**
-> Anyone who can open the Hatch page gets a shell there, and widgets can run commands and read files by design.
+> Anyone who can open the Hatch page and has the correct token gets a shell there, and widgets can run commands and read files by design.
 > Run it only inside a VM, container or other isolated environment, never on your own host or a machine with data you care about.
 
 A browser terminal for isolated boxes, grown into a small desktop. One server per box serves a page that is mostly a real
