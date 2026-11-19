@@ -329,7 +329,6 @@ body.zen:not(.numbers) .win .tb[data-n]::before,html.peek body:not(.numbers) .wi
 
 /* workspaces */
 #wsbar button.attn::after{content:"";display:inline-block;width:7px;height:7px;margin-left:6px;border-radius:50%;background:var(--warn,#f59e0b);vertical-align:middle}
-#wslabel{margin-right:8px;flex:none}
 #wsnotice{cursor:pointer}
 button.danger:not(:disabled){background:#dc2626;color:#fff;border-color:#dc2626}
 #wsbar:has(button:nth-child(2):last-child){display:inline-flex}

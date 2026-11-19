@@ -534,7 +534,6 @@ function paintWorkspaces() {
   const cur = wm.current(); const names = wsNames();
   $('wsbar').replaceChildren(...names.map((n, i) => el('button', { type: 'button', class: `chip${n === cur ? ' on' : ''}${attention.has(n) ? ' attn' : ''}`, title: `Workspace ${n}${attention.has(n) ? ' (something happened there)' : ''}`, onclick: () => switchWs(n) }, numbering && i < 9 ? `${i + 1} ${n}` : n)),
     el('button', { type: 'button', class: 'chip', title: 'New workspace', onclick: () => newWorkspace() }, '+'));
-  const label = $('wslabel'); if (label) { label.textContent = cur; label.title = 'Current workspace'; }
   document.title = cur === 'main' && names.length === 1 ? baseTitle : `${cur} · ${baseTitle}`;
 }
 const markAttention = (n) => { if (n !== wm.current() && !attention.has(n)) { attention.add(n); paintWorkspaces(); } };
