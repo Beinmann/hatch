@@ -62,6 +62,16 @@ test('a removed effect still named in fx.json (waves) means off with a warning, 
   assert.equal(readFx(dir).problem, undefined);
 });
 
+test('a removed effect still named in fx.json (bokeh) means off with a warning, and its saved intensity is ignored', () => {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, 'fx.json'), '{"effect":"bokeh","intensity":{"bokeh":70,"rain":20}}');
+  const r = readFx(dir);
+  assert.equal(r.effect, null); assert.deepEqual(r.intensities, { rain: 20 }); assert.match(r.problem, /bokeh.*unknown|unknown.*bokeh/);
+  assert.throws(() => setFx(dir, 'bokeh'), FxError);
+  assert.equal(setFx(dir, 'rain').effect, 'rain'); // switching to a valid effect repairs the file
+  assert.equal(readFx(dir).problem, undefined);
+});
+
 test('server: fx is in the snapshot, POST /api/fx saves it and emits an event, a hand edit is picked up, a bad file warns', async () => {
   const h = await startHatch();
   try {
@@ -417,17 +427,17 @@ test('every listed effect has a loader in public/fx.js and a module in public/fx
   }
 });
 
-test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, ripples, breathing, constellation, bokeh) run on a stub canvas: still frame, animation, odd sizes and intensities, hidden tab, stop', async () => {
+test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, ripples, breathing, constellation) run on a stub canvas: still frame, animation, odd sizes and intensities, hidden tab, stop', async () => {
   const calls = {}, bad = []; let queued = null, rafs = 0; const saved = { document: globalThis.document, raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame };
   const ctx2d = () => new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...a) => { calls[k] = (calls[k] || 0) + 1; if (a.some((v) => typeof v === 'number' && !Number.isFinite(v))) bad.push([k, a]); return String(k).startsWith('create') ? { addColorStop() {} } : undefined; }), set: (t, k, v) => { t[k] = v; return true; } });
   const canvas = (w, h) => { const c = ctx2d(); return { clientWidth: w, clientHeight: h, width: 0, height: 0, getContext: () => c, c }; };
-  globalThis.document = { hidden: false, createElement: () => canvas(64, 64) }; globalThis.requestAnimationFrame = (f) => { queued = f; rafs++; return 1; }; globalThis.cancelAnimationFrame = () => {};
+  globalThis.document = { hidden: false }; globalThis.requestAnimationFrame = (f) => { queued = f; rafs++; return 1; }; globalThis.cancelAnimationFrame = () => {};
   try {
     const { levelOf, countFor } = await import('../public/fx/loop.js');
     assert.deepEqual(levelOf(50), { count: 1, alpha: 1 }); assert.equal(levelOf(0).count, 0); assert.deepEqual(levelOf(NaN), levelOf(50));
     assert.equal(countFor(0, 0, 5000, levelOf(50)), 0); assert.equal(countFor(1000, 800, 5000, levelOf(0)), 0); assert.equal(countFor(1e7, 1e7, 5000, levelOf(100), 500), 500, 'capped');
     assert.ok(countFor(1000, 800, 5000, levelOf(100)) > countFor(1000, 800, 5000, levelOf(50)));
-    for (const name of ['snow', 'starfield', 'aurora', 'fireflies', 'embers', 'ripples', 'breathing', 'constellation', 'bokeh']) {
+    for (const name of ['snow', 'starfield', 'aurora', 'fireflies', 'embers', 'ripples', 'breathing', 'constellation']) {
       const mod = (await import(`../public/fx/${name}.js`)).default;
       for (const [w, h] of [[0, 0], [1, 1], [900, 500]]) {
         for (const intensity of [0, 50, 100, undefined]) {
@@ -441,7 +451,7 @@ test('the simple 2D effects (snow, starfield, aurora, fireflies, embers, ripples
       globalThis.document.hidden = false; for (let t = 1000; t < 1200; t += 33) queued(performance.now() + t); assert.ok(calls.clearRect > 0); mod.stop();
     }
     assert.deepEqual(bad, [], 'no NaN or Infinity reached the canvas');
-    assert.ok(calls.fillRect > 0 && calls.arc > 0 && calls.fill > 0 && calls.stroke > 0 && calls.createLinearGradient > 0 && calls.drawImage > 0, 'the effects drew rects, arcs, paths and gradients');
+    assert.ok(calls.fillRect > 0 && calls.arc > 0 && calls.fill > 0 && calls.stroke > 0 && calls.createLinearGradient > 0, 'the effects drew rects, arcs, paths and gradients');
   } finally { Object.assign(globalThis, { document: saved.document, requestAnimationFrame: saved.raf, cancelAnimationFrame: saved.caf }); if (!saved.document) delete globalThis.document; }
 });
 
