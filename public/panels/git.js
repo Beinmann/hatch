@@ -16,6 +16,7 @@ export default {
     const root = el('div', { style: 'display:flex;flex-direction:column;height:100%' }, err, head, list, el('div', { class: 'cap', style: 'display:flex;gap:6px;padding:6px 8px;border-top:1px solid var(--line)' }, msg, commitBtn));
     let refreshing = false; let mutating = false; let destroyed = false; let revision = 0; let refreshRequest = 0;
     let snapshot = null; let stageAll = null; const pendingDiffs = new Set();
+    let pushArmed = null; // timer while the Push button waits for its confirming second click
     let top = null; // repository root from the last status: file paths are relative to it
 
     const controls = () => {
@@ -50,13 +51,24 @@ export default {
     function paint(s) {
       snapshot = s; top = s.root;
       stageAll = el('button', { type: 'button', title: 'Stage every change', onclick: () => call('stage', { paths: s.files.filter((f) => !f.staged || f.worktree).map((f) => f.path) }) }, 'Stage all');
-      head.replaceChildren(el('strong', {}, s.branch), el('span', { class: 'muted small', style: 'flex:1' }, s.tracking || ''),
-        stageAll);
+      const disarm = () => { clearTimeout(pushArmed); pushArmed = null; if (snapshot) paint(snapshot); };
+      const parts = [el('strong', {}, s.branch), el('span', { class: 'muted small', style: 'flex:1' }, s.tracking || ''), stageAll];
+      if (s.remotes?.length) { // no remote, no Push button; two clicks so a push cannot happen by accident
+        if (pushArmed) parts.push(el('button', { type: 'button', class: 'danger', title: 'Push the current branch (never forced)', onclick: push }, `Confirm push to ${s.tracking?.split(' ')[0] || s.remotes[0]}?`), el('button', { type: 'button', onclick: disarm }, 'Cancel'));
+        else parts.push(el('button', { type: 'button', title: 'Push the current branch to its upstream', onclick: () => { pushArmed = setTimeout(disarm, 6000); paint(snapshot); } }, 'Push'));
+      }
+      head.replaceChildren(...parts);
       list.replaceChildren(...(s.files.length ? s.files.map((f) => el('li', { title: f.path, onclick: () => showDiff(f) },
         el('input', { type: 'checkbox', title: f.staged && !f.worktree ? 'Staged: untick to unstage' : 'Tick to stage', checked: f.staged && !f.worktree, onclick: (e) => e.stopPropagation(), onchange: (e) => call(e.target.checked ? 'stage' : 'unstage', { paths: [f.path] }) }),
         el('span', {}, f.path), el('span', { class: 'muted small' }, f.untracked ? 'new' : LABEL[f.worktree || f.index] || f.worktree || f.index))) : [el('li', { class: 'muted' }, 'Working tree clean')]));
       controls();
     }
+    const push = async () => {
+      clearTimeout(pushArmed); pushArmed = null;
+      const s = await call('push', {});
+      if (s && !destroyed) ctx.toast(s.output.split('\n').pop() || 'Pushed');
+      else if (snapshot && !destroyed) paint(snapshot);
+    };
     async function refresh(force = false) {
       if (destroyed || (!force && (refreshing || mutating || !root.offsetParent))) return;
       const request = ++revision; refreshRequest = request; refreshing = true; controls();
@@ -74,6 +86,6 @@ export default {
     msg.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') commitBtn.click(); });
     head.textContent = 'Loading git status…'; controls();
     const timer = setInterval(() => refresh(), 4000); refresh(true);
-    return { el: root, update(p) { const previous = dir(); panel = p; if (dir() !== previous) { snapshot = null; top = null; stageAll = null; list.replaceChildren(); head.textContent = 'Loading git status…'; refresh(true); } }, destroy() { destroyed = true; revision++; clearInterval(timer); } };
+    return { el: root, update(p) { const previous = dir(); panel = p; if (dir() !== previous) { snapshot = null; top = null; stageAll = null; list.replaceChildren(); head.textContent = 'Loading git status…'; refresh(true); } }, destroy() { destroyed = true; clearTimeout(pushArmed); revision++; clearInterval(timer); } };
   },
 };

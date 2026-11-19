@@ -93,3 +93,39 @@ test('closing a git client stops active hooks and rejects queued mutations', { s
     assert.match(g(dir, 'status', '--porcelain').stdout, /\?\? queued.txt/);
   } finally { client.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('git push: no remote is refused, first push sets the upstream, later pushes use it, output is returned', { skip: !hasGit }, async () => {
+  const d = tmp(); const bare = tmp(); g(bare, 'init', '-q', '--bare'); g(d, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(d, 'x.txt'), 'x'); g(d, 'add', '.'); g(d, 'commit', '-q', '-m', 'one');
+  const client = createGit();
+  try {
+    assert.deepEqual((await client.status(d)).remotes, []);
+    await assert.rejects(() => client.push(d), /no remote/);
+    g(d, 'remote', 'add', 'origin', bare);
+    assert.deepEqual((await client.status(d)).remotes, ['origin']);
+    const first = await client.push(d);
+    assert.match(first.tracking, /origin\/main/); assert.ok(first.output);
+    assert.equal(g(bare, 'rev-parse', 'main').stdout, g(d, 'rev-parse', 'HEAD').stdout);
+    fs.writeFileSync(path.join(d, 'y.txt'), 'y'); g(d, 'add', '.'); g(d, 'commit', '-q', '-m', 'two');
+    await client.push(d);
+    assert.equal(g(bare, 'rev-parse', 'main').stdout, g(d, 'rev-parse', 'HEAD').stdout);
+    assert.equal((await client.push(d)).output.length > 0, true); // up to date is not an error
+    // diverged history is refused instead of forced
+    g(d, 'reset', '-q', '--hard', 'HEAD~1'); fs.writeFileSync(path.join(d, 'z.txt'), 'z'); g(d, 'add', '.'); g(d, 'commit', '-q', '-m', 'three');
+    await assert.rejects(() => client.push(d));
+    assert.notEqual(g(bare, 'rev-parse', 'main').stdout, g(d, 'rev-parse', 'HEAD').stdout);
+  } finally { client.close(); fs.rmSync(d, { recursive: true, force: true }); fs.rmSync(bare, { recursive: true, force: true }); }
+});
+
+test('git push API pushes to a local bare repository', { skip: !hasGit }, async () => {
+  const d = tmp(); const bare = tmp(); g(bare, 'init', '-q', '--bare'); g(d, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(d, 'x.txt'), 'x'); g(d, 'add', '.'); g(d, 'commit', '-q', '-m', 'one');
+  const h = await startHatch({ cwd: d });
+  try {
+    assert.equal((await h.call('POST', '/api/git/push', {})).status, 400);
+    g(d, 'remote', 'add', 'origin', bare);
+    const r = await h.call('POST', '/api/git/push', {});
+    assert.equal(r.status, 200); assert.deepEqual(r.data.remotes, ['origin']);
+    assert.equal(g(bare, 'rev-parse', 'main').stdout, g(d, 'rev-parse', 'HEAD').stdout);
+  } finally { await h.close(); fs.rmSync(d, { recursive: true, force: true }); fs.rmSync(bare, { recursive: true, force: true }); }
+});

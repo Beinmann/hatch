@@ -1,4 +1,4 @@
-// Small git helpers for the git panel (Magit-lite): status, stage, unstage, commit. Uses spawn with argument arrays,
+// Small git helpers for the git panel (Magit-lite): status, stage, unstage, commit, push. Uses spawn with argument arrays,
 // never a shell, so file names cannot inject commands. Commands run at the repository root (paths from status are
 // root-relative), with a timeout, and `--literal-pathspecs` so names like `[a].txt` or `*` are not treated as patterns.
 import { spawn } from 'node:child_process';
@@ -31,7 +31,7 @@ export function createGit({ timeoutMs = TIMEOUT_MS } = {}) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 0x7fffffff) throw new GitError('git timeout must be a positive number of milliseconds within the timer limit');
   const active = new Set(); const queues = new Map(); let closed = false;
   const kill = (child) => { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); } };
-  function git(dir, args) {
+  function git(dir, args, { withStderr = false } = {}) {
     if (closed) return Promise.reject(new GitError('git client is closed', 503));
     return new Promise((resolve, reject) => {
       let failure = null; let size = 0; const stdout = []; const stderr = [];
@@ -53,14 +53,17 @@ export function createGit({ timeoutMs = TIMEOUT_MS } = {}) {
         clearTimeout(timer); active.delete(child);
         if (closed) return reject(new GitError('git command stopped because the server closed', 503));
         if (failure) return reject(failure);
-        if (code === 0) return resolve(Buffer.concat(stdout).toString('utf8'));
+        if (code === 0) return resolve(Buffer.concat(withStderr ? [...stdout, ...stderr] : stdout).toString('utf8'));
         const message = Buffer.concat(stderr).toString('utf8').trim() || `git failed${signal ? ` (${signal})` : ''}`;
         reject(new GitError(/not a git repository/i.test(message) ? `not a git repository: ${dir}` : message.split('\n')[0]));
       });
     });
   }
   const root = async (dir) => (await git(dir, ['rev-parse', '--show-toplevel'])).replace(/\r?\n$/, '');
-  const statusAt = async (top) => ({ ...parseStatus(await git(top, ['status', '--porcelain=v1', '-z', '-b', '--untracked-files=normal'])), root: top });
+  const statusAt = async (top) => ({
+    ...parseStatus(await git(top, ['status', '--porcelain=v1', '-z', '-b', '--untracked-files=normal'])), root: top,
+    remotes: (await git(top, ['remote'])).split('\n').filter(Boolean), // the UI shows Push only when there is one
+  });
   const status = async (dir) => statusAt(await root(dir));
   async function mutate(dir, action) {
     const top = await root(dir);
@@ -84,7 +87,18 @@ export function createGit({ timeoutMs = TIMEOUT_MS } = {}) {
       await git(top, ['commit', '-m', message]); return statusAt(top);
     });
   };
-  return { root, status, stage, unstage, commit, close() { closed = true; for (const child of active) kill(child); } };
+  /** Pushes the current branch to its upstream; without one, to `origin` (else the first remote) with `-u`. Never forces. */
+  const push = async (dir) => mutate(dir, async (top) => {
+    const remotes = (await git(top, ['remote'])).split('\n').filter(Boolean);
+    if (!remotes.length) throw new GitError('this repository has no remote: add one with `git remote add origin <url>`');
+    const branch = (await git(top, ['branch', '--show-current'])).trim();
+    if (!branch) throw new GitError('HEAD is detached: check out a branch before pushing');
+    const upstream = await git(top, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).then(() => true, () => false);
+    const args = upstream ? ['push'] : ['push', '-u', remotes.includes('origin') ? 'origin' : remotes[0], branch];
+    const output = (await git(top, args, { withStderr: true })).trim();
+    return { ...(await statusAt(top)), output: output || 'Everything up to date' };
+  });
+  return { root, status, stage, unstage, commit, push, close() { closed = true; for (const child of active) kill(child); } };
 }
 
-export const { root, status, stage, unstage, commit } = createGit();
+export const { root, status, stage, unstage, commit, push } = createGit();

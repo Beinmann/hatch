@@ -791,7 +791,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       if (p === '/api/boards' && m === 'GET') return json(res, 200, listBoardFiles(stateDir, state.widgetNames(), (n) => state.widgetMeta(n), (n) => !!state.getPanel(`w-${n}`)));
       if (p === '/api/examples' && m === 'GET') return json(res, 200, exampleList());
       if ((g = /^\/api\/examples\/([\w-]+)\/open$/.exec(p)) && m === 'POST') return json(res, 200, openExample(g[1], await readJson(req)));
-      if ((g = /^\/api\/git\/(status|stage|unstage|commit)$/.exec(p))) {
+      if ((g = /^\/api\/git\/(status|stage|unstage|commit|push)$/.exec(p))) {
         const body = m === 'POST' ? await readJson(req) : {}; const want = body.dir ?? url.searchParams.get('dir') ?? '';
         if (typeof want !== 'string') throw new HttpError(400, 'dir must be a string');
         const dir = path.isAbsolute(want) ? want : cwd;
@@ -800,6 +800,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
           if (g[1] === 'stage' && m === 'POST') return json(res, 200, await gitClient.stage(dir, body.paths));
           if (g[1] === 'unstage' && m === 'POST') return json(res, 200, await gitClient.unstage(dir, body.paths));
           if (g[1] === 'commit' && m === 'POST') return json(res, 200, await gitClient.commit(dir, body.message));
+          if (g[1] === 'push' && m === 'POST') return json(res, 200, await gitClient.push(dir));
         } catch (e) { if (e instanceof gitapi.GitError) throw new HttpError(e.status, e.message); throw e; }
       }
       if (p === '/api/files' && m === 'GET') return json(res, 200, { dir: cwd, files: discover.files(cwd) });

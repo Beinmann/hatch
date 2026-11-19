@@ -76,7 +76,7 @@ invalid limits return 400. Its truncation marker is additional to the requested 
 Run metadata includes `stopping` while Stop is pending and `signal` after a signal exit. DELETE sends SIGTERM,
 then SIGKILL after two seconds if the process group is still running. Signal exit codes use 128 plus the signal
 number (typically 143 for SIGTERM and 137 for SIGKILL); timeout exits remain 124.
-Git: `GET /api/git/status?dir=`, `POST /api/git/stage|unstage {dir?, paths}`, `POST /api/git/commit {dir?, message}`.
+Git: `GET /api/git/status?dir=`, `POST /api/git/stage|unstage {dir?, paths}`, `POST /api/git/commit {dir?, message}`, `POST /api/git/push {dir?}` (current branch to its upstream, else `origin` with `-u`; never forces; returns the status plus `output`; status lists `remotes`).
 Git commands run asynchronously, serialize mutations within each repository and have a twenty-second subprocess timeout
 (504), so slow hooks leave terminal input responsive. Server shutdown stops active git process groups.
 Discovery: `GET /api/tasks`, `GET /api/ports`, `GET /api/report` (markdown).
