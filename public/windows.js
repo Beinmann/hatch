@@ -4,9 +4,9 @@ import { touch, pickAfterClose } from './focus-history.js';
 import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
-import { groupWindows, freeFolderName, folderOf, FOLDER_RE, joinPatches, reorderPatches, renamePatches, orderFolders, renameInOrder } from './folders.js';
+import { groupWindows, freeFolderName, folderOf, FOLDER_RE, joinPatches, reorderPatches, renamePatches } from './folders.js';
 import { folderToggle, ctrlFolderPress, ctrlPromptKey, hidePlan, showPlan, subNumbers, windowLabel, folderLeaderOpen, folderLeaderKey } from './folder-keys.js';
-import { mergeOrder, moveItem, dropZone, placeLoose, chipSlots, slotNumber } from './taskbar-order.js';
+import { dropZone, parseRow, reconcileRow, migrateRow, combineRow, joinRow, releaseRow, renameRow, moveEntry, placeEntry, chipSlots, slotNumber } from './taskbar-order.js';
 import { chipIcon, iconKey } from './chip-icons.js';
 import { chipClickAction, numberKeyAction, createChipPress, windowFocused } from './chip-click.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
@@ -270,39 +270,35 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // Taskbar chips. A window in a folder has no chip of its own: its folder shows as one chip (name and count) whose
   // popover lists the members. Chips can be dragged onto each other (HTML5 drag and drop): onto a folder to join it,
   // onto a loose window to make a new folder of the two.
-  // The dragged order of the taskbar, per workspace, in localStorage like the other per-browser layout bits. Window numbers use it too.
-  const orderKey = () => `hatch.taskbar.${current}`;
-  const savedOrder = () => { try { const v = JSON.parse(localStorage.getItem(orderKey())); return Array.isArray(v) ? v : []; } catch { return []; } };
-  const taskbarOrder = () => { const m = mergeOrder(savedOrder(), [...wins.keys()]); return m.map((id) => wins.get(id)); };
-  // Loose-chip layout per workspace (ids, null = open spot), in memory: closing a window leaves its number free and the next new
-  // window takes the lowest free one. After a reload the numbers are packed again from the saved order.
-  const layouts = new Map();
-  function moveChip(id, beforeId) {
-    const loose = new Set(groupWindows([...wins.values()].map((x) => x.panel), current).loose);
-    const mine = taskbarOrder().filter((w) => (w.panel.sticky || wsOf(w.panel) === current) && loose.has(w.panel.id)).map((w) => w.panel.id);
-    const next = moveItem(mine, id, beforeId);
-    layouts.set(current, next); // a drag re-packs the numbers; closing a window never does
-    try { localStorage.setItem(orderKey(), JSON.stringify(next)); } catch { /* storage may be blocked: the order lasts until reload */ }
-    paintChips();
-  }
-  // Folder chips keep the order the user dragged them into (names, per workspace, same storage as the loose layout). Folders
-  // not in the list yet (first load, new ones) come after the saved ones, alphabetical, so a new folder lands last.
-  const foldersKey = () => `hatch.taskbar.folders.${current}`;
-  const savedFolders = () => { try { const v = JSON.parse(localStorage.getItem(foldersKey())); return Array.isArray(v) ? v : []; } catch { return []; } };
-  const saveFolders = (names) => { try { localStorage.setItem(foldersKey(), JSON.stringify(names)); } catch { /* storage may be blocked: the order lasts until reload */ } };
+  // The taskbar is one row of slots per workspace (a loose window, a folder or an open spot; see taskbar-order.js), kept in
+  // localStorage like the other per-browser layout bits. Window numbers are the slot positions. The row is reconciled with the
+  // live windows on every paint; the user's actions (combine, join, take out, drag) decide positions first via setRow.
+  const rowKey = () => `hatch.taskbar.row.${current}`;
+  const rows = new Map();
+  const setRow = (row) => {
+    rows.set(current, row);
+    try { localStorage.setItem(rowKey(), JSON.stringify(row)); } catch { /* storage may be blocked: the row lasts until reload */ }
+  };
+  const currentRow = () => rows.get(current) || [];
+  // Before the row existed the taskbar saved a loose order (ids) and a folder order (names) per workspace; read once for the migration.
+  const readOld = (k) => { try { const v = JSON.parse(localStorage.getItem(`${k}.${current}`)); return Array.isArray(v) ? v : []; } catch { return []; } };
+  const dropOld = () => { try { localStorage.removeItem(`hatch.taskbar.${current}`); localStorage.removeItem(`hatch.taskbar.folders.${current}`); } catch { /* ignore */ } };
   const groupsNow = () => groupWindows([...wins.values()].map((x) => x.panel), current);
-  const orderedFolders = (groups = groupsNow()) => orderFolders(groups.folders, savedFolders());
-  function moveFolder(name, beforeName) {
-    const names = moveItem(orderedFolders().map((f) => f.name), name, beforeName);
-    saveFolders(names); paintChips();
-  }
+  const winEntry = (id) => ({ w: id });
+  function moveChip(entry, before) { setRow(moveEntry(currentRow(), entry, before)); paintChips(); }
+  // The row entry a chip element stands for: a loose window or a folder.
+  const entryOfChip = (n) => (n.dataset.folder ? { f: n.dataset.folder } : n.dataset.id ? winEntry(n.dataset.id) : null);
   let dragFolder = null; // the folder chip being dragged
   let dragId = null; // the window being dragged (dataTransfer content is unreadable during dragover)
   const clearMarks = () => chips.querySelectorAll('.ins-before,.ins-after,.drop').forEach((n) => n.classList.remove('ins-before', 'ins-after', 'drop'));
   const looseDrag = () => dragId && wins.has(dragId) && !folderOf(wins.get(dragId).panel);
   // Joining puts the windows at the end of the folder's member order; leaving clears it (the server drops folderOrder without a folder).
-  const setFolder = (ids, folder) => {
+  // Slots are decided first (the patches arrive later): a new folder takes the lowest slot of the windows combined, joining frees the
+  // window's slot, taking out puts it into the first open spot, and a folder whose last member leaves frees its own slot.
+  const setFolder = (ids, folder, { from = null, isNew = false } = {}) => {
     const all = [...wins.values()].map((x) => x.panel);
+    if (folder === null) { const f = from && groupsNow().folders.find((x) => x.name === from); setRow(releaseRow(currentRow(), ids, f && f.ids.every((i) => ids.includes(i)) ? from : null)); }
+    else setRow(isNew ? combineRow(currentRow(), folder, ids) : joinRow(currentRow(), ids));
     const patches = folder === null ? ids.map((id) => ({ id, folder: null })) : joinPatches(all, current, folder, ids);
     return Promise.all(patches.map(({ id, ...f }) => patch(id, f))).catch((e) => ctx.toast(e.message, 'bad'));
   };
@@ -319,40 +315,35 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const to = askFolderName('Rename folder', f.name, f.name);
     if (!to || to === f.name) return;
     const all = () => [...wins.values()].map((x) => x.panel);
-    saveFolders(renameInOrder(orderedFolders().map((x) => x.name), f.name, to));
+    setRow(renameRow(currentRow(), f.name, to));
     if (openFolder === f.name) openFolder = to;
     Promise.all(renamePatches(all(), current, f.name, to).map(({ id, ...x }) => patch(id, x))).catch((e) => ctx.toast(e.message, 'bad'));
   }
   const dropOnChip = (btn, folderName) => {
     if (isViewOnly()) return;
+    // A dragged folder chip only reorders (edges); a dragged window reorders at the edges of a loose chip and joins/combines in the middle.
     const zoneOf = (e) => (dragFolder ? (dropZone(btn.getBoundingClientRect(), e.clientX) === 'before' ? 'before' : 'after') : folderName || !looseDrag() ? 'mid' : dropZone(btn.getBoundingClientRect(), e.clientX));
     btn.addEventListener('dragover', (e) => {
-      if (dragFolder ? !folderName || folderName === dragFolder : !e.dataTransfer?.types.includes('text/x-hatch-window')) return; // folder chips only reorder among folder chips
+      if (dragFolder ? folderName === dragFolder : !e.dataTransfer?.types.includes('text/x-hatch-window')) return;
       e.preventDefault(); clearMarks(); const z = zoneOf(e);
       btn.classList.add(z === 'mid' ? 'drop' : `ins-${z}`);
     });
     btn.addEventListener('dragleave', () => btn.classList.remove('drop', 'ins-before', 'ins-after'));
     btn.addEventListener('drop', (e) => {
       const z = zoneOf(e); clearMarks();
-      if (dragFolder) { // reorder folder chips
-        if (!folderName || folderName === dragFolder) return;
-        e.preventDefault();
-        const names = [...btn.parentElement.querySelectorAll('.chip.folder')].map((n) => n.dataset.folder);
-        moveFolder(dragFolder, z === 'before' ? folderName : (names[names.indexOf(folderName) + 1] || null));
-        return;
-      }
+      const reorder = (entry) => { // drop before or after this chip, in the one row
+        const here = [...btn.parentElement.querySelectorAll('.chip')].map(entryOfChip);
+        const at = here.findIndex((x) => x && (x.f ? x.f === folderName : x.w === btn.dataset.id));
+        moveChip(entry, z === 'before' ? here[at] : (here[at + 1] || null));
+      };
+      if (dragFolder) { if (folderName === dragFolder) return; e.preventDefault(); reorder({ f: dragFolder }); return; }
       const id = e.dataTransfer?.getData('text/x-hatch-window'); if (!id || !wins.has(id)) return;
       e.preventDefault();
-      if (z !== 'mid') { // edge of a loose chip: reorder instead of joining a folder
-        const mine = [...btn.parentElement.querySelectorAll('.chip[data-id]')].map((n) => n.dataset.id);
-        const at = mine.indexOf(btn.dataset.id);
-        moveChip(id, z === 'before' ? btn.dataset.id : (mine[at + 1] || null));
-        return;
-      }
+      if (z !== 'mid') { reorder(winEntry(id)); return; }
       const all = [...wins.values()].map((x) => x.panel);
       if (folderName) { if (folderOf(wins.get(id).panel) !== folderName) setFolder([id], folderName); return; }
       const other = btn.dataset.id; if (!other || other === id) return;
-      const name = askFolderName('Name the new folder', freeFolderName(all, current)); if (name) setFolder([other, id], name);
+      const name = askFolderName('Name the new folder', freeFolderName(all, current)); if (name) setFolder([other, id], name, { isNew: true });
     });
   };
   const draggable = (btn, id) => { if (isViewOnly()) return; btn.draggable = true; btn.addEventListener('dragend', () => { dragId = null; clearMarks(); }); btn.addEventListener('dragstart', (e) => { dragId = id; e.dataTransfer.setData('text/x-hatch-window', id); e.dataTransfer.effectAllowed = 'move'; }); };
@@ -426,7 +417,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
           else raise(w);
           closePop(); paintChips();
         } }, w.panel.title + (w.panel.minimized ? ' (minimized)' : '')),
-        ...(ro ? [] : [el('button', { type: 'button', class: 'fout', title: 'Take out of the folder (back to the main bar)', onclick: () => setFolder([w.panel.id], null) }, '↗')]));
+        ...(ro ? [] : [el('button', { type: 'button', class: 'fout', title: 'Take out of the folder (back to the main bar)', onclick: () => setFolder([w.panel.id], null, { from: f.name }) }, '↗')]));
       draggable(row, w.panel.id);
       if (!ro) { // reorder among this folder's rows: the upper half of a row drops before it, the lower half after it
         const half = (e) => { const r = row.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 ? 'before' : 'after'; };
@@ -446,7 +437,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const tools = ro ? [] : [el('div', { class: 'ftools' },
       el('button', { type: 'button', disabled: !anyHidden, title: 'Restore every member; the last-focused one ends up on top', onclick: () => { closePop(); paintChips(); showFolder(f); } }, 'Show all'),
       el('button', { type: 'button', disabled: !anyShown, title: 'Minimize every member', onclick: () => { closePop(); paintChips(); hideFolder(f); } }, 'Hide all'),
-      el('button', { type: 'button', title: 'Members go back to the main bar; no window is closed', onclick: () => { closePop(); setFolder(f.ids, null); } }, 'Ungroup all'))];
+      el('button', { type: 'button', title: 'Members go back to the main bar; no window is closed', onclick: () => { closePop(); setFolder(f.ids, null, { from: f.name }); } }, 'Ungroup all'))];
     const head = el('div', { class: 'fhead' }, el('span', { class: 'fname' }, f.name), ...(ro ? [] : [el('button', { type: 'button', class: 'frename', title: 'Rename this folder (double-click its chip does the same)', onclick: () => { closePop(); paintChips(); renameFolder(f); } }, 'Rename')]));
     pop = el('div', { class: 'folderpop', role: 'dialog', 'aria-label': `Folder ${f.name}` }, head, ...rows, ...tools);
     document.body.append(pop);
@@ -455,17 +446,23 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   document.addEventListener('pointerdown', (e) => { if (pop && !pop.contains(e.target) && !e.target.closest?.('.chip.folder')) { closePop(); paintChips(); } }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pop) { closePop(); paintChips(); } });
-  // Dropping in the empty part of the bar (or on a separator) moves the window to the end of the loose chips.
+  // Dropping in the empty part of the bar moves the chip to the end of the row; dropping on an open spot moves it there.
   if (!isViewOnly()) {
+    const dragging = () => (dragFolder ? { f: dragFolder } : looseDrag() ? winEntry(dragId) : null);
+    const gapOf = (e) => e.target.closest?.('.chipgap');
+    const slotOfGap = (g) => [...chips.children].indexOf(g);
     chips.addEventListener('dragover', (e) => {
-      if (e.target.closest('.chip') || !looseDrag() || !e.dataTransfer?.types.includes('text/x-hatch-window')) return;
-      e.preventDefault(); clearMarks(); [...chips.querySelectorAll('.chip[data-id]')].pop()?.classList.add('ins-after');
+      if (e.target.closest('.chip') || !dragging() || (!dragFolder && !e.dataTransfer?.types.includes('text/x-hatch-window'))) return;
+      e.preventDefault(); clearMarks();
+      const g = gapOf(e); if (g) g.classList.add('drop'); else [...chips.querySelectorAll('.chip')].pop()?.classList.add('ins-after');
     });
     chips.addEventListener('dragleave', (e) => { if (!chips.contains(e.relatedTarget)) clearMarks(); });
     chips.addEventListener('drop', (e) => {
       if (e.target.closest('.chip')) return;
-      const id = e.dataTransfer?.getData('text/x-hatch-window'); clearMarks();
-      if (id && wins.has(id) && looseDrag()) { e.preventDefault(); moveChip(id, null); }
+      const entry = dragging(); const g = gapOf(e); clearMarks();
+      if (!entry) return;
+      e.preventDefault();
+      if (g) { setRow(placeEntry(currentRow(), entry, slotOfGap(g))); paintChips(); } else moveChip(entry, null);
     });
   }
   let slots = []; // chip positions as last painted (see chipSlots); window numbers index into it
@@ -488,24 +485,34 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     for (const w of wins.values()) { const n = windowLabel(slots, w.panel.id, shown(w)); if (n) w.tb.dataset.n = n; }
   }
   const hiddenCount = chips.parentElement?.querySelector('#hiddencount');
+  // A batch (the first snapshot) paints once at the end, so the saved row is not reconciled against a half-loaded window list.
+  let hold = 0; let heldPaint = false;
+  function batch(fn) { hold++; try { fn(); } finally { if (--hold === 0 && heldPaint) { heldPaint = false; paintChips(); } } }
   function paintChips() {
+    if (hold) { heldPaint = true; return; }
     if (chipPress.deferPaint()) return;
-    // Taskbar: windows of this workspace in one order (the user's dragged order, new windows last), minimized ones just greyed out. Folders sit after the loose windows.
-    const mine = taskbarOrder().filter((w) => w.panel.sticky || wsOf(w.panel) === current);
+    // Taskbar: one row of slots (loose windows and folders in the user's arrangement), minimized windows just greyed out.
+    const mine = [...wins.values()].filter((w) => w.panel.sticky || wsOf(w.panel) === current);
     chips.parentElement.hidden = !mine.length;
     const groups = groupWindows(mine.map((w) => w.panel), current);
-    const layout = placeLoose(layouts.get(current), mine.map((w) => w.panel.id), groups.loose); layouts.set(current, layout);
-    const looseWins = layout.filter((id) => id !== null).map((id) => wins.get(id));
+    if (wins.size || rows.has(current)) { // before the first window ever arrives there is nothing to reconcile with: keep the saved row
+      let prev = rows.get(current);
+      if (!prev) {
+        let saved = null; try { saved = parseRow(JSON.parse(localStorage.getItem(rowKey()))); } catch { /* none or malformed: migrate */ }
+        if (!saved) {
+          const old = readOld('hatch.taskbar'); const known = new Set(groups.folders.map((f) => f.name));
+          const oldNames = readOld('hatch.taskbar.folders').filter((n) => known.has(n));
+          saved = migrateRow(old, mine.map((w) => w.panel.id), groups.loose, [...oldNames, ...groups.folders.map((f) => f.name).filter((n) => !oldNames.includes(n))]);
+          dropOld();
+        }
+        prev = saved;
+      }
+      const row = reconcileRow(prev, [...groups.loose.map(winEntry), ...groups.folders.map((f) => ({ f: f.name }))]);
+      if (rows.get(current) === undefined || JSON.stringify(row) !== JSON.stringify(rows.get(current))) setRow(row);
+    }
+    slots = chipSlots(currentRow(), groups.folders);
     // open spots stay visible (inert, not a .chip) so the chips after a closed window do not slide left
-    const loose = layout.map((id) => (id === null ? el('span', { class: 'chipgap', 'aria-hidden': 'true' }) : chipFor(wins.get(id))));
-    const ordered = orderedFolders(groups);
-    // Remember folders the first time they are seen, so a folder made later lands after them instead of sorting in alphabetically.
-    // Names that are not around right now stay in the list (windows may still be loading), so the user's order survives.
-    const known = savedFolders(); const fresh = ordered.map((f) => f.name).filter((n) => !known.includes(n));
-    if (fresh.length) saveFolders([...known, ...fresh]);
-    slots = chipSlots(layout, ordered);
-    const folders = ordered.map(folderChip);
-    chips.replaceChildren(...loose, ...(folders.length && looseWins.length ? [el('span', { class: 'chipsep', role: 'separator', 'aria-hidden': 'true' })] : []), ...folders);
+    chips.replaceChildren(...slots.map((s) => (s.kind === 'empty' ? el('span', { class: 'chipgap', 'aria-hidden': 'true' }) : s.kind === 'win' ? chipFor(wins.get(s.id)) : folderChip(s))));
     const nHidden = mine.filter((w) => w.panel.minimized).length;
     if (hiddenCount) { hiddenCount.textContent = `${nHidden} hidden`; hiddenCount.hidden = !nHidden; }
     if (openFolder) paintPop(groups, chips.querySelector('.chip.folder.sel'));
@@ -621,7 +628,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   function blur() { for (const w of wins.values()) w.node.classList.remove('focus'); paintChips(); }
   const focused = () => [...wins.values()].find((o) => shown(o) && o.node.classList.contains('focus'));
   // Windows that Leader Tab cycles through: visible and not minimized, in taskbar order.
-  const numbered = () => taskbarOrder().filter((w) => shown(w));
+  const numbered = () => selectableIds().map((id) => wins.get(id)).filter((w) => w && shown(w));
   // Number n = the n-th chip of the taskbar, minimized or not (a folder chip counts as one). Ctrl+N on a minimized chip restores it;
   // on a folder chip it raises the folder's first shown window, or restores its first window when all are minimized.
   function showNumbers(on) { numbersOn = on; paintNumbers(); }
@@ -686,13 +693,13 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   }
   // Palette: folder new | rename | show | hide. New puts the focused window in a folder of the name you give.
   const folderApi = {
-    names: () => orderedFolders().map((f) => f.name),
+    names: () => groupsNow().folders.map((f) => f.name),
     show: (name) => { const f = folderByName(name); if (f) showFolder(f); },
     hide: (name) => { const f = folderByName(name); if (f) hideFolder(f); },
     rename: (name) => { const f = folderByName(name); if (f) renameFolder(f); },
     create: () => {
       const w = focused(); if (!w || isViewOnly()) return ctx.toast('Focus a window first; it becomes the first member', 'info', 2000);
-      const name = askFolderName('Name the new folder', freeFolderName([...wins.values()].map((x) => x.panel), current)); if (name) setFolder([w.panel.id], name);
+      const name = askFolderName('Name the new folder', freeFolderName([...wins.values()].map((x) => x.panel), current)); if (name) setFolder([w.panel.id], name, { isNew: true });
     },
   };
   const closeFolderPop = () => { if (pop) { closePop(); paintChips(); } };
@@ -715,7 +722,9 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // Leader u: every window of this workspace, in taskbar order; one is marked as the selection.
   let dockSel = null;
   const selectableIds = () => {
-    return taskbarOrder().filter((w) => w.panel.sticky || wsOf(w.panel) === current).map((w) => w.panel.id);
+    const mine = [...wins.values()].filter((w) => w.panel.sticky || wsOf(w.panel) === current).map((w) => w.panel.id);
+    const rowOrder = slots.flatMap((s) => (s.kind === 'win' ? [s.id] : s.kind === 'folder' ? s.ids : [])).filter((id) => mine.includes(id));
+    return [...rowOrder, ...mine.filter((id) => !rowOrder.includes(id))];
   };
   // Minimized windows come first when picking, so the old "restore one" use stays one keypress away.
   const startSelection = () => {
@@ -833,7 +842,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     revealDock(id) { const w = wins.get(id); if (w && w.panel.placement === 'dock' && !w.panel.minimized && w.panel.autoFocus !== false) { openDock(); paintChips(); paintDock(); } },
     refit,
     refresh() { paintChips(); paintDock(); },
-    upsert, remove, get: (id) => wins.get(id),
+    upsert, remove, batch, get: (id) => wins.get(id),
     widgetChanged(info) { for (const w of wins.values()) w.view.widgetChanged?.(info); },
     all: () => [...wins.values()].map((w) => w.panel),
   };

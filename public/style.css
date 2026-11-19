@@ -228,8 +228,8 @@ html #taskbar,html.has-bg #taskbar,html.has-tr #taskbar{background:var(--surface
 .folderpop button:hover:not(:disabled){background:var(--accent-soft)}
 .folderpop .ftools{display:flex;gap:4px;border-top:1px solid var(--line);margin-top:4px;padding-top:4px} .folderpop .ftools button{color:var(--muted)}
 /* windows not on screen (minimized, dock folded) sit after a stronger divider */
-.chipgap{flex:none;width:160px;box-sizing:border-box;margin:4px 0;border:1px dashed var(--line);border-radius:6px;opacity:.5;pointer-events:none}
-.chipsep{align-self:center;width:1px;height:20px;margin:0 4px;background:var(--line);flex:none}
+.chipgap{flex:none;width:160px;box-sizing:border-box;margin:4px 0;border:1px dashed var(--line);border-radius:6px;opacity:.5}
+.chipgap.drop{opacity:1;border-style:solid}
 #welcome{position:absolute;right:18px;bottom:18px;width:min(340px,80%);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;box-shadow:0 6px 24px #0004;z-index:4;font-size:13px} #welcome[hidden]{display:none}
 #welcome h3{margin:0 0 6px;font-size:14px;display:flex;justify-content:space-between} #welcome ul{margin:0 0 8px;padding-left:18px} #welcome li{margin:2px 0} #welcome .row{display:flex;gap:6px;flex-wrap:wrap}
 body.zen #welcome{display:none}

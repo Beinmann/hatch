@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { folderToggle, hidePlan, showPlan, subNumbers, folderLeaderOpen, folderLeaderKey, ctrlFolderPress, ctrlPromptKey } from '../public/folder-keys.js';
-import { groupWindows, joinPatches, reorderPatches, orderFolders, renameInOrder } from '../public/folders.js';
+import { groupWindows, joinPatches, reorderPatches } from '../public/folders.js';
 import { chipSlots, slotNumber } from '../public/taskbar-order.js';
 import { startHatch } from './helpers.js';
 
@@ -62,18 +62,11 @@ test('joinPatches: joiners go last in the order given; reorderPatches changes on
   assert.deepEqual(reorderPatches(ps, ['a', 'b'], 'a', 'b'), []);
 });
 
-test('folder chip order: first load alphabetical, saved order wins, new folders last, rename keeps the place', () => {
-  const fs = [{ name: 'Alpha', ids: ['a'] }, { name: 'Beta', ids: ['b'] }, { name: 'Gamma', ids: ['c'] }];
-  assert.deepEqual(orderFolders(fs, []).map((f) => f.name), ['Alpha', 'Beta', 'Gamma']);
-  assert.deepEqual(orderFolders(fs, ['Gamma', 'Alpha']).map((f) => f.name), ['Gamma', 'Alpha', 'Beta']);
-  assert.deepEqual(orderFolders(fs, ['Gone', 'Beta']).map((f) => f.name), ['Beta', 'Alpha', 'Gamma']);
-  assert.deepEqual(renameInOrder(['Gamma', 'Alpha'], 'Alpha', 'Zed'), ['Gamma', 'Zed']);
-});
 
-test('slot numbering follows a reordered folder', () => {
-  const fs = orderFolders([{ name: 'Alpha', ids: ['a'] }, { name: 'Beta', ids: ['b1', 'b2'] }], ['Beta', 'Alpha']);
-  const slots = chipSlots(['x', null, 'y'], fs);
-  assert.equal(slotNumber(slots, 'b2'), 4); assert.equal(slotNumber(slots, 'a'), 5); assert.equal(slotNumber(slots, 'y'), 3);
+test('slot numbering: a folder between loose windows is one slot', () => {
+  const fs = [{ name: 'Alpha', ids: ['a'] }, { name: 'Beta', ids: ['b1', 'b2'] }];
+  const slots = chipSlots([{ w: 'x' }, null, { f: 'Beta' }, { w: 'y' }, { f: 'Alpha' }], fs);
+  assert.equal(slotNumber(slots, 'b2'), 3); assert.equal(slotNumber(slots, 'y'), 4); assert.equal(slotNumber(slots, 'a'), 5);
 });
 
 test('server keeps folderOrder only with a folder and rejects bad patches', async () => {
