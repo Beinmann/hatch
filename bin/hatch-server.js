@@ -248,7 +248,9 @@ catch (e) {
 }
 // Installed before the "is running" line below: whoever waits for that line may signal at once, and a signal that arrives
 // before the handler exists kills the process without releasing server.lock.
-const stop = async () => { await hatch.close(); process.exit(0); };
+const { createStop, installCrashHandlers } = await import('../src/shutdown.js');
+installCrashHandlers();
+const stop = createStop(() => hatch.close());
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
 const shown = host === '0.0.0.0' || host === '::' ? lanAddress() : host;
 console.log(`Hatch ${hatch.config.session ? '' : ''}is running (tmux session "${hatch.session}", state ${stateDir})`);
