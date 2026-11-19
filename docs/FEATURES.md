@@ -40,6 +40,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Desktop gadgets + graph, clock widgets | 031 021 | examples/widgets/*, server openDesktop | partly | the "looks like a programmer's desktop" part |
 | Widget sources over one stream | 032 | server /api/sub | yes | a bug fix, keep |
 | hatch.call (one-shot source with argument), widget data/ folder, background-roulette widget | 141 | server /api/call, sources.js runOnce, examples/widgets/background-roulette | yes | |
+| wallpaper-shuffle widget (multi-source download job, favorites, auto timer, two-step delete) | | examples/widgets/wallpaper-shuffle, test/wallpaper-shuffle.test.js | yes | replaces background-roulette in practice |
 | Customisation (custom.css, custom.js) | 054 | app.js hatchUI, server /custom | yes | docs/CUSTOMIZE.md |
 | Taskbar and window snapping | 053 | windows.js, app.js | yes | |
 | Sticky windows, window cycling | 062 | windows.js | yes | |

@@ -1,0 +1,58 @@
+{
+ "title": "Wallpaper shuffle",
+ "w": 420,
+ "h": 400,
+ "placement": "float",
+ "sources": [
+  {
+   "name": "state",
+   "kind": "exec",
+   "json": true,
+   "everyMs": 3000,
+   "timeoutMs": 15000,
+   "cmd": "python3 {{state}}/widgets/{{widget}}/wallpaper.py {{state}} list"
+  },
+  {
+   "name": "fetch",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 15000,
+   "cmd": "python3 {{state}}/widgets/{{widget}}/wallpaper.py {{state}} fetch"
+  },
+  {
+   "name": "pick",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 30000,
+   "cmd": "python3 {{state}}/widgets/{{widget}}/wallpaper.py {{state}} pick \"$HATCH_ARG\""
+  },
+  {
+   "name": "fav",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 15000,
+   "cmd": "python3 {{state}}/widgets/{{widget}}/wallpaper.py {{state}} fav \"$HATCH_ARG\""
+  },
+  {
+   "name": "del",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 15000,
+   "cmd": "python3 {{state}}/widgets/{{widget}}/wallpaper.py {{state}} del \"$HATCH_ARG\""
+  },
+  {
+   "name": "auto",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 15000,
+   "cmd": "python3 {{state}}/widgets/{{widget}}/wallpaper.py {{state}} auto \"$HATCH_ARG\""
+  },
+  {
+   "name": "dark",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 15000,
+   "cmd": "python3 {{state}}/widgets/{{widget}}/wallpaper.py {{state}} dark \"$HATCH_ARG\""
+  }
+ ]
+}

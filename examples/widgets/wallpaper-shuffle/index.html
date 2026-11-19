@@ -1,0 +1,153 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; }
+  body { font: 12px/1.35 var(--mono, ui-monospace, monospace); color: var(--fg, #eee); background: var(--bg, #111); }
+  #panel { padding: 8px; box-sizing: border-box; min-height: 100vh; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+  button, select { font: inherit; color: var(--fg, #eee); background: rgba(127,127,127,.18); border: 1px solid rgba(127,127,127,.45);
+    border-radius: 4px; padding: 3px 9px; cursor: pointer; }
+  button:hover:not(:disabled) { background: rgba(127,127,127,.32); }
+  button:disabled { opacity: .55; cursor: default; }
+  #go { color: #111; background: var(--accent, #4fd1c0); border-color: var(--accent, #4fd1c0); font-weight: bold; }
+  #go:disabled { cursor: progress; }
+  #go.busy { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .6; } }
+  label { color: var(--muted, #888); display: inline-flex; gap: 4px; align-items: center; }
+  #msg { min-height: 1.35em; color: var(--muted, #888); overflow-wrap: anywhere; }
+  #msg.ok { color: var(--ok, #6c6); } #msg.bad { color: var(--bad, #e66); } #msg.busy { color: var(--accent, #4fd1c0); }
+  #meta { margin: 4px 0; color: var(--muted, #888); font-size: 11px; overflow-wrap: anywhere; user-select: text; }
+  #meta b { color: var(--fg, #eee); font-weight: normal; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px; margin-top: 6px; }
+  .cell { position: relative; aspect-ratio: 16 / 9; background: rgba(127,127,127,.2); border-radius: 4px; }
+  .cell img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 4px; border: 2px solid transparent;
+    box-sizing: border-box; cursor: pointer; }
+  .cell.sel img { border-color: var(--accent, #4fd1c0); }
+  .cell button { position: absolute; top: 3px; padding: 0 6px; line-height: 17px; font-size: 12px; background: rgba(0,0,0,.65); color: #fff; border-color: rgba(255,255,255,.5); }
+  .star { left: 3px; } .star.on { color: #ffd54a; border-color: #ffd54a; }
+  .del { right: 3px; }
+  .del.confirm { color: #111; background: var(--warn, #f5a623); border-color: var(--warn, #f5a623); font-weight: bold; }
+  .empty { color: var(--muted, #888); padding: 14px 2px; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <div class="row">
+    <button id="go" type="button">New wallpaper</button>
+    <label>auto <select id="auto" title="Change the wallpaper by itself while this widget is open"></select></label>
+    <label id="darkl"><input type="checkbox" id="dark"> skip dark</label>
+    <label><input type="checkbox" id="favonly"> favorites only</label>
+  </div>
+  <div id="msg"></div>
+  <div id="meta"></div>
+  <div id="grid"></div>
+</div>
+<script src="/sdk.js"></script>
+<script>
+  // Wallpaper shuffle: random landscape photos (picsum.photos, then Bing, then loremflickr as fallbacks) become the Hatch
+  // background. All work happens in wallpaper.py on the server, called through the exec sources in widget.json; this page
+  // only draws state and sends clicks. A download runs detached on the server, so the page never waits on the network:
+  // the `state` source (polled every 3 s) reports the job. Star = favorite (never rotated out); the delete button needs
+  // a second click on the same spot within 3 s. The auto timer runs on the server while this widget is open.
+  var $ = function (id) { return document.getElementById(id); };
+  var go = $('go'), grid = $('grid'), msg = $('msg'), metaEl = $('meta'), autoSel = $('auto'), darkCb = $('dark'), favCb = $('favonly');
+  var S = null, armed = null, armTimer = 0, sig = '', localMsg = null, rendered = '';
+
+  function url(n) { return '/widgets/' + hatch.name + '/data/' + encodeURIComponent(n); }
+  function mk(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+  function say(text, cls) { msg.textContent = text; msg.className = cls || ''; }
+  function ago(s) { var d = Math.max(0, S.now - s); return d < 90 ? d + ' s' : d < 5400 ? Math.round(d / 60) + ' min' : Math.round(d / 3600) + ' h'; }
+
+  function describe(i) {
+    var m = i.m;
+    if (!m) return i.n + '\n(no source information)';
+    return [m.title, m.author && 'by ' + m.author, 'from ' + (m.host || m.source) + (m.id ? ' #' + m.id : ''), m.url,
+      m.width && m.width + 'x' + m.height, m.downloaded && 'downloaded ' + m.downloaded].filter(Boolean).join('\n');
+  }
+
+  function drawStatus() {
+    if (!S) return;
+    var j = S.job || {};
+    go.disabled = j.state === 'running'; go.className = j.state === 'running' ? 'busy' : '';
+    go.textContent = j.state === 'running' ? 'Downloading...' : 'New wallpaper';
+    if (localMsg) return say(localMsg.text, localMsg.cls);
+    if (j.state === 'running') say((j.reason === 'auto' ? 'auto change: ' : '') + 'trying ' + (j.step || 'a source') + '...', 'busy');
+    else if (j.state === 'done') say(j.msg + ' (' + ago(j.at) + ' ago)', 'ok');
+    else if (j.state === 'error') say('failed: ' + j.msg, 'bad');
+    else say(S.images.length ? S.images.length + ' images' : 'no images yet: click "New wallpaper"');
+  }
+
+  function drawControls() {
+    if (!autoSel.options.length) S.intervals.forEach(function (m) {
+      var o = mk('option', '', m === 0 ? 'off' : m < 60 ? 'every ' + m + ' min' : m === 60 ? 'every hour' : m < 1440 ? 'every ' + m / 60 + ' h' : 'daily');
+      o.value = m; autoSel.appendChild(o);
+    });
+    if (document.activeElement !== autoSel) autoSel.value = S.auto;
+    autoSel.title = S.auto ? 'Next change in about ' + Math.max(0, Math.round((S.next - S.now) / 60)) + ' min, while this widget is open' : 'Change the wallpaper by itself while this widget is open';
+    darkCb.checked = S.skipDark && S.darkTool; darkCb.disabled = !S.darkTool;
+    $('darkl').title = S.darkTool ? 'Skip photos that are too dark for terminal text' : 'Needs ImageMagick (magick/convert) or djpeg on the server; not found, so no image is skipped';
+  }
+
+  function drawGrid() {
+    var list = S.images.filter(function (i) { return !favCb.checked || i.fav; });
+    var key = JSON.stringify([list.map(function (i) { return [i.n, i.fav]; }), S.current, armed && armed.n]);
+    if (key !== rendered) {
+      rendered = key; grid.innerHTML = '';
+      list.forEach(function (i) {
+        var c = mk('div', 'cell' + (i.n === S.current ? ' sel' : ''));
+        var t = document.createElement('img'); t.src = url(i.n); t.title = describe(i); t.loading = 'lazy';
+        t.onclick = function () { act('pick', i.n, 'setting background...'); };
+        c.appendChild(t);
+        var s = mk('button', 'star' + (i.fav ? ' on' : ''), i.fav ? '★' : '☆');
+        s.title = i.fav ? 'Favorite: never rotated out. Click to unstar' : 'Mark as favorite (kept, never rotated out)';
+        s.onclick = function () { act('fav', i.n); };
+        c.appendChild(s);
+        var d = mk('button', 'del' + (armed && armed.n === i.n ? ' confirm' : ''), armed && armed.n === i.n ? 'confirm?' : '×');
+        d.title = 'Delete this image (click twice)';
+        d.onclick = function (e) { e.stopPropagation(); del(i, d); };
+        d.onmouseleave = function () { disarm(); };
+        c.appendChild(d);
+        grid.appendChild(c);
+      });
+      if (!list.length) grid.appendChild(mk('div', 'empty', favCb.checked ? 'no favorites yet: click the star on an image' : ''));
+    }
+    var cur = S.images.filter(function (i) { return i.n === S.current; })[0];
+    metaEl.textContent = '';
+    if (cur) { var b = mk('b', '', 'current: '); metaEl.appendChild(b); metaEl.appendChild(document.createTextNode(describe(cur).replace(/\n/g, ' · '))); }
+  }
+
+  function draw() { if (!S) return; drawControls(); drawStatus(); drawGrid(); }
+
+  // two-step delete: first click arms THIS button (warning colour, "confirm?"), a second click on it deletes
+  function disarm() { clearTimeout(armTimer); if (armed) { armed = null; rendered = ''; draw(); } }
+  function del(i, btn) {
+    if (armed && armed.n === i.n) { clearTimeout(armTimer); armed = null; rendered = ''; act('del', i.n, 'deleting...'); return; }
+    armed = { n: i.n }; btn.className = 'del confirm'; btn.textContent = 'confirm?';
+    clearTimeout(armTimer); armTimer = setTimeout(disarm, 3000);
+  }
+
+  function take(v) { var s = v && v.json; if (s && Array.isArray(s.images)) { S = s; if (!localMsg) draw(); else drawControls(), drawGrid(); } }
+  function fail(e) { localMsg = { text: 'failed: ' + (e && e.message || e), cls: 'bad' }; draw(); setTimeout(function () { localMsg = null; draw(); }, 8000); }
+  function act(src, arg, busyText) {
+    if (busyText) { localMsg = { text: busyText, cls: 'busy' }; draw(); }
+    hatch.call(src, arg).then(function (v) {
+      if (v && v.error) return fail(v);
+      localMsg = null; rendered = ''; take(v);
+      if (src === 'pick') say('Hatch background set', 'ok');
+    }, fail);
+  }
+
+  go.onclick = function () { go.disabled = true; hatch.call('fetch').then(function (v) { if (v && v.error) return fail(v); take(v); }, fail); };
+  autoSel.onchange = function () { act('auto', autoSel.value); };
+  darkCb.onchange = function () { act('dark', darkCb.checked ? 'on' : 'off'); };
+  favCb.onchange = function () { rendered = ''; draw(); };
+
+  hatch.on('state', function (v) {
+    if (v && v.error) { say('cannot read the wallpaper state: ' + v.error, 'bad'); return; }
+    take(v);
+  });
+</script>
+</body>
+</html>
