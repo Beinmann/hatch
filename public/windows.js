@@ -537,12 +537,12 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   // Number n = the n-th chip of the taskbar, minimized or not (a folder chip counts as one). Ctrl+N on a minimized chip restores it;
   // on a folder chip it raises the folder's first shown window, or restores its first window when all are minimized.
   function showNumbers(on) { numbersOn = on; paintNumbers(); }
-  // With toggle (the Ctrl+N hotkey), a window that is already open (shown, not minimized) is minimized instead of refocused.
+  // With toggle (the Ctrl+N hotkey), a window that is open and already focused is minimized instead of refocused (an open one without focus is just raised).
   function focusNumber(n, toggle = false) {
     const s = slots[n - 1]; if (!s || s.kind === 'empty') return false;
     const ws = (s.kind === 'win' ? [s.id] : s.ids).map((id) => wins.get(id)).filter(Boolean);
     const w = ws.find((x) => shown(x)) || ws[0]; if (!w) return false;
-    const act = numberKeyAction({ minimized: !!w.panel.minimized, onScreen: onScreen(w), toggle });
+    const act = numberKeyAction({ minimized: !!w.panel.minimized, onScreen: onScreen(w), focused: windowFocused(w.node, document.activeElement), toggle });
     if (act === 'restore' || act === 'minimize') { setMinimized(w.panel.id, act === 'restore' ? false : true).catch((e) => ctx.toast(e.message, 'bad')); return true; }
     if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); }
     focus(w); return true;
