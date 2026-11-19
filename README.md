@@ -295,7 +295,7 @@ What to keep in mind: the page is code you chose to run in your browser, with th
 
 ## Tests
 
-`node --test "test/*.test.js"` starts real servers on ephemeral ports with `cat` instead of tmux; one test uses real
+`npm test` (a wrapper around `node --test` that uses a temp HOME and drops `HATCH_*` variables) starts real servers on ephemeral ports with `cat` instead of tmux; one test uses real
 tmux when it is installed. Browser-only behaviour (paste, drag, windows, Mermaid rendering) is checked by hand.
 
 ## Notes and limits
