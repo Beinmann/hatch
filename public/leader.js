@@ -40,7 +40,7 @@ export function isTextTarget(el) {
 }
 
 const DIRS = { KeyH: 'h', KeyJ: 'j', KeyK: 'k', KeyL: 'l', ArrowLeft: 'h', ArrowDown: 'j', ArrowUp: 'k', ArrowRight: 'l' };
-const PLAIN = { Tab: 'next', KeyT: 'terminal', KeyQ: 'close', KeyM: 'minimize', KeyD: 'place', KeyU: 'dock', KeyS: 'toggledock', KeyF: 'maximize', KeyA: 'tile', KeyP: 'palette', KeyO: 'opacity', Escape: 'cancel' };
+const PLAIN = { Tab: 'next', KeyT: 'terminal', KeyQ: 'close', KeyM: 'minimize', KeyD: 'place', KeyU: 'dock', KeyS: 'toggledock', KeyF: 'maximize', KeyA: 'tile', KeyP: 'palette', KeyO: 'opacity', KeyR: 'reload', Escape: 'cancel' };
 const MODIFIERS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);
 // The key after the leader -> { action, dir?, n?, repeat } or null (unbound: cancels). Pure modifier presses return 'ignore'
 // so Ctrl or Shift can be pressed before h/j/k/l without cancelling.

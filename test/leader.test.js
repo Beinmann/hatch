@@ -123,3 +123,9 @@ test('Ctrl+0 (nothing else held) is the terminal chord, Ctrl+Shift+0 and plain 0
   assert.equal(isNumberChordZero({ code: 'Digit0' }), false);
   assert.equal(isNumberChordZero({ ctrlKey: true, code: 'Digit1' }), false);
 });
+
+test('leader r reloads the page; Shift+r and Ctrl+r stay unbound', () => {
+  assert.deepEqual(leaderAction({ code: 'KeyR', key: 'r' }), { action: 'reload', repeat: false });
+  assert.equal(leaderAction({ code: 'KeyR', key: 'R', shiftKey: true }), null);
+  assert.equal(leaderAction({ code: 'KeyR', key: 'r', ctrlKey: true }), null);
+});
