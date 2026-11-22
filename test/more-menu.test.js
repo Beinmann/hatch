@@ -5,16 +5,17 @@ import { moreMenuItems, showWorkspaceChips, menuFocusIndex } from '../public/mor
 const labels = (o) => moreMenuItems(o).map((i) => (i ? i.label : '-'));
 
 test('one workspace: commands, progress, settings, new and rename; no switch entry', () => {
-  assert.deepEqual(labels({ workspaces: 1 }), ['Commands', 'Progress', 'Settings', '-', 'New workspace', 'Rename workspace']);
+  assert.deepEqual(labels({ workspaces: 1 }), ['Commands', 'Settings', '-', 'New workspace', 'Rename workspace']);
+  assert.deepEqual(labels({ workspaces: 1, progress: true }), ['Commands', 'Progress', 'Settings', '-', 'New workspace', 'Rename workspace']);
 });
 test('two or more workspaces add Switch workspace', () => {
-  assert.deepEqual(labels({ workspaces: 2 }), ['Commands', 'Progress', 'Settings', '-', 'New workspace', 'Switch workspace', 'Rename workspace']);
+  assert.deepEqual(labels({ workspaces: 2 }), ['Commands', 'Settings', '-', 'New workspace', 'Switch workspace', 'Rename workspace']);
 });
 test('view-only mirrors drop the commands and workspace entries', () => {
-  assert.deepEqual(labels({ workspaces: 3, viewOnly: true }), ['Progress', 'Settings']);
+  assert.deepEqual(labels({ workspaces: 3, viewOnly: true }), ['Settings']);
 });
 test('entries keep the old button ids and show the shortcut hints', () => {
-  const [pal, prog, set] = moreMenuItems({});
+  const [pal, prog, set] = moreMenuItems({ progress: true });
   assert.deepEqual([pal.id, prog.id, set.id], ['palbtn', 'progressbtn', 'setbtn']);
   assert.equal(pal.hint, 'Ctrl+P'); assert.equal(prog.hint, 'Ctrl+Shift+G');
 });

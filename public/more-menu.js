@@ -2,10 +2,11 @@
 // Workspace entries live here because the header only shows workspace chips once there are two or more.
 
 /** Entries in order; a null is a separator. `id` is the DOM id of the entry's button, `action` names what app.js runs. */
-export function moreMenuItems({ workspaces = 1, viewOnly = false, shortcuts = {} } = {}) {
+// The Progress entry is hidden unless `progress` is true (app.js PROGRESS_UI).
+export function moreMenuItems({ workspaces = 1, viewOnly = false, shortcuts = {}, progress = false } = {}) {
   const items = [];
   if (!viewOnly) items.push({ id: 'palbtn', label: 'Commands', hint: shortcuts.palette || 'Ctrl+P', action: 'palette' });
-  items.push({ id: 'progressbtn', label: 'Progress', hint: shortcuts.progress || 'Ctrl+Shift+G', action: 'progress' });
+  if (progress) items.push({ id: 'progressbtn', label: 'Progress', hint: shortcuts.progress || 'Ctrl+Shift+G', action: 'progress' });
   items.push({ id: 'setbtn', label: 'Settings', hint: '', action: 'settings' });
   if (!viewOnly) {
     items.push(null);

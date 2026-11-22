@@ -186,7 +186,10 @@ const ctx = {
 };
 
 // Progress stays out of the terminal until requested; opening its details uses a floating window.
-let progressVisible = store.get('progress-visible', false);
+// The progress UI (header menu entry, strip, Ctrl+Shift+G, palette entries) is hidden for now; set PROGRESS_UI to true to bring it
+// back. The panel, the events and `hatch progress ...` keep working either way.
+const PROGRESS_UI = false;
+let progressVisible = PROGRESS_UI && store.get('progress-visible', false);
 function openProgress() {
   return api('POST', '/api/panels', { type: 'progress', title: 'Progress', placement: 'float', minimized: false }).catch((e) => toast(e.message, 'bad'));
 }
@@ -657,7 +660,7 @@ function setWorkspaceBackground() {
 }
 
 // ---- keyboard shortcuts overlay ----
-const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number (on a folder with several windows: then 1-9 picks one, 0 shows all), Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused widget\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window by 40px (Ctrl+h j k l resizes it; Alt+h j k l or Alt+arrows nudge it by 1px, with Shift by 10px)'], ['Click a folder chip', 'Opens its list (rows numbered N.1, N.2 ...; Rename, Show all, Hide all). Shift+click shows all members, Ctrl+click hides all, double-click renames, drag the chip to reorder folders, drag rows to reorder members'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+Shift+G', 'Fold / unfold progress strip'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Hold Alt alone', 'Peek: hides the floating windows while held (dock, effects and background stay) (after about 0.2 s, so Alt+key chords do not flash); release brings everything back. Any other key ends it. Key is configurable in Settings'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+1 ... 9', 'Focuses that window at once; on the window that already has focus it minimizes it. On a folder chip it hides the whole folder when any member is visible, otherwise shows all and focuses the last-focused member (the numbers show only after the leader key) (browsers that keep Ctrl+digit for tab switching may not deliver it)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a window\'s title bar into or out of the dock', 'Dock it at the previewed slot, or float it at the previewed outline; inside the dock it reorders (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+G (or Ctrl+Shift+Space)', 'Focus the terminal from anywhere (windows, widgets, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
+const SHORTCUTS = [[`${store.get('leader', DEFAULT_LEADER)}, then ...`, 'Leader key. h j k l / arrows focus, 1-9 window by number (on a folder with several windows: then 1-9 picks one, 0 shows all), Tab next, t or Return terminal, q close, m minimize, Shift+d show desktop (minimize all; again to restore), d dock or release the focused window, u pick from the dock, s show or hide the dock, f maximize, a tile, p palette, ] or [ next or previous workspace, w then 1-9 jump to a workspace'], ['Leader, then o', 'Ask for the focused widget\'s transparency, 0-100 (0 = not transparent, capped at 80); kept per window'], ['Leader, then Shift+h j k l', 'Move the focused window by 40px (Ctrl+h j k l resizes it; Alt+h j k l or Alt+arrows nudge it by 1px, with Shift by 10px)'], ['Click a folder chip', 'Opens its list (rows numbered N.1, N.2 ...; Rename, Show all, Hide all). Shift+click shows all members, Ctrl+click hides all, double-click renames, drag the chip to reorder folders, drag rows to reorder members'], ['Leader twice', 'Stays in leader mode'], ['Ctrl+P (or leader, then p)', 'Command palette. Ctrl+Shift+P also works in Chrome; Firefox reserves it for a private window. Inside the palette Ctrl+P / Ctrl+N move the selection'], ['Hold Alt alone', 'Peek: hides the floating windows while held (dock, effects and background stay) (after about 0.2 s, so Alt+key chords do not flash); release brings everything back. Any other key ends it. Key is configurable in Settings'], ['Ctrl+Shift+F', 'Find in terminal scrollback'], ['Ctrl+Shift+Z', 'Zen mode (hide header and dock; the dock returns as it was)'], ['Ctrl+1 ... 9', 'Focuses that window at once; on the window that already has focus it minimizes it. On a folder chip it hides the whole folder when any member is visible, otherwise shows all and focuses the last-focused member (the numbers show only after the leader key) (browsers that keep Ctrl+digit for tab switching may not deliver it)'], ['Ctrl+Shift+1 ... 9', 'Switch to the n-th workspace'], ['Ctrl+C (with selection)', 'Copy; without a selection it interrupts'], ['Shift+drag', 'Select text in a mouse-aware tmux'], ['Double-click a title bar', 'Maximize or restore a window'], ['Drag a window\'s title bar into or out of the dock', 'Dock it at the previewed slot, or float it at the previewed outline; inside the dock it reorders (Escape cancels)'], ['Double-click a note', 'Edit it (Ctrl+Enter saves)'], ['Ctrl+S in an editor window', 'Save the file'], ['Ctrl+G (or Ctrl+Shift+Space)', 'Focus the terminal from anywhere (windows, widgets, editors, widgets; closes the palette)'], ['Ctrl+B (window focused)', 'Focus the terminal and send the tmux prefix (not in text fields; there Ctrl+B is the field\'s)'], ['Ctrl+B ...', 'tmux prefix: always goes to tmux']];
 function showHelp() {
   const close = () => box.remove();
   const box = el('div', { id: 'palette', onclick: (e) => { if (e.target === box) close(); } }, el('div', { class: 'box pad' }, el('h3', { style: 'margin:0 0 8px' }, 'Keyboard shortcuts'),
@@ -696,7 +699,7 @@ addEventListener('keydown', (e) => {
   // Ctrl+P (also Ctrl+Shift+P) opens the palette from anywhere, the terminal included. Inside the palette Ctrl+P moves up.
   if (isPaletteKey(e) && !e.isComposing && !e.target.closest?.('#palette')) { e.preventDefault(); e.stopPropagation(); if (!isViewOnly()) palette.open(); return; }
   if (!(e.ctrlKey && e.shiftKey)) return;
-  if (e.code === 'KeyG') { e.preventDefault(); toggleProgress(); }
+  if (e.code === 'KeyG') { if (!PROGRESS_UI) return; e.preventDefault(); toggleProgress(); }
   else if (e.code === 'KeyZ') { e.preventDefault(); toggleZen(); }
   else if (/^Digit[1-9]$/.test(e.code)) { const n = wsNames()[Number(e.code.slice(5)) - 1]; if (n) { e.preventDefault(); switchWs(n); } }
 }, true);
@@ -886,8 +889,7 @@ const runShell = (cmd) => api('POST', '/api/runs', { cmd, cwd: info.cwd }).then(
 function primaryCommands() {
   return [
     { label: 'Focus terminal', hint: 'leader t / Return', run: () => { wm.blur(); term.focus(); } },
-    { label: 'Open progress details', run: openProgress },
-    { label: 'Toggle progress strip', hint: 'Ctrl+Shift+G', run: toggleProgress },
+    ...(PROGRESS_UI ? [{ label: 'Open progress details', run: openProgress }, { label: 'Toggle progress strip', hint: 'Ctrl+Shift+G', run: toggleProgress }] : []),
     { label: 'Open file browser', run: () => api('POST', '/api/panels', { type: 'files', title: 'Files', props: { path: info.cwd } }) },
     { label: 'New note', run: () => api('POST', '/api/panels', { type: 'note', title: 'Note', props: { markdown: '# Note\n\nDouble-click to edit.' } }) },
     { label: 'Keyboard shortcuts', run: showHelp },
@@ -1020,7 +1022,7 @@ const palette = createPalette({
     add('Run a command in an output window...', 'compilation-mode', () => { const c = (window.prompt('Command to run (output appears in its own window)') || '').trim(); return c && api('POST', '/api/runs', { cmd: c, cwd: info.cwd }).then((r) => api('POST', '/api/panels', { type: 'output', title: c.slice(0, 40), props: { cmd: c, runId: r.id, cwd: info.cwd } })); });
     try { for (const c of (await get('/api/commands')).filter((x) => !x.paste)) add(`Run in window: ${c.name}`, c.text, () => api('POST', '/api/runs', { cmd: c.text, cwd: info.cwd }).then((r) => api('POST', '/api/panels', { type: 'output', title: c.name, props: { cmd: c.text, runId: r.id, cwd: info.cwd } }))); } catch { /* none */ }
     try { for (const c of await get('/api/commands')) add(c.paste ? `Prompt: ${c.name}` : `Run: ${c.name}`, c.text.split('\n')[0].slice(0, 60), () => { if (c.paste) term.sendText(c.text); else term.type(c.text + (c.enter ? '\r' : '')); term.focus(); }); } catch { /* none saved */ }
-    const primary = ['Focus terminal', 'Open progress details', 'Toggle progress strip', 'Open file browser', 'New note', 'Keyboard shortcuts'];
+    const primary = ['Focus terminal', 'Open file browser', 'New note', 'Keyboard shortcuts'];
     return out.sort((a, b) => (primary.includes(a.label) ? primary.indexOf(a.label) : 100) - (primary.includes(b.label) ? primary.indexOf(b.label) : 100));
   },
 });
@@ -1060,7 +1062,7 @@ const moreActions = {
   'ws-new': () => newWorkspace(), 'ws-rename': () => renameWorkspace(), 'ws-switch': () => pickWorkspace((n) => switchWs(n), { exclude: [wm.current()] }),
 };
 function paintMoreMenu() {
-  const items = moreMenuItems({ workspaces: wsNames().length, viewOnly: isViewOnly() });
+  const items = moreMenuItems({ workspaces: wsNames().length, viewOnly: isViewOnly(), progress: PROGRESS_UI });
   $('moremenu').replaceChildren(...items.map((it) => {
     if (!it) return el('hr', { role: 'separator' });
     const b = el('button', { type: 'button', role: 'menuitem', id: it.id, tabindex: '-1', onclick: () => { closeMore(); moreActions[it.action](); } }, el('span', {}, it.label), it.hint ? el('span', { class: 'kbd' }, it.hint) : '');
