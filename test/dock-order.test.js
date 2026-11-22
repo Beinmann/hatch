@@ -71,3 +71,13 @@ test('dock button is never hidden: no markup, style or script hides it', async (
   assert.doesNotMatch(read('style.css'), /#dockbtn[^{]*\[hidden\]|#dockbtn[^{]*\{[^}]*display:\s*none/);
   for (const f of ['app.js', 'windows.js']) assert.doesNotMatch(read(f), /dockbtn['"]\)\.(hidden|style)|dockbtn[^;]*setAttribute\(\s*['"]hidden/, f);
 });
+
+test('dockEmptied with a folder: several docked windows leave at once, the dock hides once, and not while one is still visible', () => {
+  const visible = (ps, hidden) => ps.some((p) => p.placement === 'dock' && !hidden.has(p.id));
+  const ps = [P('a', 0), P('b', 1), P('c', 2)];
+  let had; const fire = (hidden) => { const any = visible(ps, hidden); const e = dockEmptied(had, any); had = any; return e; };
+  assert.equal(fire(new Set()), false);
+  assert.equal(fire(new Set(['a', 'b'])), false); // folder minimized, c still shown
+  assert.equal(fire(new Set(['a', 'b', 'c'])), true); // last one gone: hide once
+  assert.equal(fire(new Set(['a', 'b', 'c'])), false); // repaint while empty: no second hide (a hand-opened empty dock stays)
+});
