@@ -51,7 +51,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Clipboard bridge (copy, OSC 52) | server /api/copy, terminal.js | button path only | |
 | Terminal find (Ctrl+Shift+F) | terminal.js | yes | |
 | Leader key window control (Ctrl+Space, then h/j/k/l, 1-9, Tab, t, q, m, u, s toggle dock, d dock or release, Shift/Ctrl+hjkl, o per-window transparency, f, a, p; configurable in Settings) | leader.js, direction.js, windows.js, app.js | key mapping and focus selection | |
-| Move focused window by keyboard (leader Shift+h/j/k/l) | windows.js, app.js | no | not browser-tested |
+| Move focused window by keyboard (leader Shift+h/j/k/l = 40px, Alt+hjkl/arrows = 1px, Alt+Shift = 10px) | leader.js, windows.js, app.js | key mapping only | not browser-tested |
 | Restore minimized widget by keyboard (leader u) | restore.js, windows.js, app.js | selection logic only | not browser-tested |
 | curl window, docker widget | ui.js, examples/widgets/docker | curl tested, docker not | |
 | Scheduled checks (every) | src/schedules.js | CLI + tests | |

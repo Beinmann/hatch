@@ -204,6 +204,7 @@ The header keeps secondary tools in the command palette. It opens immediately wi
 | Ctrl+G (older alias: Ctrl+Shift+Space) | Return to terminal from anywhere, widget frames and the palette included |
 | Leader, then h / j / k / l | Focus the nearest window or the terminal to the left / below / above / right |
 | Leader, then Shift+h / j / k / l | Move the focused floating window by 40px (stays on screen, position is saved) |
+| Leader, then Alt+h / j / k / l (or Alt+arrows) | Nudge the focused floating window by 1px; with Shift, 10px. Same clamping and saving; the leader stays armed |
 | Leader, then d | Dock the focused floating window, or release a docked one (same as the title-bar button) |
 | Leader, then s | Show or hide the dock column (also palette: Toggle dock; Zen mode hides it too and restores it as it was) |
 | Leader, then m / q / u | Minimize, close, restore from the dock |
