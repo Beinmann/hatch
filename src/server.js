@@ -13,6 +13,7 @@ import { createState, loadConfig, saveConfig, layout, atomicWrite, NAME_RE } fro
 import { createTerminal, TerminalError } from './terminal.js';
 import { saveUpload, sniff, MIME, MAX_BYTES, UploadError } from './uploads.js';
 import { createSources, checkSource, runOnce as runSourceOnce, ARG_RE, ANY_ARG_RE } from './sources.js';
+import { createProcs } from './procs.js';
 import { hostAllowed, readAllowedHostsFile, hostRefusedMessage } from './hosts.js';
 import * as fsapi from './files.js';
 import { resolvePageFile, PAGE_KEY_RE } from './pages.js'; // resolvePageFile also guards /host/ (hatch host)
@@ -113,10 +114,11 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     if (text === lastStatus) return;
     try { term.tmux(text ? ['set-option', '-t', cfg.session, 'status-right', `${text}| %H:%M `] : ['set-option', '-u', '-t', cfg.session, 'status-right']); lastStatus = text; } catch { /* the session may not exist yet: tried again on the next progress event */ }
   };
-  state = createState(stateDir, { emit: (e, d) => { bus.emit(e, d); if (e === 'progress') mirrorStatus(d); }, poll: pollState, log });
+  const procs = createProcs({ cwd, log }); // long-lived widget processes (source kind "proc")
+  state = createState(stateDir, { emit: (e, d) => { bus.emit(e, d); if (e === 'progress') mirrorStatus(d); if (e === 'panel' && d.action === 'removed' && d.panel?.type === 'widget') widgetWindowClosed(d.panel.props?.name); }, poll: pollState, log });
   for (const message of configWarnings) state.warn('config.json', message);
   if (migration.migrated && migration.backup) log(`workspaces: wrapped the existing state as workspace main; the previous state is kept in ${path.basename(migration.backup)}/ until you delete it`);
-  const sources = createSources({ procRoot });
+  const sources = createSources({ procRoot, procs });
   const gitClient = gitapi.createGit();
   const runs = createRuns({ cwd, notify: (n) => bus.emit('notify', n) });
   const schedules = createSchedules({ file: l.schedules, runs, cwd, notify: (n) => bus.emit('notify', n), warn: (m) => state.warn('schedules.json', m) });
@@ -212,8 +214,25 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     const c = checkSource(raw);
     if (c.error) throw new HttpError(400, c.error);
     // placeholders in exec commands: {{widget}} (this widget's folder name), {{session}} (tmux session), {{state}} (state dir), {{cwd}} (server dir); values are shell-quoted
-    if (c.def.kind === 'exec') { const q = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`; c.def.cmd = c.def.cmd.replaceAll('{{widget}}', () => q(name)).replaceAll('{{session}}', () => q(cfg.session)).replaceAll('{{state}}', () => q(stateDir)).replaceAll('{{cwd}}', () => q(cwd)); } // function replacers: a '$' in a path must not be read as a replacement pattern
+    if (c.def.kind === 'proc') c.def.widget = name; // a process belongs to one widget window
+    if (c.def.kind === 'exec' || c.def.kind === 'proc') { const q = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`; c.def.cmd = c.def.cmd.replaceAll('{{widget}}', () => q(name)).replaceAll('{{session}}', () => q(cfg.session)).replaceAll('{{state}}', () => q(stateDir)).replaceAll('{{cwd}}', () => q(cwd)); } // function replacers: a '$' in a path must not be read as a replacement pattern
     return c.def;
+  }
+
+  /** A closed window ends its processes. A widget marked "perWindow" (one copy per window, see openExample) also loses its
+   *  folder, data included, so closing the window deletes what it kept. */
+  function widgetWindowClosed(name) {
+    if (typeof name !== 'string' || !NAME_RE.test(name)) return;
+    procs.kill(name);
+    setImmediate(() => { if (state.widgetMeta(name)?.perWindow === true && !state.listPanels().some((q) => q.type === 'widget' && q.props?.name === name)) { fs.rmSync(path.join(l.widgets, name), { recursive: true, force: true }); state.rescan(); } });
+  }
+  /** One window per copy: every open of a "perWindow" example (widget.json) makes a fresh copy NAME-N with empty data/. */
+  function openPerWindow(name, meta, windowOptions) {
+    let n = 1; while (fs.existsSync(path.join(l.widgets, `${name}-${n}`))) n++;
+    const copy = `${name}-${n}`; const src = path.join(EXAMPLES, name);
+    fs.cpSync(src, path.join(l.widgets, copy), { recursive: true, filter: (f) => path.relative(src, f).split(path.sep)[0] !== 'data' });
+    atomicWrite(path.join(l.widgets, copy, 'widget.json'), `${JSON.stringify({ ...meta, copyOf: name }, null, 2)}\n`);
+    state.rescan(); return state.createPanel({ type: 'widget', props: { name: copy }, ...windowOptions });
   }
 
   const limits = createLimits({ probe: limitsProbe });
@@ -374,6 +393,11 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     }
     if (name === 'trash') return state.listPanels().find((q) => q.type === 'trash') || state.createPanel({ type: 'trash', title: 'Trash' }); // one trash window is enough
     const dir = path.join(l.widgets, name);
+    let exampleMeta = {}; try { exampleMeta = JSON.parse(fs.readFileSync(path.join(EXAMPLES, name, 'widget.json'), 'utf8')); } catch { /* an example without a readable widget.json opens as before */ }
+    if (exampleMeta.perWindow === true) {
+      const opts = {}; for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement']) if (options?.[key] !== undefined) opts[key] = options[key];
+      return openPerWindow(name, exampleMeta, opts);
+    }
     if (!fs.existsSync(dir)) { fs.cpSync(path.join(EXAMPLES, name), dir, { recursive: true }); recordShipped(stateDir, name); }
     if (name === 'log-tail') useReadableLog(name);
     const windowOptions = {};
@@ -603,16 +627,22 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         const b = await readJson(req); const key = `${b.widget}/${b.source}`;
         if (!b.cid || typeof b.widget !== 'string' || typeof b.source !== 'string') throw new HttpError(400, 'sub needs cid, widget and source');
         if (b.on === false) { unsub(b.cid, key); return json(res, 200, { ok: true }); }
-        const def = widgetSource(b.widget, b.source); subscribeKey(b.cid, key, b.widget, b.source, def);
+        const def = widgetSource(b.widget, b.source);
+        if (def.kind === 'proc' && levelOf(req) !== 'full') throw new HttpError(403, 'a view-only link cannot start a widget process');
+        subscribeKey(b.cid, key, b.widget, b.source, def);
         return json(res, 200, { ok: true });
       }
 
       if (p === '/api/call' && m === 'POST') {
         // hatch.call: run an exec source once for a widget, with one argument in $HATCH_ARG. Full token only (not in VIEW_POST),
         // because it can change things (the example deletes files); a few at a time so a widget cannot fork-bomb the box.
-        const b = await readJson(req);
+        const b = await readJson(req, 5 * 1024 * 1024); // a proc source takes a line of up to 4 MiB
         if (typeof b?.widget !== 'string' || typeof b.source !== 'string') throw new HttpError(400, 'call needs widget and source');
         const def = widgetSource(b.widget, b.source);
+        if (def.kind === 'proc') { // one line to the widget's process; its answers arrive on the subscription
+          try { procs.send(b.widget, def, b.arg); } catch (e) { throw new HttpError(400, e.message); }
+          return json(res, 200, { value: { ok: true } });
+        }
         if (def.kind !== 'exec') throw new HttpError(400, `source ${b.source} is ${def.kind}; hatch.call only runs exec sources`);
         if (b.arg !== undefined && (typeof b.arg !== 'string' || !(def.arg === 'any' ? ANY_ARG_RE : ARG_RE).test(b.arg))) throw new HttpError(400, 'arg must be a file-name-like word: letters, digits, _ . - and spaces, starting with a letter or digit, at most 200 characters');
         if (calls >= MAX_CALLS) throw new HttpError(429, `already running ${MAX_CALLS} widget calls; wait for one to finish`);
@@ -1022,6 +1052,8 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     viewOnly, server, state, term, bus, sources, get token() { return cfg.token; }, sessions, session: cfg.session, config: cfg,
     async listen(at = port) { // `at` lets the caller retry on another port after EADDRINUSE; the same server object can listen again
       lock ||= acquireLock(stateDir, { host }); // before binding or writing config.json: refuses when a live server owns this state dir
+      state.rescan();
+      for (const n of state.widgetNames()) if (state.widgetMeta(n)?.perWindow === true && !state.getPanel(`w-${n}`)) widgetWindowClosed(n); // a copy whose window is gone (closed by hand-editing, or while the server was down)
       await new Promise((resolve, reject) => { const fail = (e) => { server.off('listening', resolve); reject(e); }; server.once('error', fail); server.listen(at, host, () => { server.off('error', fail); resolve(); }); });
       const actual = server.address().port;
       lock.update({ port: actual });
@@ -1033,7 +1065,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       configGuard.start();
       return actual;
     },
-    async close() { sessions.flush(); hostSecrets.close(); configGuard.stop(); lock?.release(); lock = null; gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
+    async close() { sessions.flush(); hostSecrets.close(); configGuard.stop(); lock?.release(); lock = null; gitClient.close(); clearInterval(viewWatch); schedules.close(); for (const t of extra.values()) t.stop(); for (const s of subs.values()) s.off(); runs.close(); watches.close(); sources.closeAll(); procs.killAll(); state.close(); bus.close(); term.stop(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
     baseUrl,
     get configGuardRunning() { return configGuard.running; },
   };

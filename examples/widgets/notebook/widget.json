@@ -1,0 +1,14 @@
+{
+ "title": "Notebook",
+ "w": 760,
+ "h": 580,
+ "placement": "float",
+ "perWindow": true,
+ "sources": [
+  {
+   "name": "kernel",
+   "kind": "proc",
+   "cmd": "command -v python3 >/dev/null 2>&1 || { echo '{\"t\":\"fatal\",\"error\":\"python3 was not found on PATH. Install Python 3 (for example: apt install python3) and reopen this window.\"}'; exit 3; }; exec python3 -u {{state}}/widgets/{{widget}}/runner.py {{state}}/widgets/{{widget}}/data"
+  }
+ ]
+}
