@@ -148,3 +148,8 @@ export function slotNumber(slots, id) {
   const i = slots.findIndex((s) => (s.kind === 'win' ? s.id === id : s.kind === 'folder' && s.ids.includes(id)));
   return i >= 0 && i < 9 ? i + 1 : 0;
 }
+
+/** The chip badges: [{ slot (index into `slots`), n }] for the filled slots 1-9. Open spots and slots beyond 9 get none. */
+export function chipBadges(slots) {
+  return slots.slice(0, 9).flatMap((s, i) => (s.kind === 'empty' ? [] : [{ slot: i, n: i + 1 }]));
+}

@@ -317,7 +317,8 @@ body.viewonly .win .tb button,body.viewonly .win .rz,body.viewonly .win .rz-edge
 body.numbers .win .tb[data-n]::before{font:700 12px var(--mono);padding:0 6px;border-radius:3px;background:var(--accent);color:var(--bg);opacity:1}
 /* the dimmed always-on number steps aside in Zen mode and while peeking (the emphasised one, while Ctrl/leader is held, stays) */
 body.zen:not(.numbers) .win .tb[data-n]::before,html.peek body:not(.numbers) .win .tb[data-n]::before{display:none}
-#chips button .cnum{position:absolute;top:-3px;left:-2px;font:700 11px var(--mono);line-height:14px;min-width:14px;text-align:center;border-radius:3px;background:var(--accent);color:var(--bg);pointer-events:none}
+#chips button .cnum{position:absolute;top:-3px;left:-2px;font:11px var(--mono);line-height:14px;min-width:14px;text-align:center;border-radius:3px;background:var(--surface);color:var(--muted);opacity:.7;pointer-events:none}
+body.numbers #chips button .cnum{font-weight:700;background:var(--accent);color:var(--bg);opacity:1}
 .win.pick{outline:3px solid var(--accent);outline-offset:2px}
 
 /* taskbar: separator between windows on screen and windows not on screen (minimized, dock folded) */

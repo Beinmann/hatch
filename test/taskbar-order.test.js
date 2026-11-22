@@ -157,3 +157,11 @@ test('slotNumber: only 1-9 are reachable', () => {
   assert.equal(slotNumber(slots, 'w8'), 9);
   assert.equal(slotNumber(slots, 'w9'), 0);
 });
+
+test('chipBadges: dim numbers for filled slots 1-9, none for open spots or beyond 9', async () => {
+  const { chipBadges, chipSlots } = await import('../public/taskbar-order.js');
+  const row = [{ w: 'a' }, null, { f: 'F' }, ...Array.from({ length: 8 }, (_, i) => ({ w: `x${i}` }))];
+  const b = chipBadges(chipSlots(row, [{ name: 'F', ids: ['m'] }]));
+  assert.deepEqual(b.map((x) => x.n), [1, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(b.map((x) => x.slot), [0, 2, 3, 4, 5, 6, 7, 8]);
+});
