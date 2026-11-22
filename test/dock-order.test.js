@@ -55,3 +55,19 @@ test('floatLanding: keeps the grab offset, clamps into the area, shrinks to fit'
   assert.deepEqual(floatLanding({ x: 2000, y: 2000 }, { x: 0, y: 0 }, { w: 400, h: 300 }, area, sz), { x: 400, y: 300, w: 400, h: 300 });
   assert.deepEqual(floatLanding({ x: 0, y: 0 }, { x: 0, y: 0 }, { w: 2000, h: 2000 }, area, sz), { x: 0, y: 0, w: 800, h: 600 });
 });
+
+test('dockEmptied: only when the last visible docked window went away', async () => {
+  const { dockEmptied } = await import('../public/dock-order.js');
+  assert.equal(dockEmptied(true, false), true);
+  assert.equal(dockEmptied(true, true), false);
+  assert.equal(dockEmptied(false, false), false); // empty dock opened by hand stays
+  assert.equal(dockEmptied(undefined, false), false); // first paint
+});
+
+test('dock button is never hidden: no markup, style or script hides it', async () => {
+  const { readFileSync } = await import('node:fs');
+  const read = (f) => readFileSync(new URL(`../public/${f}`, import.meta.url), 'utf8');
+  assert.doesNotMatch(read('index.html'), /id="dockbtn"[^>]*\bhidden\b/);
+  assert.doesNotMatch(read('style.css'), /#dockbtn[^{]*\[hidden\]|#dockbtn[^{]*\{[^}]*display:\s*none/);
+  for (const f of ['app.js', 'windows.js']) assert.doesNotMatch(read(f), /dockbtn['"]\)\.(hidden|style)|dockbtn[^;]*setAttribute\(\s*['"]hidden/, f);
+});
