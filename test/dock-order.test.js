@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from '../public/dock-order.js';
+import { dockEmptied, dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from '../public/dock-order.js';
 
 const P = (id, o, created = '2026-01-01T00:00:0' + id.length, placement = 'dock') => ({ id, placement, dockOrder: o, created });
 
