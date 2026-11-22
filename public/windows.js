@@ -6,7 +6,7 @@ import { step, listStep } from './direction.js';
 import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE, joinPatches, reorderPatches, renamePatches } from './folders.js';
 import { folderToggle, ctrlFolderPress, ctrlPromptKey, hidePlan, showPlan, subNumbers, windowLabel, folderLeaderOpen, folderLeaderKey } from './folder-keys.js';
-import { dropZone, parseRow, reconcileRow, migrateRow, combineRow, joinRow, releaseRow, renameRow, moveEntry, placeEntry, chipSlots, slotNumber } from './taskbar-order.js';
+import { dropZone, parseRow, reconcileRow, migrateRow, combineRow, joinRow, releaseRow, renameRow, moveEntry, placeEntry, chipSlots, slotNumber, chipBadges } from './taskbar-order.js';
 import { chipIcon, iconKey } from './chip-icons.js';
 import { chipClickAction, numberKeyAction, createChipPress, windowFocused } from './chip-click.js';
 import { fitFloat, clampMove, clampResize } from './fit.js';
@@ -469,17 +469,16 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   let numbersOn = false;
   let alwaysNumbers = true; // Settings: number on every shown window's title bar, dimmed (emphasised while numbersOn)
   // Title-bar numbers of shown windows: always (dimmed) when alwaysNumbers, else only while Ctrl/leader numbers are on (emphasised).
-  // Only while numbersOn: a small badge on every chip (minimized ones too).
+  // A small badge on every chip (minimized ones too), slots 1-9: dim, bright while numbersOn.
   function paintNumbers() {
     chips.querySelectorAll('.cnum').forEach((n) => n.remove());
     for (const w of wins.values()) delete w.tb.dataset.n;
     document.body.classList.toggle('numbers', numbersOn);
-    if (numbersOn) {
-      slots.slice(0, 9).forEach((s, i) => {
-        if (s.kind === 'empty') return;
-        const btn = s.kind === 'win' ? chips.querySelector(`.chip[data-id="${CSS.escape(s.id)}"]`) : chips.querySelector(`.chip.folder[data-folder="${CSS.escape(s.name)}"]`);
-        btn?.append(el('span', { class: 'cnum', 'aria-hidden': 'true' }, String(i + 1)));
-      });
+    // The chip badge is always there (dim); Ctrl/leader held only emphasises it (body.numbers), so a chip never shows two.
+    for (const { slot, n } of chipBadges(slots)) {
+      const s = slots[slot];
+      const btn = s.kind === 'win' ? chips.querySelector(`.chip[data-id="${CSS.escape(s.id)}"]`) : chips.querySelector(`.chip.folder[data-folder="${CSS.escape(s.name)}"]`);
+      btn?.append(el('span', { class: 'cnum', 'aria-hidden': 'true' }, String(n)));
     }
     if (!numbersOn && !alwaysNumbers) return;
     for (const w of wins.values()) { const n = windowLabel(slots, w.panel.id, shown(w)); if (n) w.tb.dataset.n = n; }
