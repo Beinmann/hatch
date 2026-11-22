@@ -648,7 +648,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); }
     focus(w); return true;
   }
-  // Ctrl+N prompt: the numbered popover waits 5 s for a digit (pick N.m, 0 hides the folder, Esc or Ctrl+N again cancels).
+  // Ctrl+N prompt: the numbered popover waits 5 s for a digit (pick N.m, 0 hides the folder, Esc cancels; Ctrl+N again picks member N).
   const promptTimer = () => setTimeout(() => { if (ctrlPrompt) { closePop(); paintChips(); } }, 5000);
   function startPrompt(n, f) {
     closePop(); openFolder = f.name; popWait = f.ids.slice(); paintChips();

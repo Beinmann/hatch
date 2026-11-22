@@ -87,14 +87,17 @@ test('Ctrl+N press on a folder: all hidden shows all, any visible asks', () => {
   assert.equal(ctrlFolderPress([M('a'), M('b')]), 'prompt');
 });
 
-test('Ctrl+N prompt keys: digit with or without Ctrl, 0 hides, Esc and Ctrl+N cancel', () => {
+test('Ctrl+N prompt keys: digit with or without Ctrl, 0 hides, Esc cancels, Ctrl+N again picks member N', () => {
   const ids = ['a', 'b', 'c'];
   const k = (code, extra = {}) => ctrlPromptKey(ids, 5, { key: code.replace('Digit', ''), code, ...extra });
   assert.deepEqual(k('Digit2'), { action: 'pick', id: 'b' });
   assert.deepEqual(k('Digit2', { ctrlKey: true }), { action: 'pick', id: 'b' });
   assert.deepEqual(k('Digit0'), { action: 'hide' });
   assert.deepEqual(k('Digit0', { ctrlKey: true }), { action: 'hide' });
-  assert.deepEqual(k('Digit5', { ctrlKey: true }), { action: 'cancel' }); // Ctrl+N again
+  assert.deepEqual(k('Digit5', { ctrlKey: true }), { action: 'cancel' }); // Ctrl+N again, folder has no member 5
+  const two = (code) => ctrlPromptKey(ids, 2, { key: code.replace('Digit', ''), code, ctrlKey: true });
+  assert.deepEqual(two('Digit2'), { action: 'pick', id: 'b' }); // Ctrl+2 twice -> window 2 of the folder
+  assert.deepEqual(ctrlPromptKey(ids, 1, { key: '1', code: 'Digit1', ctrlKey: true }), { action: 'pick', id: 'a' });
   assert.deepEqual(k('Digit5'), { action: 'ignore' }); // plain 5: no member 5, stay open
   assert.deepEqual(k('Digit7'), { action: 'ignore' });
   assert.deepEqual(ctrlPromptKey(ids, 5, { key: 'Escape', code: 'Escape' }), { action: 'cancel' });

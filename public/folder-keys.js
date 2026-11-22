@@ -50,7 +50,7 @@ export function folderLeaderKey(ids, e) {
 /**
  * A key while the Ctrl+N prompt waits (`n` = the folder's slot digit): like folderLeaderKey (digit picks, 0 hides all, anything
  * else cancels), but the digit is accepted with or without Ctrl held, and Ctrl+N again (the folder's own digit with the modifier)
- * cancels. Returns { action: 'pick', id } | { action: 'hide' } | { action: 'cancel' } | { action: 'ignore' } (modifier alone or a
+ * picks the N-th member (cancels when the folder has fewer). Returns { action: 'pick', id } | { action: 'hide' } | { action: 'cancel' } | { action: 'ignore' } (modifier alone or a
  * digit with no member: stay open) | { action: 'pass' } (cancel, and let the key go on to the page).
  */
 export function ctrlPromptKey(ids, n, e) {
@@ -60,8 +60,8 @@ export function ctrlPromptKey(ids, n, e) {
   if (!d) return { action: 'pass' };
   const k = Number(d[1]);
   if (k === 0) return { action: 'hide' };
-  if (k === n && (e.ctrlKey || e.altKey)) return { action: 'cancel' };
   const hit = subNumbers(ids).find((x) => x.n === k);
+  if (k === n && (e.ctrlKey || e.altKey)) return hit ? { action: 'pick', id: hit.id } : { action: 'cancel' }; // Ctrl+N again: member N, or close when there is none
   return hit ? { action: 'pick', id: hit.id } : { action: 'ignore' };
 }
 
