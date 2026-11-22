@@ -223,7 +223,11 @@ const wm = createWindows({
   patch: ctx.patch, close: (id) => api('DELETE', `/api/panels/${id}`).catch((e) => toast(e.message, 'bad')),
   kinds: { image, iframe, page, note, progress, widget, files, editor, output, terminal: terminalPanel, git: gitPanel, trash: trashPanel }, ctx,
   dockOpen: () => dockWanted, openDock: () => { if (!dockWanted) { dockWanted = true; store.set('dock-visible', true); } },
-  onDockChange: (any) => { $('dockbtn').hidden = !any; dockEl.hidden = splitEl.hidden = !(any && dockWanted); requestAnimationFrame(() => wm.refit()); }, // the floating area changed width: refit now, not only when the resize observer fires
+  // The header button is always there. The column auto-hides when its last window leaves, and can be opened empty by hand.
+  onDockChange: (any, emptied) => {
+    if (emptied && dockWanted) { dockWanted = false; store.set('dock-visible', false); }
+    dockEl.hidden = splitEl.hidden = !dockWanted; dockEl.classList.toggle('empty', !any); requestAnimationFrame(() => wm.refit());
+  }, // the floating area changed width: refit now, not only when the resize observer fires
 });
 addEventListener('beforeunload', (e) => { if (wm.hasUnsavedChanges()) { e.preventDefault(); e.returnValue = ''; } });
 ctx.focusPanel = (id, keyboard = true) => wm.focusPanel(id, keyboard);

@@ -3,7 +3,7 @@ import { pickRestore } from './restore.js';
 import { touch, pickAfterClose } from './focus-history.js';
 import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
-import { dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
+import { dockEmptied, dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
 import { groupWindows, freeFolderName, folderOf, FOLDER_RE, joinPatches, reorderPatches, renamePatches } from './folders.js';
 import { folderToggle, ctrlFolderPress, ctrlPromptKey, hidePlan, showPlan, subNumbers, windowLabel, folderLeaderOpen, folderLeaderKey } from './folder-keys.js';
 import { dropZone, parseRow, reconcileRow, migrateRow, combineRow, joinRow, releaseRow, renameRow, moveEntry, placeEntry, chipSlots, slotNumber, chipBadges } from './taskbar-order.js';
@@ -517,9 +517,12 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     if (openFolder) paintPop(groups, chips.querySelector('.chip.folder.sel'));
     paintNumbers();
   }
-  function paintDock() {
+  // `quiet` (workspace switch) only records the state: another workspace having no docked windows is not "the last one left".
+  let hadDocked;
+  function paintDock(quiet = false) {
     const any = [...wins.values()].some((w) => w.panel.placement === 'dock' && shown(w));
-    onDockChange(any);
+    const emptied = !quiet && dockEmptied(hadDocked, any); hadDocked = any;
+    onDockChange(any, emptied);
   }
 
   function upsert(panel) {
@@ -609,7 +612,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
   });
   try { const sw = localStorage.getItem('hatch.dockw'); if (sw) dock.style.width = sw; } catch { /* ignore */ }
 
-  function setWorkspace(name) { closePop(); current = name || 'main'; for (const w of wins.values()) w.node.hidden = !shown(w); refit(); paintChips(); paintDock(); }
+  function setWorkspace(name) { closePop(); current = name || 'main'; for (const w of wins.values()) w.node.hidden = !shown(w); refit(); paintChips(); paintDock(true); }
   // Leader h/j/k/l: move focus to the nearest visible window (or the terminal) in that direction.
   // Selection lives in direction.js (deterministic, and the opposite key retraces the path).
   let trail = [];

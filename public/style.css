@@ -344,7 +344,7 @@ button.danger:not(:disabled){background:#dc2626;color:#fff;border-color:#dc2626}
 
 /* more-options menu and icon-only dock button */
 #bar>#dockbtn{display:inline-flex;align-items:center;padding:4px 6px}
-#dockbtn[hidden]{display:none}
+#dockhint{display:none;margin:auto 0;text-align:center;color:var(--dim,var(--fg));opacity:.6;font-size:13px;line-height:1.5} #dock.empty #dockhint{display:block}
 #morewrap{position:relative;display:inline-flex}
 #bar #morebtn{background:transparent;border-color:transparent;font-size:18px;line-height:1;padding:2px 8px}
 #bar #morebtn:hover,#bar #morebtn[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent)}

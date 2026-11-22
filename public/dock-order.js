@@ -1,6 +1,9 @@
 // Pure order logic for the dock column. Each docked panel may carry an integer `dockOrder`; panels without one
 // (never reordered, or new) go after the numbered ones, oldest first, so every browser tab derives the same order.
 
+/** Did the dock just lose its last visible window (minimized, closed or folder-hidden)? Then it auto-hides; the header button stays. */
+export function dockEmptied(hadAny, any) { return hadAny === true && !any; }
+
 /** Ids of the docked panels in display order. */
 export function dockIds(panels) {
   const key = (p) => (Number.isFinite(p.dockOrder) ? p.dockOrder : Infinity);
