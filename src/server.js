@@ -387,7 +387,12 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     for (const key of ['x', 'y', 'w', 'h', 'autoFocus', 'maximized', 'ws']) if (geometry?.[key] !== undefined) windowOptions[key] = geometry[key];
     // an old non-interactive top widget window would sit beside the terminal: replace it
     for (const old of state.listPanels().filter((q) => q.type === 'widget' && q.props?.name === 'top')) state.deletePanel(old.id);
-    return state.createPanel({ type: 'terminal', title: 'top', props: { name: 'top', cmd: TOP_CMD }, ...windowOptions });
+    // One top window per workspace: opening it in a second workspace must not move the first one (a terminal window's id and pty follow its name), so it gets its own name there
+    const ws = windowOptions.ws || 'main';
+    const tops = state.listPanels().filter((q) => q.type === 'terminal' && (q.props?.name === 'top' || /^top-/.test(q.props?.name || '')) && q.props?.cmd === TOP_CMD);
+    let name = tops.find((q) => (q.ws || 'main') === ws || q.sticky)?.props.name;
+    if (!name) name = tops.some((q) => q.props.name === 'top') ? `top-${String(ws).replace(/[^\w-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '') || 'ws'}`.slice(0, 60) : 'top';
+    return state.createPanel({ type: 'terminal', title: 'top', props: { name, cmd: TOP_CMD }, ...windowOptions });
   }
   function openDesktop() {
     const opened = [];

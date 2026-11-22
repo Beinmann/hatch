@@ -489,3 +489,20 @@ test('widget restore: missing, malformed and partly bad layout files warn instea
     r = await ui(['w', 'save', path.join(d, 'nodir')], { state: s }); assert.equal(r.status, 1); assert.match(r.stderr, /not a directory/);
   } finally { await h.close(); }
 });
+
+test('opening top in a second workspace leaves the first workspace window alone', async () => {
+  const h = await startHatch({ attach: null });
+  try {
+    await h.call('POST', '/api/workspaces', { name: 'second' });
+    const first = (await h.call('POST', '/api/examples/top/open', {})).data;
+    const second = (await h.call('POST', '/api/examples/top/open', { ws: 'second' })).data;
+    assert.notEqual(second.id, first.id);
+    assert.equal(second.ws, 'second');
+    const again = (await h.call('GET', `/api/panels/${first.id}`)).data;
+    assert.equal(again.ws || 'main', 'main', 'the first window stays in its workspace');
+    // opening again in either workspace reuses that workspace's window
+    assert.equal((await h.call('POST', '/api/examples/top/open', {})).data.id, first.id);
+    assert.equal((await h.call('POST', '/api/examples/top/open', { ws: 'second' })).data.id, second.id);
+    assert.equal((await h.call('GET', '/api/panels')).data.filter((p) => p.props?.name?.startsWith('top')).length, 2);
+  } finally { await h.close(); }
+});
