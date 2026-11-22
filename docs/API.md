@@ -10,7 +10,7 @@ unless noted. Errors are `{ "error": "message" }` with a meaningful status (400 
 `GET /api/events?cid=ID` is one SSE stream. First event `snapshot` (`panels`, `progress`, `widgets`, `warnings`, `asks`,
 `info`), then `panel` (`created|updated|removed`), `progress`, `widget`, `warning`, `notify`, `ask`, `ask-done`, `copy`,
 `source` (widget data). `POST /api/sub {cid, widget, source, on?}` subscribes a widget source to that stream.
-`POST /api/call {widget, source, arg?}` runs an `exec` source once and answers `{value}` (same shape as a subscription value); `arg` becomes `$HATCH_ARG` and must be a file-name-like word (400 otherwise). Full token only, at most 4 at a time (429).
+`POST /api/call {widget, source, arg?}` on a `proc` source writes the one-line string `arg` (up to 4 MiB) to the widget's long-lived process and answers `{value:{ok:true}}` (the process starts if needed; its stdout lines arrive as `source` events `{line}`, its end as `{exit}`; full token only, 403 on `/api/sub` for a view-only link). On an `exec` source it runs it once and answers `{value}` (same shape as a subscription value); `arg` becomes `$HATCH_ARG` and must be a file-name-like word (400 otherwise). Full token only, at most 4 at a time (429).
 
 Event, terminal and run connections use the same bounded delivery: a backpressured connection queues at most 2 MiB of follow-up events. Overflow or thirty seconds without
 a drain closes that stream; the browser reconnects and receives a fresh snapshot. Healthy connections continue
@@ -34,7 +34,7 @@ extra fields `placement x y w h minimized ws sticky folder folderOrder`; `folder
 (created on first use, with its own progress window; stored as `progress/plans/NAME.json`); `plan=default` is the unnamed plan. Without `plan` the
 only existing plan is used, and with two or more plans the answer is 409 listing them. `GET /api/progress/plans` lists `{name, steps, done}`,
 `DELETE /api/progress/plans/NAME` closes one. The SSE `snapshot` carries `plans` ({name: {diagram, steps}}) and a `plan` event
-(`{name, diagram, steps}` or `{name, removed: true}`) follows changes. Static: `/widgets/NAME/*`, `/sdk.js` (no token), `/files/uploads/N.ext`, `/custom/custom.css|js`.
+(`{name, diagram, steps}` or `{name, removed: true}`) follows changes. `POST /api/examples/NAME/open` for an example marked `"perWindow": true` creates a fresh copy `NAME-N` each time. Static: `/widgets/NAME/*`, `/sdk.js` (no token), `/files/uploads/N.ext`, `/custom/custom.css|js`.
 
 A note PATCH can include `ifMarkdown: ORIGINAL_TEXT` alongside `props.markdown`. It checks the latest disk
 content before writing and returns 409 for newer or malformed note files, preserving them; missing notes return 404.

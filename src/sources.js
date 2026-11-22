@@ -1,5 +1,5 @@
 // Data sources for widgets: metric (built-ins from /proc), exec (a shell command polled), tail (new lines of a file),
-// file (whole file when it changes). Sources are shared: two widgets on `metric:cpu` run one sampler, and a sampler
+// file (whole file when it changes), proc (a long-lived process owned by a widget, see procs.js). Sources are shared: two widgets on `metric:cpu` run one sampler, and a sampler
 // stops when its last subscriber leaves. `exec` is arbitrary command execution BY DESIGN in V0.1 (see the security warning in the README).
 import fs from 'node:fs';
 import { exec as execCb } from 'node:child_process';
@@ -88,7 +88,8 @@ export function checkSource(d) {
   if (kind === 'metric') { if (!METRICS.includes(d.id)) return { error: `unknown metric ${d.id}; known: ${METRICS.join(', ')}` }; return { def: { kind, id: d.id, path: d.path, everyMs } }; }
   if (kind === 'exec') { if (typeof d.cmd !== 'string' || !d.cmd) return { error: 'exec sources need cmd' }; return { def: { kind, cmd: d.cmd, json: !!d.json, everyMs, timeoutMs: Math.min(30000, d.timeoutMs || 10000), ...(Number.isFinite(d.maxBytes) && d.maxBytes > EXEC_MAX && { maxBytes: Math.min(EXEC_MAX_CAP, Math.floor(d.maxBytes)) }), ...(d.arg === 'any' && { arg: 'any' }) } }; }
   if (kind === 'tail' || kind === 'file') { if (typeof d.path !== 'string' || !d.path) return { error: `${kind} sources need path` }; return { def: { kind, path: d.path, everyMs: Math.max(MIN_MS, d.everyMs || 500) } }; }
-  return { error: `unknown source kind ${kind}; use metric, exec, tail or file` };
+  if (kind === 'proc') { if (typeof d.cmd !== 'string' || !d.cmd) return { error: 'proc sources need cmd' }; return { def: { kind, cmd: d.cmd } }; }
+  return { error: `unknown source kind ${kind}; use metric, exec, proc, tail or file` };
 }
 
 /** Arguments a widget may pass to hatch.call: a plain file-name-like word, so a command can use it in a path without
@@ -115,9 +116,9 @@ export function runOnce(def, arg) {
   return new Promise((resolve) => runExec(def, arg, resolve));
 }
 
-const keyOf = (d) => JSON.stringify([d.kind, d.id, d.cmd, d.path, d.everyMs, d.json]);
+const keyOf = (d) => JSON.stringify([d.kind, d.id, d.cmd, d.path, d.everyMs, d.json, d.widget]);
 
-export function createSources({ procRoot = '/proc' } = {}) {
+export function createSources({ procRoot = '/proc', procs = null } = {}) {
   const running = new Map(); // key -> { subs:Set, last, stop }
 
   function makeLoop(def, publish) {
@@ -182,6 +183,7 @@ export function createSources({ procRoot = '/proc' } = {}) {
 
   /** Subscribes `fn(value, ts)`; a late subscriber immediately gets the last value. Returns unsubscribe. */
   function subscribe(def, fn) {
+    if (def.kind === 'proc') { if (!procs) throw new Error('widget processes are not available here'); return procs.subscribe(def.widget, def, fn); } // a stream of events, not a state: no replay, and the process outlives its subscribers
     const key = keyOf(def);
     let s = running.get(key);
     if (!s) {

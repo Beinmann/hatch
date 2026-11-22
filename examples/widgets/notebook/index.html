@@ -1,0 +1,249 @@
+<!doctype html>
+<meta charset="utf-8">
+<!-- Notebook: cells of Python (and markdown) with a long-lived kernel. All state lives in runner.py (the notebook file and the
+     namespace); this page only shows it and sends requests over the "kernel" proc source, one JSON line each (see runner.py). -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg,#111);color:var(--fg,#eee);font:13px var(--mono,monospace);height:100vh;display:flex;flex-direction:column}
+  #top{display:flex;gap:6px;align-items:center;padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--fg,#eee) 15%,transparent);flex-wrap:wrap}
+  button{font:inherit;color:inherit;background:transparent;border:1px solid color-mix(in srgb,var(--fg,#eee) 22%,transparent);border-radius:6px;padding:2px 9px;cursor:pointer}
+  button:hover:not(:disabled){border-color:var(--accent,#4fd1c0);color:var(--accent,#4fd1c0)}
+  button:disabled{opacity:.4;cursor:default}
+  button.danger{border-color:#e55;color:#e55}
+  #sp{flex:1}
+  #st{display:flex;align-items:center;gap:6px;color:var(--muted,#888)}
+  #dot{width:9px;height:9px;border-radius:50%;background:var(--muted,#888)}
+  #dot.idle{background:#4c9}#dot.running{background:#f0a95a}#dot.gone{background:#e55}
+  #banner{display:none;padding:6px 10px;background:color-mix(in srgb,#f0a95a 18%,transparent);border-bottom:1px solid #f0a95a;align-items:center;gap:10px}
+  #banner.on{display:flex}#banner.bad{background:color-mix(in srgb,#e55 18%,transparent);border-color:#e55}
+  #banner span{flex:1;white-space:pre-wrap}
+  #cells{flex:1;overflow:auto;padding:8px 10px 60px}
+  .cell{display:flex;gap:8px;margin:0 0 10px;border-left:3px solid transparent;padding-left:6px}
+  .cell.focus{border-left-color:var(--accent,#4fd1c0)}
+  .cell.running{border-left-color:#f0a95a}
+  .gut{width:44px;flex:none;text-align:right;color:var(--muted,#888);padding-top:6px;font-size:11px}
+  .main{flex:1;min-width:0}
+  .bar{display:flex;gap:4px;height:20px;align-items:center;opacity:0;transition:opacity .1s}
+  .cell:hover .bar,.cell.focus .bar{opacity:1}
+  .bar button{padding:0 6px;font-size:11px;height:20px}
+  .bar .kind{color:var(--muted,#888);font-size:11px;margin-right:auto}
+  textarea{width:100%;display:block;resize:none;overflow:hidden;font:inherit;color:inherit;background:color-mix(in srgb,var(--fg,#eee) 6%,transparent);border:1px solid color-mix(in srgb,var(--fg,#eee) 14%,transparent);border-radius:6px;padding:6px 8px;tab-size:4;white-space:pre;min-height:32px}
+  textarea:focus{outline:none;border-color:var(--accent,#4fd1c0)}
+  .mdv{padding:4px 8px;min-height:32px;cursor:text;line-height:1.5}
+  .mdv h1,.mdv h2,.mdv h3{margin:.3em 0}.mdv p{margin:.4em 0}.mdv ul{margin:.3em 0;padding-left:20px}.mdv code{background:color-mix(in srgb,var(--fg,#eee) 12%,transparent);padding:0 3px;border-radius:3px}
+  .mdv pre{background:color-mix(in srgb,var(--fg,#eee) 8%,transparent);padding:6px 8px;border-radius:6px;overflow:auto}
+  .outs{margin-top:4px}
+  .outs pre{margin:0;padding:2px 8px;white-space:pre-wrap;word-break:break-word;font:inherit}
+  .outs .stderr{color:#f0a95a}.outs .error{color:#e55}.outs .result{color:var(--accent,#4fd1c0)}.outs .note{color:var(--muted,#888);font-style:italic}
+  .outs img{max-width:100%;display:block;margin:4px 8px;background:#fff;border-radius:4px}
+  .outs table{border-collapse:collapse;margin:4px 8px;font-size:12px}
+  .outs th,.outs td{border:1px solid color-mix(in srgb,var(--fg,#eee) 20%,transparent);padding:2px 8px}
+  .outs th{background:color-mix(in srgb,var(--fg,#eee) 8%,transparent)}.outs td.num{text-align:right}
+  #add{display:flex;gap:6px;margin-top:6px;padding-left:58px}
+</style>
+<div id="top">
+  <button id="run" title="Run the selected cell (Ctrl+Enter)">Run</button>
+  <button id="all" title="Run every code cell from the top">Run all</button>
+  <button id="stop" title="Interrupt the running cell and drop the queue">Stop</button>
+  <button id="restart" title="Fresh namespace: all variables are lost">Restart kernel</button>
+  <span id="sp"></span>
+  <span id="st"><i id="dot"></i><span id="stt">connecting</span></span>
+</div>
+<div id="banner"><span id="bmsg"></span><button id="ball">Run all</button></div>
+<div id="cells"></div>
+<script src="/sdk.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const mk = (tag, props = {}, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(props)) { if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); } e.append(...kids); return e; };
+  let cells = []; let inited = false; let kernelState = 'connecting'; let lost = false; let fatal = ''; let selected = null; let helloTimer = null; let saveTimer = null;
+  const queued = new Set(); const running = new Set(); const els = new Map(); const chunks = new Map(); let mpl = false;
+
+  // ---- protocol ----
+  const send = (m) => hatch.call('kernel', JSON.stringify(m)).catch((e) => setBanner(`cannot reach the kernel: ${e.message}`, true));
+  const sendCells = () => { clearTimeout(saveTimer); saveTimer = null; send({ t: 'cells', cells: cells.map(({ id, type, source }) => ({ id, type, source })) }); };
+  const changed = () => { clearTimeout(saveTimer); saveTimer = setTimeout(sendCells, 400); };
+  const flush = () => { if (saveTimer) sendCells(); };
+  const hello = () => send({ t: 'hello' });
+  const startHello = () => { clearTimeout(helloTimer); let n = 0; const tick = () => { hello(); if (++n < 20 && !inited) helloTimer = setTimeout(tick, 800); }; tick(); }; // the subscription may not be attached yet when the first one goes out
+
+  const newId = () => `c${Math.random().toString(36).slice(2, 10)}`;
+  const byId = (id) => cells.find((c) => c.id === id);
+
+  function setStatus(s) {
+    kernelState = s; $('dot').className = s === 'idle' ? 'idle' : s === 'running' ? 'running' : s === 'gone' ? 'gone' : '';
+    $('stt').textContent = { idle: 'idle', running: 'running', gone: 'kernel gone', connecting: 'connecting' }[s];
+    $('stop').disabled = s !== 'running';
+  }
+  function setBanner(text, bad, withRunAll) { const b = $('banner'); b.className = text ? `on${bad ? ' bad' : ''}` : ''; $('bmsg').textContent = text || ''; $('ball').style.display = withRunAll ? '' : 'none'; }
+  function refreshBanner() {
+    if (fatal) setBanner(fatal, true, false);
+    else if (kernelState === 'gone') setBanner('The kernel process ended. Restart kernel to start a new one; variables are lost.', true, false);
+    else if (lost) setBanner('Kernel restarted, variables lost. Outputs below are from the earlier run; nothing is re-run automatically.', false, true);
+    else setBanner('');
+  }
+
+  const onMessage = (m) => {
+    switch (m.t) {
+      case 'ready': // a fresh process: give it the cells we hold (the file may be older), then ask for state
+        if (inited) sendCells();
+        fatal = ''; if (kernelState === 'gone') setStatus('idle'); startHello(); break;
+      case 'hello': mpl = !!m.mpl; lost = !!m.lost; fatal = ''; break;
+      case 'notebook': adoptNotebook(m.cells || []); break;
+      case 'state': {
+        running.clear(); queued.clear(); if (m.busy) running.add(m.busy); for (const i of m.queued || []) queued.add(i);
+        setStatus(m.busy || (m.queued || []).length ? 'running' : 'idle'); refreshBanner(); markRunning(); break;
+      }
+      case 'start': { const c = byId(m.id); if (c) { c.outputs = []; c.count = null; lost = false; renderOutputs(c); refreshBanner(); } break; }
+      case 'out': { const c = byId(m.id); if (c) { liveText(c, m.name, m.text); } break; }
+      case 'done': { const c = byId(m.id); if (c) { c.outputs = m.outputs || []; c.count = m.n; renderOutputs(c); } break; }
+      case 'restarted': lost = false; for (const c of cells) c.count = null; cells.forEach(updateGutter); refreshBanner(); break;
+      case 'killed': { const c = byId(m.id); if (c) { c.outputs = [...(c.outputs || []), { t: 'error', text: 'The cell did not react to Stop; the kernel was killed.' }]; renderOutputs(c); } break; }
+      case 'fatal': fatal = m.error || 'the kernel could not start'; setStatus('gone'); refreshBanner(); break;
+      case 'chunk': { // a long line in pieces
+        const e = chunks.get(m.mid) || { parts: [], n: m.n, got: 0 }; chunks.set(m.mid, e);
+        if (!e.parts[m.i]) { e.parts[m.i] = m.d; e.got++; }
+        if (e.got === e.n) { chunks.delete(m.mid); try { onMessage(JSON.parse(e.parts.join(''))); } catch (err) { hatch.log(`bad chunked message: ${err.message}`); } }
+        break;
+      }
+    }
+  };
+  const onValue = (v) => {
+    if (v.line !== undefined) { let m; try { m = JSON.parse(v.line); } catch { hatch.log(`kernel said: ${String(v.line).slice(0, 200)}`); return; } onMessage(m); }
+    else if (v.exit) {
+      running.clear(); queued.clear(); markRunning(); clearTimeout(helloTimer);
+      if (!fatal) { setStatus('gone'); const why = (v.exit.stderr || '').trim(); if (why) fatal = `The kernel process ended (${v.exit.code ?? v.exit.signal}):\n${why.slice(-600)}`; }
+      refreshBanner();
+    } else if (v.error) hatch.log(v.error);
+  };
+
+  function adoptNotebook(incoming) {
+    if (!inited) {
+      inited = true; cells = incoming;
+      if (!cells.length) { cells = [{ id: newId(), type: 'code', source: '', outputs: [], count: null }]; sendCells(); }
+      renderAll(); selected = cells[0].id; markSelected();
+    } else { // already showing: take only outputs (what the kernel owns), keep the text the user may be typing
+      for (const n of incoming) { const c = byId(n.id); if (c) { c.outputs = n.outputs || []; c.count = n.count; renderOutputs(c); updateGutter(c); } }
+    }
+    refreshBanner();
+  }
+
+  // ---- markdown (escaped first, so no raw HTML gets through) ----
+  const esc = (s) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+  const inline = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>');
+  function md(src) {
+    const out = []; let list = false; let fence = null;
+    const closeList = () => { if (list) { out.push('</ul>'); list = false; } };
+    for (const line of src.split('\n')) {
+      if (/^```/.test(line)) { if (fence) { out.push(`<pre>${esc(fence.join('\n'))}</pre>`); fence = null; } else { closeList(); fence = []; } continue; }
+      if (fence) { fence.push(line); continue; }
+      let m;
+      if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) { closeList(); out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); }
+      else if ((m = /^\s*[-*]\s+(.*)$/.exec(line))) { if (!list) { out.push('<ul>'); list = true; } out.push(`<li>${inline(m[1])}</li>`); }
+      else if (!line.trim()) closeList();
+      else { closeList(); out.push(`<p>${inline(line)}</p>`); }
+    }
+    if (fence) out.push(`<pre>${esc(fence.join('\n'))}</pre>`); closeList();
+    return out.join('') || '<p style="color:var(--muted)">(empty markdown cell: click to edit)</p>';
+  }
+
+  // ---- outputs ----
+  function liveText(c, name, text) {
+    const box = els.get(c.id)?.outs; if (!box) return;
+    const last = box.lastElementChild;
+    if (last && last.tagName === 'PRE' && last.dataset.stream === name) last.textContent += text;
+    else box.append(mk('pre', { class: name, 'data-stream': name }, text));
+  }
+  function renderOutputs(c) {
+    const box = els.get(c.id)?.outs; if (!box) return;
+    box.replaceChildren();
+    for (const o of c.outputs || []) {
+      if (o.t === 'stream') box.append(mk('pre', { class: o.name, 'data-stream': o.name }, o.text));
+      else if (o.t === 'result') box.append(mk('pre', { class: 'result' }, o.text));
+      else if (o.t === 'error') box.append(mk('pre', { class: 'error' }, o.text));
+      else if (o.t === 'note') box.append(mk('pre', { class: 'note' }, o.text));
+      else if (o.t === 'image') box.append(mk('img', { src: `data:${o.mime};base64,${o.data}`, alt: 'figure' }));
+      else if (o.t === 'table') {
+        const tb = mk('table', {}, mk('tr', {}, ...o.columns.map((h) => mk('th', {}, h))));
+        for (const r of o.rows) tb.append(mk('tr', {}, ...r.map((v) => mk('td', typeof v === 'number' ? { class: 'num' } : {}, v === null ? '' : String(v)))));
+        box.append(tb); if (o.note) box.append(mk('pre', { class: 'note' }, o.note));
+      }
+    }
+    updateGutter(c);
+  }
+  const gutText = (c) => (c.type === 'markdown' ? '' : running.has(c.id) ? '[*]' : queued.has(c.id) ? '[..]' : `[${c.count ?? ' '}]`);
+  function updateGutter(c) { const e = els.get(c.id); if (e) e.gut.textContent = gutText(c); }
+  function markRunning() { for (const c of cells) { const e = els.get(c.id); if (!e) continue; e.root.classList.toggle('running', running.has(c.id)); updateGutter(c); } }
+  function markSelected() { for (const [id, e] of els) e.root.classList.toggle('focus', id === selected); }
+
+  // ---- cells ----
+  const grow = (ta) => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; };
+  function build(c) {
+    const e = {}; const arm = new Map();
+    e.gut = mk('div', { class: 'gut' });
+    e.ta = mk('textarea', { spellcheck: 'false', rows: '1' }); e.ta.value = c.source;
+    e.view = mk('div', { class: 'mdv' });
+    e.outs = mk('div', { class: 'outs' });
+    const twoStep = (btn, label, fn) => btn.addEventListener('click', () => { if (arm.get(btn)) { clearTimeout(arm.get(btn)); arm.delete(btn); btn.classList.remove('danger'); btn.textContent = label; fn(); } else { btn.classList.add('danger'); btn.textContent = 'sure?'; arm.set(btn, setTimeout(() => { arm.delete(btn); btn.classList.remove('danger'); btn.textContent = label; }, 2500)); } });
+    const runBtn = mk('button', { title: 'Run this cell (Shift+Enter runs and moves on)', onclick: () => runCell(c.id) }, 'Run');
+    const del = mk('button', { title: 'Delete this cell' }, 'Delete'); twoStep(del, 'Delete', () => removeCell(c.id));
+    e.kind = mk('span', { class: 'kind' });
+    e.bar = mk('div', { class: 'bar' }, e.kind, runBtn, mk('button', { title: 'Move up', onclick: () => move(c.id, -1) }, 'Up'), mk('button', { title: 'Move down', onclick: () => move(c.id, 1) }, 'Down'),
+      mk('button', { title: 'Switch between code and markdown', onclick: () => toggleType(c.id) }, 'Type'), del);
+    e.runBtn = runBtn;
+    e.root = mk('div', { class: 'cell' }, e.gut, mk('div', { class: 'main' }, e.bar, e.ta, e.view, e.outs));
+    e.root.addEventListener('mousedown', () => { selected = c.id; markSelected(); });
+    e.ta.addEventListener('focus', () => { selected = c.id; markSelected(); });
+    e.ta.addEventListener('input', () => { c.source = e.ta.value; grow(e.ta); changed(); });
+    e.ta.addEventListener('blur', () => { if (c.type === 'markdown') showMode(c); });
+    e.view.addEventListener('click', () => { editMarkdown(c); });
+    e.ta.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && (ev.shiftKey || ev.ctrlKey)) { ev.preventDefault(); if (c.type === 'code') runCell(c.id); else showMode(c); if (ev.shiftKey) focusNext(c.id); return; }
+      if (ev.key === 'Tab' && !ev.shiftKey) { ev.preventDefault(); const s = e.ta.selectionStart; e.ta.setRangeText('    ', s, e.ta.selectionEnd, 'end'); e.ta.dispatchEvent(new Event('input')); }
+      if (ev.key === 'Escape') e.ta.blur();
+    });
+    els.set(c.id, e); showMode(c); renderOutputs(c); return e;
+  }
+  function showMode(c) {
+    const e = els.get(c.id); e.kind.textContent = c.type === 'code' ? 'code' : 'markdown';
+    e.runBtn.style.display = c.type === 'code' ? '' : 'none';
+    if (c.type === 'markdown' && document.activeElement !== e.ta) { e.ta.style.display = 'none'; e.view.style.display = ''; e.view.innerHTML = md(c.source); }
+    else { e.ta.style.display = ''; e.view.style.display = 'none'; grow(e.ta); }
+    e.outs.style.display = c.type === 'code' ? '' : 'none'; updateGutter(c);
+  }
+  function editMarkdown(c) { const e = els.get(c.id); e.ta.style.display = ''; e.view.style.display = 'none'; grow(e.ta); e.ta.focus(); }
+  function renderAll() {
+    const box = $('cells'); const keep = new Set(cells.map((c) => c.id));
+    for (const [id, e] of els) if (!keep.has(id)) { e.root.remove(); els.delete(id); }
+    for (const c of cells) { const e = els.get(c.id) || build(c); box.append(e.root); }
+    markRunning(); markSelected(); for (const c of cells) if (c.type === 'code') grow(els.get(c.id).ta);
+  }
+  function addCell(type, after) {
+    const c = { id: newId(), type, source: '', outputs: [], count: null };
+    const i = after ? cells.findIndex((x) => x.id === after) + 1 : cells.length; cells.splice(i, 0, c);
+    renderAll(); changed(); selected = c.id; const e = els.get(c.id); if (type === 'markdown') editMarkdown(c); else e.ta.focus(); return c;
+  }
+  function removeCell(id) {
+    cells = cells.filter((c) => c.id !== id); if (!cells.length) cells = [{ id: newId(), type: 'code', source: '', outputs: [], count: null }];
+    renderAll(); changed();
+  }
+  function move(id, d) { const i = cells.findIndex((c) => c.id === id); const j = i + d; if (j < 0 || j >= cells.length) return; [cells[i], cells[j]] = [cells[j], cells[i]]; renderAll(); changed(); }
+  function toggleType(id) { const c = byId(id); c.type = c.type === 'code' ? 'markdown' : 'code'; showMode(c); changed(); }
+  function focusNext(id) { const i = cells.findIndex((c) => c.id === id); const n = cells[i + 1]; if (!n) { addCell('code'); return; } selected = n.id; markSelected(); const e = els.get(n.id); if (n.type === 'markdown') editMarkdown(n); else e.ta.focus(); }
+
+  // ---- running ----
+  function runCell(id) { const c = byId(id); if (!c || c.type !== 'code') return; sendCells(); queued.add(id); markRunning(); setStatus('running'); send({ t: 'run', id, source: c.source }); }
+  function runAll() { sendCells(); for (const c of cells) if (c.type === 'code' && c.source.trim()) { queued.add(c.id); send({ t: 'run', id: c.id, source: c.source }); } markRunning(); if (queued.size) setStatus('running'); }
+
+  $('run').onclick = () => { if (selected) runCell(selected); };
+  $('all').onclick = runAll; $('ball').onclick = runAll;
+  $('stop').onclick = () => send({ t: 'stop' });
+  $('restart').onclick = () => { fatal = ''; lost = false; if (kernelState === 'gone') { startHello(); return; } send({ t: 'restart' }); };
+  $('cells').after(Object.assign(mk('div', { id: 'add' }, mk('button', { onclick: () => addCell('code', cells.length ? cells[cells.length - 1].id : null) }, '+ Code'), mk('button', { onclick: () => addCell('markdown', cells.length ? cells[cells.length - 1].id : null) }, '+ Markdown'))));
+  setStatus('connecting');
+
+  hatch.ready(() => { hatch.on('kernel', onValue); startHello(); });
+  // a stalled stream must not hide a finished cell: while something runs, ask again every few seconds (outputs only)
+  setInterval(() => { if (inited && (kernelState === 'running')) hello(); }, 4000);
+})();
+</script>
