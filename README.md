@@ -172,6 +172,7 @@ Use `hatch` for everyday interaction with the page. `hatch-ui` still works as a 
 hatch image screenshot.png --size 800x550
 hatch open README.md                 # images, text files, HTML pages, directories or http(s) URLs
 ha w o git                       # short forms: `ha` is `hatch`, `w` is `widget`, `o` is `open` after `widget` (top-level `open` stays for files, folders and URLs)
+hatch widget NAME                # same as `hatch widget open NAME` (subcommands win: a widget named like one needs `widget open NAME`)
 hatch widget open NAME --dock     # open the widget in the dock instead of as a floating window
 hatch widget open git --name "my label" --dir ~/proj   # git window for that directory (default: here); an existing one for it is brought forward
 hatch widget open board ./plan.board.json   # a board that autosaves straight to that file (plain JSON; created on first save)

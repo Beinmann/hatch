@@ -489,3 +489,35 @@ test('widget restore: missing, malformed and partly bad layout files warn instea
     r = await ui(['w', 'save', path.join(d, 'nodir')], { state: s }); assert.equal(r.status, 1); assert.match(r.stderr, /not a directory/);
   } finally { await h.close(); }
 });
+
+test('opening top in a second workspace leaves the first workspace window alone', async () => {
+  const h = await startHatch({ attach: null });
+  try {
+    await h.call('POST', '/api/workspaces', { name: 'second' });
+    const first = (await h.call('POST', '/api/examples/top/open', {})).data;
+    const second = (await h.call('POST', '/api/examples/top/open', { ws: 'second' })).data;
+    assert.notEqual(second.id, first.id);
+    assert.equal(second.ws, 'second');
+    const again = (await h.call('GET', `/api/panels/${first.id}`)).data;
+    assert.equal(again.ws || 'main', 'main', 'the first window stays in its workspace');
+    // opening again in either workspace reuses that workspace's window
+    assert.equal((await h.call('POST', '/api/examples/top/open', {})).data.id, first.id);
+    assert.equal((await h.call('POST', '/api/examples/top/open', { ws: 'second' })).data.id, second.id);
+    assert.equal((await h.call('GET', '/api/panels')).data.filter((p) => p.props?.name?.startsWith('top')).length, 2);
+  } finally { await h.close(); }
+});
+
+test('widget NAME opens like widget open NAME; subcommands win; unknown names fail', async () => {
+  const h = await startHatch(); const s = h.stateDir;
+  try {
+    let r = await ui(['widget', 'clock'], { state: s }); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /widget clock open as/);
+    const panels = JSON.parse((await ui(['panels', '--json'], { state: s })).stdout);
+    assert.ok(panels.some((p) => p.type === 'widget' && p.props.name === 'clock'));
+    // an installed widget named like a subcommand is not opened by the short form
+    fs.mkdirSync(path.join(s, 'widgets', 'list'), { recursive: true });
+    fs.writeFileSync(path.join(s, 'widgets', 'list', 'index.html'), '<p>x</p>');
+    r = await ui(['widget', 'list'], { state: s }); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /clock/);
+    assert.ok(!JSON.parse((await ui(['panels', '--json'], { state: s })).stdout).some((p) => p.props?.name === 'list'));
+    r = await ui(['widget', 'no-such-widget'], { state: s }); assert.notEqual(r.status, 0); assert.match(r.stderr, /no-such-widget/);
+  } finally { await h.close(); }
+});
