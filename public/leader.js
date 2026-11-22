@@ -46,8 +46,10 @@ const MODIFIERS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsL
 // so Ctrl or Shift can be pressed before h/j/k/l without cancelling.
 export function leaderAction(e) {
   if (MODIFIERS.has(e.key)) return { action: 'ignore' };
-  if (e.altKey || e.metaKey) return null;
+  if (e.metaKey) return null;
   const dir = DIRS[e.code];
+  // Alt+h/j/k/l or Alt+arrow: fine nudge of the focused window, 1px (Alt+Shift: 10px). Plain and Shift keys keep their coarse meaning.
+  if (e.altKey) return dir && !e.ctrlKey ? { action: 'nudge', dir, step: e.shiftKey ? 10 : 1, repeat: true } : null;
   if (dir) {
     if (e.ctrlKey && !e.shiftKey) return { action: 'resize', dir, repeat: true };
     if (e.shiftKey && !e.ctrlKey) return { action: 'move', dir, repeat: true };

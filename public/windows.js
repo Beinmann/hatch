@@ -765,7 +765,7 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     if (w.panel.placement === 'dock' && !dockOpen()) { openDock(); paintDock(); }
     focus(w); w.node.classList.add('flash'); setTimeout(() => w.node.classList.remove('flash'), 600);
   }
-  // Leader Shift+h/j/k/l: nudge the focused floating window by a fixed step, clamped like a drag, and persist like one.
+  // Leader Shift+h/j/k/l (40px) and Alt+h/j/k/l or Alt+arrows (1px, 10px with Shift): move the focused floating window by a step, clamped like a drag, and persist like one.
   // Docked, minimized, maximized or hidden windows are left alone.
   function moveFocused(dir, step = 40) {
     const w = [...wins.values()].find((o) => shown(o) && o.node.classList.contains('focus'));

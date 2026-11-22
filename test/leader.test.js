@@ -30,6 +30,9 @@ test('leaderAction maps every key of the table', () => {
   assert.equal(k('Control', { key: 'Control', ctrlKey: true }).action, 'ignore', 'pressing Ctrl before h must not cancel');
   assert.equal(k('KeyZ'), null, 'unbound keys cancel');
   assert.equal(k('KeyQ', { altKey: true }), null);
+  assert.deepEqual(k('KeyH', { altKey: true }), { action: 'nudge', dir: 'h', step: 1, repeat: true });
+  assert.deepEqual(k('ArrowDown', { altKey: true, shiftKey: true }), { action: 'nudge', dir: 'j', step: 10, repeat: true });
+  assert.equal(k('KeyH', { altKey: true, ctrlKey: true }), null);
   assert.equal(k('Digit0'), null);
 });
 
