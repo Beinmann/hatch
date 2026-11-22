@@ -211,6 +211,7 @@ The header keeps secondary tools in the command palette. It opens immediately wi
 | Leader, then s | Show or hide the dock column (also palette: Toggle dock; Zen mode hides it too and restores it as it was) |
 | Leader, then m / q / u | Minimize, close, restore from the dock |
 | Leader, then Tab | Next window |
+| Leader, then r | Reload the page (Ctrl+R is captured by the terminal); windows and dock come back as they were, unsaved editor or note changes still ask first |
 | Ctrl+1 ... 9 on a folder chip | All members minimized: show all. Otherwise a sub-number prompt: digit = that member, 0 = hide all, Esc/again = cancel |
 | Ctrl+0 | Select the terminal |
 | Leader, then 1-9 on a folder, then 1-9 / 0 / Esc | Several windows: the list opens with rows N.1, N.2 ...; a digit picks that window, 0 shows all, Esc cancels (one window: goes straight to it) |
