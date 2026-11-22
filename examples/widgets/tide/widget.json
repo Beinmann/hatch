@@ -1,0 +1,21 @@
+{
+ "title": "Tide",
+ "w": 1000,
+ "h": 700,
+ "placement": "float",
+ "sources": [
+  {
+   "name": "load",
+   "kind": "exec",
+   "json": true,
+   "cmd": "F={{state}}/tide/today.json; if [ -s \"$F\" ]; then cat \"$F\"; else printf 'null'; fi"
+  },
+  {
+   "name": "save",
+   "kind": "exec",
+   "json": true,
+   "arg": "any",
+   "cmd": "D={{state}}/tide; mkdir -p \"$D/archive\"; A=\"$HATCH_ARG\"; OP=\"${A%% *}\"; DATA=\"${A#* }\"; case \"$OP\" in *:*) ID=\"${OP#*:}\"; OP=\"${OP%%:*}\";; *) ID=;; esac; case \"$ID\" in '') F=\"$D/today.json\";; [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) F=\"$D/archive/$ID.json\";; *) echo \"bad day id\" >&2; exit 1;; esac; T=\"$F.hatch-tmp\"; case \"$OP\" in B) printf '%s' \"$DATA\" > \"$T\";; A) printf '%s' \"$DATA\" >> \"$T\";; C) mv \"$T\" \"$F\" || exit 1;; *) echo 'unknown save step' >&2; exit 1;; esac; printf '{\"ok\":true}'"
+  }
+ ]
+}
