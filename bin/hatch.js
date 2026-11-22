@@ -37,6 +37,8 @@ import { LAYOUT_FILE, entriesFromPanels, writeLayout, readLayout } from '../src/
 
 const EXAMPLES = fileURLToPath(new URL('../examples/widgets/', import.meta.url));
 
+// every `hatch widget SUB`; anything else is a widget name (`hatch widget NAME` opens it)
+const WIDGET_SUBS = ['new', 'add', 'list', 'boards', 'open', 'close', 'rm', 'reload', 'save', 'restore', 'screenshot', 'generate', 'examples'];
 const HELP = `hatch: drive the Hatch page from the terminal (the server is run with \`hatch-server\`: serve, start, stop, restart, status, url, doctor, service)
 
 agent integration
@@ -59,6 +61,7 @@ widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget new NAME [--from example]  scaffold widgets/NAME: from an example (cpu, log-tail, ...) or, without --from, a minimal one
   widget add NAME [DIR|FILE] [--dock]  register and open (a single HTML file becomes index.html)
   (short forms: ha for hatch, w for widget, o for open: ha w o git; top-level open is for files, folders and URLs)
+  widget NAME                        same as widget open NAME (subcommands win: a widget named like one needs widget open NAME)
   widget list | open NAME [--dock] | close NAME | rm NAME | reload NAME   (a widget open in another workspace gets its own copy NAME-WS here; close closes this workspace's; rm deletes the named widget folder only; open git [--name LABEL] [--dir PATH]: a git window for PATH or the current directory; one per directory per workspace, an existing one is brought forward)
   widget save [DIR] | restore [DIR]   write / apply the layout (name, position, size, placement) of this workspace's widgets in DIR/.hatch-widgets.json (default .);
                                     restore opens missing widgets, moves and resizes open ones, un-minimizes them, closes nothing
@@ -316,9 +319,9 @@ async function main(argv) {
   const o = parse(diffArgs ? argv.slice(0, di + 1) : argv);
   // `hatch git [DIR]` is `hatch widget open git [--dir DIR]`: the per-project git widget (one per directory, reused)
   if (o._[0] === 'git' && !o.help) { const dir = o._[1]; o._ = ['widget', 'open', 'git', ...o._.slice(2)]; if (dir !== undefined && o.dir === undefined) o.dir = dir; }
-  const [cmd0, rawSub, ...rest] = o._;
+  const [cmd0, rawSub, ...restArgs] = o._; let rest = restArgs;
   const rawCmd = cmd0 === 'w' ? 'widget' : cmd0; // `w` is short for `widget`
-  const sub = rawCmd === 'popup' && rawSub === 'create' ? 'new' : (rawCmd === 'widget' && rawSub === 'o' ? 'open' : rawSub); // `widget o` is short for `widget open`
+  let sub = rawCmd === 'popup' && rawSub === 'create' ? 'new' : (rawCmd === 'widget' && rawSub === 'o' ? 'open' : rawSub); // `widget o` is short for `widget open`
   const cmd = rawCmd === 'popup' ? 'widget' : rawCmd;
   if (rawCmd === 'popup' && (!sub || o.help)) return console.log(COMMAND_HELP.popup);
   if (cmd === 'agent' && !sub) return console.log(COMMAND_HELP.agent);
@@ -413,6 +416,12 @@ async function main(argv) {
     }
     case 'widget': {
       const dockOpt = o.dock ? { placement: 'dock' } : {}; // --dock: open in the dock column instead of as a floating window
+      // `widget NAME` is `widget open NAME`. Subcommands always win: a widget named like one is opened with `widget open NAME`.
+      if (rawCmd === 'widget' && sub && !WIDGET_SUBS.includes(sub) && !sub.startsWith('-')) {
+        const known = new Set([...(await api('GET', '/api/widgets')), ...(await api('GET', '/api/examples'))].map((w) => w.name));
+        need(known.has(sub), `unknown widget subcommand or widget name "${sub}": ${WIDGET_SUBS.join('|')}; see hatch widget list`);
+        rest = [sub, ...rest]; sub = 'open';
+      }
       const name = rest[0];
       if (rawCmd === 'popup' && sub === 'list') {
         const list = await api('GET', '/api/panels');
