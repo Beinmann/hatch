@@ -36,6 +36,7 @@ removing its files and its CLI case, palette entry and README bullet.
 | Files browser + text editor, image preview pane | src/files.js, panels/files.js, panels/files-preview.js, editor.js | yes (preview helpers) | any-path access unless --root |
 | Ask the user (dialog) | server /api/ask, app.js | yes | |
 | Terminal windows | /api/pterm, panels/terminal.js | yes | |
+| Noise widget (brown/pink/white noise via Web Audio, play/stop, volume; not saved) | examples/widgets/noise | no (not seen or heard in a browser) | pure client side |
 | Decorative widgets (matrix, analog-clock, ascii-donut, quote) | examples/widgets/* | no (not seen in a browser) | pure client side, just for looks |
 | Desktop gadgets + graph, clock widgets | examples/widgets/*, server openDesktop | partly | the "looks like a programmer's desktop" part |
 | Widget sources over one stream | server /api/sub | yes | a bug fix, keep |
