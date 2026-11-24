@@ -161,7 +161,7 @@
       const f = folded.has('commits');
       h += `<h3 class="${f ? 'fold' : ''}" data-sec="commits"><span class="car">▾</span>${esc(G.commitsTitle(b))} <span class="n">(${s.commits.length})</span></h3>`;
       if (!f) h += s.commits.map((c, i) => commitRow(c, i, b.ahead, now, b.head, G.multiAuthor(s.commits))).join('');
-    } else h += '<h3 data-sec="none" style="cursor:default">${esc(G.commitsTitle(b))}</h3><div class="empty">no commits yet</div>';
+    } else h += `<h3 data-sec="none" style="cursor:default">${esc(G.commitsTitle(b))}</h3><div class="empty">no commits yet</div>`;
     const items = G.activityItems(s.activity, s.groups);
     if (items.length) {   // hidden when the reflog is empty or unavailable and no other branch has commits of its own
       const f = folded.has('activity');

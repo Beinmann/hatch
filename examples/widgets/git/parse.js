@@ -90,7 +90,7 @@
   }
 
   /** Heading of the commit list: it names the current branch, or the short hash when detached. */
-  function commitsTitle(b) { return `Commits on ${b.head === '(detached)' ? String(b.oid || '').slice(0, 7) : b.head || 'HEAD'}`; }
+  function commitsTitle(b) { return `Latest commits on ${b.head === '(detached)' ? String(b.oid || '').slice(0, 7) : b.head || 'HEAD'}`; }
 
   /** Short human wording for a reflog message plus its kind (picks the icon); unknown kinds fall back to the raw message.
    *  Git removes a branch's reflog when the branch is deleted, so there is no "deleted branch" entry to recognise. */
