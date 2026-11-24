@@ -10,7 +10,7 @@ import { readTokenAge } from './token.js';
 export function outdatedWidgets({ stateDir }) {
   const root = path.join(stateDir, 'widgets');
   const names = shippedWidgets().filter((n) => fs.existsSync(path.join(root, n)) && widgetStatus(stateDir, n) === 'stale');
-  for (const n of staleProjectCopies(stateDir)) if (!names.includes(n)) names.push(n); // per-project git widgets (git-<folder>)
+  for (const n of staleProjectCopies(stateDir)) if (!names.includes(n)) names.push(n); // per-project widgets (git-<folder>, files-<folder>)
   names.sort();
   if (!names.length) return [];
   if (names.length === 1) return [{ source: 'widgets', id: `widget:${names[0]}`, message: `The ${names[0]} widget is older than the version shipped with Hatch.`, fix: `hatch-server update-widgets ${names[0]}` }];

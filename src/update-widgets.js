@@ -61,29 +61,38 @@ export function widgetStatus(stateDir, name) {
 }
 export const staleMessage = (name) => `The shipped ${name} widget changed since this instance copied it. Refresh it with: hatch-server update-widgets ${name}`;
 
-// ---- per-project git widgets ----
-// `hatch widget open git` makes one copy per project (git-<folder>) whose widget.json has the project's directory and title
-// baked in, so a whole-folder hash never matches the shipped example. Those copies carry from:"git"; older ones are
-// recognised by their name and dir. Refreshing replaces the code files and rebuilds widget.json from the shipped one.
+// ---- per-project copies (git-<folder>, files-<folder>) ----
+// `hatch widget open git` (and the Files widget per start folder) makes one copy per folder whose widget.json has the folder
+// and title baked in, so a whole-folder hash never matches the shipped example. Those copies carry from:"git" / from:"files";
+// older ones are recognised by their name prefix and dir. Refreshing replaces the code files and rebuilds widget.json from
+// the shipped one, with the folder pinned again.
 const GIT = 'git';
+const FILES = 'files';
+/** Per example: the title a copy gets when it has none. */
+const PROJECT_KINDS = { [GIT]: (dir) => `Git: ${path.basename(dir)}`, [FILES]: (dir) => `Files: ${path.basename(dir) || dir}` };
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
-/** widget.json for a git widget of the project at `dir`: the shipped one with {{cwd}} pinned (shell-quoted) to it. */
-export function gitProjectMeta(shippedMeta, dir, title, from = GIT) {
+/** widget.json for a per-project widget of the folder `dir`: the shipped one with {{cwd}} pinned (shell-quoted) to it. */
+export function projectMeta(shippedMeta, dir, title, from) {
   const quoted = `'${dir.replace(/'/g, `'\\''`)}'`;
   return { ...shippedMeta, title, dir, from, sources: (shippedMeta.sources || []).map((src) => ({ ...src, cmd: src.cmd.replaceAll('{{cwd}}', () => quoted) })) };
 }
-export function projectGitCopies(stateDir) {
+export const gitProjectMeta = (shippedMeta, dir, title, from = GIT) => projectMeta(shippedMeta, dir, title, from);
+/** Copies of the example `example` made per folder (git-<folder>, files-<folder>). */
+export function projectCopies(stateDir, example) {
   const root = path.join(stateDir, 'widgets'); if (!fs.existsSync(root)) return [];
   return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).filter((n) => {
     const m = readJson(path.join(root, n, 'widget.json'));
-    return m && typeof m.dir === 'string' && (m.from === GIT || (n.startsWith('git-') && !m.from));
+    return m && typeof m.dir === 'string' && (m.from === example || (n.startsWith(`${example}-`) && !m.from));
   });
 }
+export const projectGitCopies = (stateDir) => projectCopies(stateDir, GIT);
+const allProjectCopies = (stateDir) => Object.keys(PROJECT_KINDS).flatMap((ex) => projectCopies(stateDir, ex).map((name) => ({ name, example: ex })));
 const sameFiles = (a, b) => walk(b).filter((f) => f !== 'widget.json' && f.split(path.sep)[0] !== 'data').every((f) => fs.existsSync(path.join(a, f)) && fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))));
-/** Project git copies whose code differs from the shipped git widget. */
-export const staleProjectCopies = (stateDir) => projectGitCopies(stateDir).filter((n) => !sameFiles(path.join(stateDir, 'widgets', n), path.join(EXAMPLES, GIT)));
-function refreshProjectCopy(stateDir, name) {
-  const src = path.join(EXAMPLES, GIT); const dest = path.join(stateDir, 'widgets', name); const files = []; const backups = [];
+/** Per-project copies of `example` (or of every kind) whose code differs from the shipped widget. */
+export const staleProjectCopies = (stateDir, example = null) => (example ? projectCopies(stateDir, example).map((name) => ({ name, example })) : allProjectCopies(stateDir))
+  .filter((c) => !sameFiles(path.join(stateDir, 'widgets', c.name), path.join(EXAMPLES, c.example))).map((c) => c.name);
+function refreshProjectCopy(stateDir, name, example) {
+  const src = path.join(EXAMPLES, example); const dest = path.join(stateDir, 'widgets', name); const files = []; const backups = [];
   for (const f of walk(src)) {
     if (f === 'widget.json' || f.split(path.sep)[0] === 'data') continue;
     const to = path.join(dest, f); const next = fs.readFileSync(path.join(src, f));
@@ -91,7 +100,7 @@ function refreshProjectCopy(stateDir, name) {
     fs.mkdirSync(path.dirname(to), { recursive: true }); fs.writeFileSync(to, next); files.push(f);
   }
   const metaFile = path.join(dest, 'widget.json'); const old = readJson(metaFile) || {};
-  const next = gitProjectMeta(readJson(path.join(src, 'widget.json')), old.dir, old.title || `Git: ${path.basename(old.dir)}`);
+  const next = projectMeta(readJson(path.join(src, 'widget.json')), old.dir, old.title || PROJECT_KINDS[example](old.dir), example);
   for (const k of ['w', 'h', 'placement', 'copyOf']) if (old[k] !== undefined) next[k] = old[k]; // window size the user chose stays
   const text = `${JSON.stringify(next, null, 2)}\n`;
   if (!fs.existsSync(metaFile) || fs.readFileSync(metaFile, 'utf8') !== text) { if (fs.existsSync(metaFile)) fs.copyFileSync(metaFile, `${metaFile}.bak`); atomicWrite(metaFile, text); files.push('widget.json'); }
@@ -101,10 +110,10 @@ function refreshProjectCopy(stateDir, name) {
 // ---- per-workspace copies ----
 // Opening a widget in a second workspace copies it as NAME-WS with copyOf: NAME in its widget.json (see state.js). They are
 // refreshed from the shipped example of the original, keeping their title, size and copyOf; data/ is never touched.
-/** Copies (name -> original) of shipped widgets; git project copies are handled by their own refresh. */
+/** Copies (name -> original) of shipped widgets; per-project copies are handled by their own refresh. */
 export function workspaceCopies(stateDir) {
   const root = path.join(stateDir, 'widgets'); if (!fs.existsSync(root)) return new Map();
-  const shipped = shippedWidgets(); const git = projectGitCopies(stateDir); const out = new Map();
+  const shipped = shippedWidgets(); const git = allProjectCopies(stateDir).map((c) => c.name); const out = new Map();
   for (const e of fs.readdirSync(root, { withFileTypes: true })) {
     if (!e.isDirectory() || git.includes(e.name)) continue;
     const m = readJson(path.join(root, e.name, 'widget.json'));
@@ -131,7 +140,7 @@ function refreshWorkspaceCopy(stateDir, name, base) {
 /** names: widget names, or null for all. Returns { updated: [{name, files, backups}], unchanged: [name], missing: [name] }. */
 export function updateWidgets(stateDir, names = null) {
   const shipped = shippedWidgets();
-  const copies = projectGitCopies(stateDir); const wsCopies = workspaceCopies(stateDir);
+  const projects = allProjectCopies(stateDir); const copies = projects.map((c) => c.name); const wsCopies = workspaceCopies(stateDir);
   const unknown = (names || []).filter((n) => !shipped.includes(n) && !copies.includes(n) && !wsCopies.has(n));
   if (unknown.length) throw new Error(`no example widget ${unknown.join(', ')}; available: ${shipped.join(', ')}`);
   const res = { updated: [], unchanged: [], missing: [] };
@@ -154,9 +163,9 @@ export function updateWidgets(stateDir, names = null) {
     recordShipped(stateDir, name);
     (files.length ? res.updated.push({ name, files, backups }) : res.unchanged.push(name));
   }
-  // Per-project git copies: named directly, or refreshed along with "git" and --all
-  for (const name of copies.filter((n) => !names || names.includes(n) || names.includes(GIT))) {
-    const u = refreshProjectCopy(stateDir, name);
+  // Per-project copies: named directly, or refreshed along with their example ("git", "files") and --all
+  for (const { name, example } of projects.filter((c) => !names || names.includes(c.name) || names.includes(c.example))) {
+    const u = refreshProjectCopy(stateDir, name, example);
     (u.files.length ? res.updated.push(u) : res.unchanged.push(name));
   }
   // Per-workspace copies: named directly, or refreshed along with their original and --all

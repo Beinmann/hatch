@@ -76,3 +76,42 @@ test('per-project git copies: flagged when stale, refreshed by update-widgets gi
   assert.deepEqual(staleProjectCopies(dir), []); assert.deepEqual(updateWidgets(dir, ['git-proj']).unchanged, ['git-proj']);
   assert.equal(fs.existsSync(path.join(dir, 'widgets', 'git')), false, 'the plain git widget is not created');
 });
+
+test('per-folder files copies: flagged when stale, refreshed by name, by files and by --all; start folder kept; git copies unaffected', async () => {
+  const { staleProjectCopies, projectCopies, projectMeta } = await import('../src/update-widgets.js');
+  const { outdatedWidgets } = await import('../src/warnings.js');
+  const ex = new URL('../examples/widgets/files', import.meta.url);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hatch-uw-')); const w = path.join(dir, 'widgets', 'files-proj');
+  fs.cpSync(ex, w, { recursive: true });
+  const shipped = JSON.parse(fs.readFileSync(new URL('../examples/widgets/files/widget.json', import.meta.url), 'utf8'));
+  const old = projectMeta(shipped, "/work/my'proj", 'Files: mine', 'files'); old.w = 900;
+  fs.writeFileSync(path.join(w, 'widget.json'), JSON.stringify(old)); fs.writeFileSync(path.join(w, 'index.html'), 'old page');
+  fs.mkdirSync(path.join(w, 'data')); fs.writeFileSync(path.join(w, 'data', 'keep.txt'), 'x');
+  // an older copy without from, recognised by name and dir; and a git copy that must stay untouched
+  const w2 = path.join(dir, 'widgets', 'files-old'); fs.cpSync(ex, w2, { recursive: true });
+  const old2 = projectMeta(shipped, '/work/old', 'Files: old', 'files'); delete old2.from;
+  fs.writeFileSync(path.join(w2, 'widget.json'), JSON.stringify(old2)); fs.appendFileSync(path.join(w2, 'index.html'), '\n<!-- stale -->');
+  const g = path.join(dir, 'widgets', 'git-proj'); fs.cpSync(new URL('../examples/widgets/git', import.meta.url), g, { recursive: true });
+  fs.writeFileSync(path.join(g, 'widget.json'), JSON.stringify({ title: 'Git: proj', dir: '/work/g', from: 'git', sources: [] })); fs.writeFileSync(path.join(g, 'index.html'), 'old git');
+  assert.deepEqual(projectCopies(dir, 'files').sort(), ['files-old', 'files-proj']);
+  assert.deepEqual(staleProjectCopies(dir, 'files').sort(), ['files-old', 'files-proj']);
+  const warn = outdatedWidgets({ stateDir: dir })[0];
+  assert.match(warn.message, /files-old.*files-proj|files-proj/); assert.match(warn.fix, /files-proj/);
+  const r = updateWidgets(dir, ['files-proj']);
+  assert.deepEqual(r.updated.map((u) => u.name), ['files-proj']);
+  const meta = JSON.parse(fs.readFileSync(path.join(w, 'widget.json'), 'utf8'));
+  assert.equal(meta.dir, "/work/my'proj"); assert.equal(meta.title, 'Files: mine'); assert.equal(meta.w, 900); assert.equal(meta.from, 'files');
+  assert.equal(meta.sources[0].cmd, `printf '%s' '/work/my'\\''proj'`, 'start folder stays pinned and quoted');
+  assert.equal(fs.readFileSync(path.join(w, 'index.html.bak'), 'utf8'), 'old page');
+  assert.equal(fs.readFileSync(path.join(w, 'data', 'keep.txt'), 'utf8'), 'x');
+  assert.equal(fs.readFileSync(path.join(g, 'index.html'), 'utf8'), 'old git', 'git copies untouched by a files refresh');
+  assert.deepEqual(updateWidgets(dir, ['files-proj']).unchanged, ['files-proj'], 'second run changes nothing');
+  assert.deepEqual(updateWidgets(dir, ['files']).updated.map((u) => u.name), ['files-old']);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(w2, 'widget.json'), 'utf8')).from, 'files');
+  assert.deepEqual(staleProjectCopies(dir, 'files'), []);
+  assert.deepEqual(staleProjectCopies(dir), ['git-proj'], 'git copy still stale');
+  fs.appendFileSync(path.join(w, 'index.html'), 'x');
+  const all = updateWidgets(dir, null);
+  assert.deepEqual(all.updated.map((u) => u.name).sort(), ['files-proj', 'git-proj']);
+  assert.equal(fs.existsSync(path.join(dir, 'widgets', 'files')), false, 'the plain files widget is not created');
+});

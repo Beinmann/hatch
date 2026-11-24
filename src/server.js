@@ -23,7 +23,7 @@ import { createSchedules, checkSchedules } from './schedules.js';
 import { createRuns } from './runs.js';
 import * as discover from './discover.js';
 import { resolveBoardFile, boardFileMeta, boardWidgetName, defaultBoardFile, migrateOldDefault, listBoardFiles } from './board-file.js';
-import { widgetStatus, recordShipped, staleMessage, gitProjectMeta, staleProjectCopies } from './update-widgets.js';
+import { widgetStatus, recordShipped, staleMessage, projectMeta, staleProjectCopies } from './update-widgets.js';
 import * as gitapi from './git.js';
 import { setFx, readFx, FxError, EFFECTS } from './fx.js';
 import { setWindowTransparency, TransparencyError } from './transparency.js';
@@ -307,7 +307,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const DESKTOP = [['graph', 20, 20, 440, 210], ['sysinfo', 480, 20, 300, 210], ['clock', 800, 20, 300, 190], ['top', 20, 250, 520, 270], ['git', 560, 250, 500, 270], ['log-tail', 20, 540, 520, 200]];
   const exampleList = () => fs.readdirSync(EXAMPLES, { withFileTypes: true }).filter((e) => e.isDirectory() && NAME_RE.test(e.name)).map((e) => {
     let title = e.name; try { title = JSON.parse(fs.readFileSync(path.join(EXAMPLES, e.name, 'widget.json'), 'utf8')).title || e.name; } catch { /* keep the name */ }
-    const stale = (fs.existsSync(path.join(l.widgets, e.name)) && widgetStatus(stateDir, e.name) === 'stale') || (e.name === 'git' && staleProjectCopies(stateDir).length > 0);
+    const stale = (fs.existsSync(path.join(l.widgets, e.name)) && widgetStatus(stateDir, e.name) === 'stale') || ((e.name === 'git' || e.name === 'files') && staleProjectCopies(stateDir, e.name).length > 0);
     return { name: e.name, title, ...(stale && { stale: true, hint: staleMessage(e.name) }) };
   }).concat([{ name: 'trash', title: 'Trash', open: state.listPanels().some((q) => q.type === 'trash') }]) // built in: a panel type, not a folder in examples/
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -343,7 +343,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     const title = options.label?.trim() || `Git: ${path.basename(real) || real}`;
     if (!fs.existsSync(target)) fs.cpSync(path.join(EXAMPLES, 'git'), target, { recursive: true });
     const metaFile = path.join(target, 'widget.json');
-    atomicWrite(metaFile, `${JSON.stringify(gitProjectMeta(JSON.parse(fs.readFileSync(path.join(EXAMPLES, 'git', 'widget.json'), 'utf8')), real, title), null, 2)}\n`);
+    atomicWrite(metaFile, `${JSON.stringify(projectMeta(JSON.parse(fs.readFileSync(path.join(EXAMPLES, 'git', 'widget.json'), 'utf8')), real, title, 'git'), null, 2)}\n`);
     const windowOptions = { title };
     for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
     state.rescan(); return state.createPanel({ type: 'widget', props: { name }, ...windowOptions });
@@ -361,7 +361,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     if (!fs.existsSync(target)) {
       fs.cpSync(path.join(EXAMPLES, 'files'), target, { recursive: true });
       const metaFile = path.join(target, 'widget.json'); const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
-      atomicWrite(metaFile, `${JSON.stringify(gitProjectMeta(meta, real, `Files: ${path.basename(real) || real}`, 'files'), null, 2)}\n`);
+      atomicWrite(metaFile, `${JSON.stringify(projectMeta(meta, real, `Files: ${path.basename(real) || real}`, 'files'), null, 2)}\n`);
     }
     const windowOptions = {};
     for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
