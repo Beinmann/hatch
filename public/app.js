@@ -1,4 +1,5 @@
 // Page glue: events (SSE snapshot + updates), the terminal, windows, image paste/drop, notifications, settings.
+import { closePanel, safely } from './close-path.js';
 import { isTouchFirst, uploadPicked } from './phone-upload.js';
 import { restarted } from './restart.js';
 import { el, isViewOnly } from './util.js';
@@ -221,7 +222,7 @@ const dockEl = $('dock'); const splitEl = $('split');
 let dockWanted = store.get('dock-visible', false);
 const wm = createWindows({
   floats: $('floats'), dock: dockEl, split: splitEl, chips: $('chips'), el,
-  patch: ctx.patch, close: (id) => api('DELETE', `/api/panels/${id}`).catch((e) => toast(e.message, 'bad')),
+  patch: ctx.patch, close: (id) => closePanel(id, { del: () => api('DELETE', `/api/panels/${id}`), remove: (i) => wm.remove(i), onError: (e) => toast(e.message, 'bad') }),
   kinds: { image, iframe, page, note, progress, widget, files, editor, output, terminal: terminalPanel, git: gitPanel, trash: trashPanel }, ctx,
   dockOpen: () => dockWanted, openDock: () => { if (!dockWanted) { dockWanted = true; store.set('dock-visible', true); } },
   // The header button is always there. The column auto-hides when its last window leaves, and can be opened empty by hand.
@@ -327,7 +328,7 @@ function connectEvents() {
   es.addEventListener('workspaces', (e) => setWorkspaces(JSON.parse(e.data).workspaces));
   es.addEventListener('presence', (e) => { presenceCounts = JSON.parse(e.data).counts || {}; paintPresence(); });
   es.addEventListener('activity', (e) => noteActivityEvent(JSON.parse(e.data).terminal));
-  es.addEventListener('panel', (e) => { const d = JSON.parse(e.data); for (const f of panelListeners) f(d); if (d.action === 'removed') wm.remove(d.panel.id); else { if (d.action === 'created' && d.panel.type === 'editor') remember('recent', d.panel.props.path, 15); wm.upsert(d.panel); if (d.action === 'created') wm.revealDock(d.panel.id); } });
+  es.addEventListener('panel', (e) => { const d = JSON.parse(e.data); for (const f of panelListeners) safely(() => f(d), console.error); if (d.action === 'removed') wm.remove(d.panel.id); else { if (d.action === 'created' && d.panel.type === 'editor') remember('recent', d.panel.props.path, 15); wm.upsert(d.panel); if (d.action === 'created') wm.revealDock(d.panel.id); } });
   es.addEventListener('progress', (e) => { progressState = JSON.parse(e.data); window.hatchUI?.emit('progress', progressState); for (const f of progressListeners) f(progressState); });
   es.addEventListener('plan', (e) => { const d = JSON.parse(e.data); if (d.removed) plansState.delete(d.name); else plansState.set(d.name, { diagram: d.diagram, steps: d.steps }); for (const f of planListeners) f(d.name, plansState.get(d.name) || { diagram: '', steps: [] }); });
   es.addEventListener('widget', (e) => {

@@ -596,7 +596,8 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     const w = wins.get(id);
     if (!w) return;
     const hadFocus = w.node.contains(document.activeElement) || w.node.classList.contains('focus');
-    w.view.destroy(); w.node.remove(); wins.delete(id); visibilityPending.delete(id);
+    try { w.view.destroy(); } catch (e) { console.error('window destroy failed', e); } // a broken view must not keep the window open
+    w.node.remove(); wins.delete(id); visibilityPending.delete(id);
     focusHistory = focusHistory.filter((h) => h !== id);
     if (hadFocus) {
       // Back to what was focused before; the terminal only when no other window is open and visible.
