@@ -47,9 +47,10 @@ trust, not a hardened service.
   codes and hosted-page secrets, and prints the new token once. With the server running these go through its API; without it
   they edit the files. Open streams (events, terminal) of an ended session are closed within about 5 seconds.
 - `hatch-server url --once` asks the running server for a **single-use code** (160 random bits, valid about 5 minutes, kept only
-  as a hash in memory, compared in constant time, removed in the same step that finds it, so two simultaneous requests cannot
-  both use it, at most 20 live codes). `GET /login?code=...` exchanges it for a session and redirects. The code is not logged. A
-  chat tool or browser that pre-fetches links can use the code before you do: then make another.
+  as a hash in memory, compared in constant time, forgotten in the same step that accepts it, so two simultaneous requests cannot
+  both use it). Only one code is pending at a time: a newer link replaces the older one. `GET /login?code=...` exchanges it for a
+  session and redirects. The code is not logged. To cancel an unused link run `hatch-server url --revoke-once`; a restart and
+  `rotate-token` also end it. A chat tool or browser that pre-fetches links can use the code before you do: then make another.
 - **Rate limit.** Wrong tokens from one client address (the socket address) lock that address out after 5 failures, for 30
   seconds, doubling with every further failure up to 15 minutes, forgotten after 15 quiet minutes; a log line records each
   lockout. It covers the login form, the `x-token` header, `?t=` and one-time codes. While locked out the token is not even

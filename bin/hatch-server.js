@@ -20,7 +20,8 @@ usage:
   hatch-server clear [--state DIR] [--yes]   delete everything in the state dir except allowed-hosts (widgets, notes, trash, token) to recover from a bad state; asks first, refuses while a server uses it
   hatch-server update-widgets [NAME... | --all] [--state DIR]   refresh example widgets this instance already uses from the shipped copies (keeps data/, saves changed files as .bak); works while the server runs
   hatch-server url [--state DIR]       print the address to open (no token in it; log in with the token, see below)
-  hatch-server url --once              print a single-use login link (valid about 5 minutes; needs a running server)
+  hatch-server url --once              print a single-use login link (valid about 5 minutes; needs a running server); a newer link replaces the older one
+  hatch-server url --revoke-once       cancel the unused single-use link (also ended by: restart, rotate-token)
   hatch-server token [--state DIR]     print the login token, to paste into the login page
   hatch-server sessions                list browser logins (id, created, last seen, client)
   hatch-server logout ID | --all       end one login (the id from \`sessions\`) or all of them
@@ -49,7 +50,7 @@ function parse(argv) {
     else if (a === '--tmux-status') o['tmux-status'] = 'true';
     else if (a === '--yes') o.yes = 'true';
     else if (a === '--all') o.all = 'true';
-    else if (a === '--view' || a === '--revoke-view' || a === '--once') o[a.slice(2)] = 'true';
+    else if (a === '--view' || a === '--revoke-view' || a === '--once' || a === '--revoke-once') o[a.slice(2)] = 'true';
     else if (a.startsWith('--')) { const [k, v] = a.slice(2).split(/=(.*)/s); o[k] = v ?? argv[++i]; if (o[k] === undefined) fail(`--${k} needs a value`); }
     else o._.push(a);
   }
@@ -155,11 +156,17 @@ if (cmd === 'url') {
     if (!c.viewToken) { c.viewToken = (await import('node:crypto')).randomBytes(16).toString('hex'); save(c); }
     console.log(`http://${linkHost(c.host)}:${c.port}/?t=${c.viewToken}`); if (isLoopbackHost(c.host)) console.error('Note: the server listens on this machine only, so this link works only here. Start it with --host 0.0.0.0 (or a Tailscale address) for other devices.'); console.log('Watch-only: this link can see the terminal and windows but cannot type, run, or read files.'); process.exit(0);
   }
+  if (process.argv.includes('--revoke-once')) {
+    const r = await admin(dir, 'DELETE', '/api/auth/once');
+    console.log(!r ? 'the server is not running: single-use links live only in its memory, so none is valid' : r.revoked ? 'single-use link revoked: it no longer works' : 'no unused single-use link was pending');
+    process.exit(0);
+  }
   if (process.argv.includes('--once')) {
     const r = await admin(dir, 'POST', '/api/auth/once');
     if (!r) fail('the server is not running: a single-use login link is kept in the running server\'s memory. Start it (`hatch-server start`) and run this again.');
     console.log(`http://${linkHost(c.host)}:${c.port}/login?code=${r.code}`);
-    console.error(`Single-use link: works once, expires in ${Math.round(r.expiresInSec / 60)} minutes. Open it in the browser you want to log in; it leaves no code in the address bar.`);
+    console.log(`code: ${r.code}`);
+    console.error(`Single-use link: works once, expires in ${Math.round(r.expiresInSec / 60)} minutes. Open it in the browser you want to log in; or type the code at the login page (\"Use a one-time code instead\"). The link leaves no code in the address bar.\nTo cancel it before it is used: \`hatch-server url --revoke-once\` (restarting the server or \`rotate-token\` also ends it).`);
     process.exit(0);
   }
   console.log(`http://${linkHost(c.host)}:${c.port}/`);

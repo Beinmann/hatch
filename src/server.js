@@ -548,17 +548,19 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     // ---- login page and one-time login links (no auth: they are how a browser gets one) ----
     const key = clientKey(req);
     if (p === '/login') {
-      const page = (status, note) => { res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'content-security-policy': PAGE_CSP, 'x-frame-options': 'SAMEORIGIN', 'x-content-type-options': 'nosniff' }); res.end(m === 'HEAD' ? undefined : loginPage(note)); };
+      const page = (status, note, mode) => { res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'content-security-policy': PAGE_CSP, 'x-frame-options': 'SAMEORIGIN', 'x-content-type-options': 'nosniff' }); res.end(m === 'HEAD' ? undefined : loginPage(note, { mode })); };
       if (m !== 'GET' && m !== 'HEAD' && m !== 'POST') throw new HttpError(405, 'method not allowed');
-      const code = m === 'POST' ? null : url.searchParams.get('code');
+      let code = m === 'POST' ? null : url.searchParams.get('code'); let token = null;
+      if (m === 'POST') { const f = new URLSearchParams((await readBody(req, 4096)).toString('utf8')); code = f.get('code'); token = f.get('token'); if (code !== null) code = code.trim(); }
       if (m === 'POST' || code !== null) {
         const wait = limiter.wait(key); if (wait) return tooMany(res, wait, false);
-        let given = null;
-        if (m === 'POST') given = new URLSearchParams((await readBody(req, 4096)).toString('utf8')).get('token');
-        if (m === 'POST' ? tokenOk(given, cfg.token) : codes.use(code)) { limiter.success(key); log(`login: new session from ${key} (${m === 'POST' ? 'token' : 'one-time link'})`); return startSession(req, res, m === 'POST' ? 303 : 302, '/'); }
-        countFail(key, m === 'POST' ? 'login form' : 'login link');
-        return page(401, m === 'POST' ? 'That token did not work.' : 'That login link did not work: it was already used or has expired. Run `hatch-server url --once` for a new one.');
+        const byCode = code !== null; // a code (link or typed in the code form) or the token
+        if (byCode ? codes.use(code) : tokenOk(token, cfg.token)) { limiter.success(key); log(`login: new session from ${key} (${byCode ? 'one-time code' : 'token'})`); return startSession(req, res, m === 'POST' ? 303 : 302, '/'); }
+        countFail(key, byCode ? 'login code' : 'login form');
+        if (m === 'POST') return page(401, byCode ? 'That code did not work: it was already used or has expired. Run `hatch-server url --once` for a new one.' : 'That token did not work.', byCode ? 'code' : 'token');
+        return page(401, 'That login link did not work: it was already used or has expired. Run `hatch-server url --once` for a new one (a newer link replaces the older one). To cancel an unused link: `hatch-server url --revoke-once`.');
       }
+      if (url.searchParams.get('mode') === 'code') return page(200, '', 'code');
       return page(200, '');
     }
 
@@ -978,7 +980,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         const def = widgetSource(g[1], g[2]);
         return sse(req, res, (fn) => sources.subscribe(def, fn));
       }
-      // ---- login administration (`hatch-server sessions|logout|rotate-token|url --once` call these; full access only, never in a view-only mirror) ----
+      // ---- login administration (`hatch-server sessions|logout|rotate-token|url --once|--revoke-once` call these; full access only, never in a view-only mirror) ----
       if (p === '/api/auth/sessions' && m === 'GET') return json(res, 200, sessions.list());
       if (p === '/api/auth/sessions' && m === 'DELETE') return json(res, 200, { ended: sessions.revokeAll() });
       if ((g = /^\/api\/auth\/sessions\/([a-f0-9]{1,64})$/.exec(p)) && m === 'DELETE') {
@@ -987,6 +989,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         return json(res, 200, { ended });
       }
       if (p === '/api/auth/once' && m === 'POST') return json(res, 200, codes.issue());
+      if (p === '/api/auth/once' && m === 'DELETE') return json(res, 200, { revoked: codes.clear() });
       if (p === '/api/auth/rotate-token' && m === 'POST') {
         const next = rotateTokenFile(stateDir); cfg.token = next; const ended = sessions.revokeAll(); codes.clear(); hostSecrets.clear(); log(`token rotated: ${ended} session${ended === 1 ? '' : 's'} ended`);
         return json(res, 200, { token: next, ended });

@@ -163,11 +163,48 @@ test('one-time login code: logs in once, redirects to the clean URL with safe he
   } finally { await h.close(); }
 });
 
-test('one-time codes: expire after 5 minutes, stay bounded, are not kept in plain text', () => {
-  let t = 0; const c = createCodes({ now: () => t, max: 3 });
-  const a = c.issue().code; t += 5 * 60 * 1000 - 1; assert.equal(c.use(a), true); const b = c.issue().code; t += 5 * 60 * 1000; assert.equal(c.use(b), false, 'expired');
-  for (let i = 0; i < 10; i++) c.issue(); assert.ok(c.size <= 3);
-  assert.equal(c.use(''), false); assert.equal(c.use('a'.repeat(500)), false); assert.equal(c.use(undefined), false);
+test('one-time code (unit): single use, expires after 5 minutes, a newer code replaces the older, clear revokes, junk is refused', () => {
+  let t = 0; const c = createCodes({ now: () => t });
+  const a = c.issue().code; assert.equal(c.use(a + 'x'), false, 'wrong'); assert.equal(c.use(a), true); assert.equal(c.use(a), false, 'single use');
+  const b = c.issue().code; t += 5 * 60 * 1000 - 1; assert.equal(c.use(b), true, 'valid until 5 minutes are over');
+  const d = c.issue().code; t += 5 * 60 * 1000; assert.equal(c.use(d), false, 'expired');
+  const e = c.issue().code, f = c.issue().code; assert.equal(c.use(e), false, 'replaced by the newer one'); assert.equal(c.use(f), true);
+  const g = c.issue().code; assert.equal(c.clear(), 1); assert.equal(c.use(g), false, 'revoked'); assert.equal(c.clear(), 0, 'nothing pending');
+  c.issue(); assert.equal(c.use(''), false); assert.equal(c.use('a'.repeat(500)), false); assert.equal(c.use(undefined), false);
+});
+
+test('revoking the one-time link through the API: an unused link stops working; full access only', async () => {
+  const h = await startHatch();
+  try {
+    const { code } = (await h.call('POST', '/api/auth/once')).data;
+    assert.equal((await fetch(`${h.base}/api/auth/once`, { method: 'DELETE' })).status, 401, 'revoking needs the token');
+    assert.equal((await h.call('DELETE', '/api/auth/once')).data.revoked, 1);
+    assert.equal((await fetch(`${h.base}/login?code=${code}`, { redirect: 'manual' })).status, 401, 'the revoked link is dead');
+    assert.equal((await h.call('DELETE', '/api/auth/once')).data.revoked, 0, 'nothing left to revoke');
+  } finally { await h.close(); }
+});
+
+test('login page: a code form (no script) behind a link; a typed code logs in once, a reused or wrong one fails with the same limiter', async () => {
+  const h = await startHatch();
+  try {
+    const tokenPage = await (await fetch(`${h.base}/login`)).text(); assert.match(tokenPage, /Use a one-time code instead/); assert.match(tokenPage, /href="\/login\?mode=code"/);
+    const r = await fetch(`${h.base}/login?mode=code`); const html = await r.text();
+    assert.equal(r.status, 200); assert.match(html, /name="code"/); assert.doesNotMatch(html, /type="password"/); assert.doesNotMatch(html, /<script/i); assert.match(html, /Use the token instead/);
+    const code = (await h.call('POST', '/api/auth/once')).data.code;
+    const form = (c) => ({ method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: `code=${encodeURIComponent(c)}` });
+    const wrong = await fetch(`${h.base}/login`, form(code + 'x')); assert.equal(wrong.status, 401); assert.match(await wrong.text(), /name="code"[\s\S]*|did not work/);
+    const ok = await fetch(`${h.base}/login`, form(` ${code}\n`)); assert.equal(ok.status, 303); assert.equal(ok.headers.get('location'), '/');
+    assert.equal((await fetch(`${h.base}/api/health`, { headers: { cookie: cookieOf(ok) } })).status, 200);
+    const again = await fetch(`${h.base}/login`, form(code)); assert.equal(again.status, 401); assert.equal(again.headers.get('set-cookie'), null); assert.match(await again.text(), /already used or has expired/);
+  } finally { await h.close(); }
+});
+
+test('login page: failed codes count towards the lockout', async () => {
+  const h = await startHatch({ loginLimit: { max: 2, baseMs: 5000 } });
+  try {
+    const bad = () => fetch(`${h.base}/login`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'code=nope' });
+    assert.equal((await bad()).status, 401); assert.equal((await bad()).status, 401); assert.equal((await bad()).status, 429);
+  } finally { await h.close(); }
 });
 
 test('old links and cookies keep working during the move: ?t= starts a session and drops the query; the raw-token cookie becomes a session', async () => {
@@ -199,6 +236,11 @@ test('hatch-server CLI: url has no token; token prints it; sessions, logout, rot
     assert.equal((await run('logout', 'zz')).status, 1);
     const once = await run('url', '--once'); const link = /(http:\/\/\S+\/login\?code=\S+)/.exec(once.stdout)[1];
     const used = await fetch(link.replace(/^http:\/\/[\d.]+:\d+/, h.base), { redirect: 'manual' }); assert.equal(used.status, 302);
+    assert.match(once.stdout, /^code: \S+$/m, 'the bare code is printed too');
+    const spare = await run('url', '--once'); assert.match(spare.stderr, /url --revoke-once/, 'the text says how to cancel the link');
+    const revoked = await run('url', '--revoke-once'); assert.equal(revoked.status, 0); assert.match(revoked.stdout, /revoked/);
+    assert.equal((await fetch(/(http:\/\/\S+\/login\?code=\S+)/.exec(spare.stdout)[1].replace(/^http:\/\/[\d.]+:\d+/, h.base), { redirect: 'manual' })).status, 401);
+    assert.match((await run('url', '--revoke-once')).stdout, /no unused/);
     const out = await run('logout', '--all'); assert.match(out.stdout, /ended 2 logins/);
     const old = h.hatch.token; const rot = await run('rotate-token'); const fresh = rot.stdout.trim(); assert.match(fresh, /^[a-f0-9]{32}$/); assert.notEqual(fresh, old);
     assert.equal((await fetch(`${h.base}/api/health`, { headers: { 'x-token': fresh } })).status, 200); assert.ok(!rot.stderr.includes(fresh), 'printed once, on stdout only');
@@ -210,6 +252,7 @@ test('hatch-server CLI without a running server: sessions, logout and rotate-tok
   const id = sid(await fetch(`${h.base}/login`, form(h.hatch.token))); const old = h.hatch.token; await h.close();
   const run = (...a) => cli([...a, '--state', h.stateDir], home);
   assert.match((await run('sessions')).stdout, new RegExp(hashId(id).slice(0, 8)));
+  assert.match((await run('url', '--revoke-once')).stdout, /not running/);
   assert.equal((await run('url', '--once')).status, 1); assert.match((await run('url', '--once')).stderr, /not running/);
   const rot = await run('rotate-token'); const fresh = rot.stdout.trim(); assert.notEqual(fresh, old); assert.equal(JSON.parse(fs.readFileSync(path.join(h.stateDir, 'config.json'), 'utf8')).token, fresh);
   assert.match((await run('sessions')).stdout, /no browser is logged in/);
