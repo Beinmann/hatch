@@ -6,10 +6,14 @@ const prop = (kind, width, join) => (kind << 3) | ((width & 3) << 1) | (join ? 1
 const widthOf = (p) => (p >> 1) & 3;
 const kindOf = (p) => p >> 3;
 
+// The Unicode 11 table predates later emoji (🫠 🥹 🩷 🪩 ...), which it counts as one column; tmux counts every emoji-presentation character as two.
+const EMOJI_PRESENTATION = /\p{Emoji_Presentation}/u;
+const newerEmoji = (cp) => cp >= 0x1F000 && cp <= 0x1FAFF && EMOJI_PRESENTATION.test(String.fromCodePoint(cp));
+
 export function emojiWidthProvider(base) {
   return {
     version: '11-emoji',
-    wcwidth: (cp) => base.wcwidth(cp),
+    wcwidth: (cp) => (base.wcwidth(cp) === 1 && newerEmoji(cp) ? 2 : base.wcwidth(cp)),
     charProperties(cp, preceding) {
       const pw = widthOf(preceding), pk = kindOf(preceding);
       if (cp === 0xFE0F && pw > 0) return prop(0, 2, true);          // emoji presentation selector: the cell becomes wide
@@ -17,7 +21,8 @@ export function emojiWidthProvider(base) {
       if (pk === KIND_ZWJ && pw > 0) return prop(0, pw, true);        // the character after a joiner joins the cluster
       if (cp >= 0x1F3FB && cp <= 0x1F3FF && pw > 0) return prop(0, pw, true); // skin tone modifier
       if (cp >= 0x1F1E6 && cp <= 0x1F1FF) return pk === KIND_RI && pw > 0 ? prop(0, pw, true) : prop(KIND_RI, 2, false); // flag = two regional indicators
-      return base.charProperties(cp, preceding);
+      const props = base.charProperties(cp, preceding);
+      return widthOf(props) === 1 && newerEmoji(cp) ? prop(kindOf(props), 2, props & 1) : props;
     },
   };
 }

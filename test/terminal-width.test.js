@@ -47,3 +47,15 @@ test('emoji clusters take two columns, like tmux', () => {
   assert.equal(columns('é'), 1);
   assert.equal(columns('🇩🇪🇫🇷'), 4);
 });
+
+test('emoji newer than the Unicode 11 table are two columns too, like tmux', () => {
+  const p = emojiWidthProvider(provider());
+  for (const ch of ['🫠', '🥹', '🩷', '🪩', '🪄', '🤌', '🥷', '🫨', '🪿']) {
+    assert.equal(p.wcwidth(ch.codePointAt(0)), 2, ch);
+    assert.equal(columns(ch), 2, ch);
+  }
+  assert.equal(columns('a🫠b'), 4);
+  assert.equal(columns('🫶🏽'), 2);
+  assert.equal(columns('🐦‍🔥'), 2);
+  assert.equal(columns('a'), 1);
+});
