@@ -70,6 +70,28 @@
     return out.slice(0, max);
   }
 
+  /** `@@branch N name` header lines, each followed by `hash US subject US ts` commits (newest first), the commits of a local
+   *  branch that are not on the current one. N is the full count, the listed commits are capped by the source command. */
+  function parseGroups(lines) {
+    const out = []; let g = null;
+    for (const line of lines) {
+      const m = /^@@branch (\d+) (.+)$/.exec(line);
+      if (m) { g = { name: m[2], count: Number(m[1]), ts: 0, commits: [] }; out.push(g); continue; }
+      const p = line.split(US); if (!g || p.length < 3) continue;
+      g.commits.push({ hash: p[0], subject: p[1], ts: Number(p[2]) || 0 });
+    }
+    for (const x of out) x.ts = x.commits.length ? x.commits[0].ts : 0;
+    return out;
+  }
+
+  /** Reflog events and branch groups as one list, newest first (a group is dated by its newest commit). */
+  function activityItems(activity, groups) {
+    return [...activity.map((a) => ({ ...a, type: 'event' })), ...groups.map((g) => ({ ...g, type: 'group' }))].sort((a, b) => b.ts - a.ts);
+  }
+
+  /** Heading of the commit list: it names the current branch, or the short hash when detached. */
+  function commitsTitle(b) { return `Commits on ${b.head === '(detached)' ? String(b.oid || '').slice(0, 7) : b.head || 'HEAD'}`; }
+
   /** Short human wording for a reflog message plus its kind (picks the icon); unknown kinds fall back to the raw message.
    *  Git removes a branch's reflog when the branch is deleted, so there is no "deleted branch" entry to recognise. */
   function describe(ref, msg) {
@@ -92,8 +114,8 @@
 
   /** text: the source output. Returns { state: 'ok' | 'norepo' | 'nodir', ... } */
   function parse(text) {
-    const secs = { head: [], status: [], log: [], activity: [], commit: [] }; let cur = 'head';
-    const st = { state: 'ok', home: '', top: '', remotes: 0, branch: { head: '', oid: '', upstream: '', ahead: 0, behind: 0 }, conflicts: [], unstaged: [], staged: [], untracked: [], more: 0, commits: [], activity: [], commit: { state: 'none' } };
+    const secs = { head: [], status: [], log: [], branches: [], activity: [], commit: [] }; let cur = 'head';
+    const st = { state: 'ok', home: '', top: '', remotes: 0, branch: { head: '', oid: '', upstream: '', ahead: 0, behind: 0 }, conflicts: [], unstaged: [], staged: [], untracked: [], more: 0, commits: [], groups: [], activity: [], commit: { state: 'none' } };
     for (const line of String(text || '').split('\n')) {
       if (line === '@@nodir') { st.state = 'nodir'; continue; }
       if (line === '@@norepo') { st.state = 'norepo'; continue; }
@@ -102,6 +124,7 @@
       if (line.startsWith('@@remotes ')) { st.remotes = Number(line.slice(10)) || 0; continue; }
       if (line === '@@status') { cur = 'status'; continue; }
       if (line === '@@log') { cur = 'log'; continue; }
+      if (line === '@@branches') { cur = 'branches'; continue; }
       if (line === '@@activity') { cur = 'activity'; continue; }
       if (line === '@@commit') { cur = 'commit'; continue; }
       if (cur !== 'head') secs[cur].push(line);
@@ -111,6 +134,7 @@
       const p = line.split(US); if (p.length < 4) continue;
       st.commits.push({ hash: p[0], subject: p[1], ts: Number(p[2]) || 0, author: p[3], refs: parseRefs(p[4]) });
     }
+    st.groups = parseGroups(secs.branches);
     st.activity = parseActivity(secs.activity);
     st.commit = parseCommitState(secs.commit);
     return st;
@@ -305,6 +329,6 @@
   const splitPath = (p) => { const i = p.lastIndexOf('/'); return i < 0 ? { dir: '', name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) }; };
   const baseName = (p) => String(p || '').replace(/\/+$/, '').split('/').pop() || '/';
 
-  const api = { parsePushCall, canPush, pushView, commitStep, commitView, parseCommitCall, parseCommitState, CONFIRM_MS, diffArg, parseDiff, parseNumstat, parseShow, parseFileDiff, statBars, rowRefs, multiAuthor, parse, parseActivity, parseRefs, shortPath, relTime, splitPath, baseName };
+  const api = { parsePushCall, canPush, pushView, commitStep, commitView, parseCommitCall, parseCommitState, CONFIRM_MS, diffArg, parseDiff, parseNumstat, parseShow, parseFileDiff, statBars, rowRefs, multiAuthor, parse, parseActivity, parseGroups, activityItems, commitsTitle, parseRefs, shortPath, relTime, splitPath, baseName };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GitParse = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

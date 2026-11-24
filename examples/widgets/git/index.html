@@ -48,7 +48,9 @@
   .pill.head{background:var(--accent,#4fd1c0);color:#111;box-shadow:none;font-weight:bold}
   .pill.tag{color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
   .pill.remote{color:var(--info);box-shadow:inset 0 0 0 1px var(--info)}
-  .row[data-hash],.row[data-path]{cursor:pointer}
+  .row[data-hash],.row[data-path],.row[data-grp]{cursor:pointer}
+  .row.sub{padding-left:22px}
+  .row.grp.open .s{color:var(--fg,inherit)}
   .row[data-hash]:hover .s,.row[data-path]:hover .n{color:var(--accent,#4fd1c0)}
   /* inspect view (replaces the status list; Back or Escape returns) */
   .top{position:sticky;top:0;z-index:2;background:var(--bg,#111);display:flex;gap:8px;align-items:center;margin:-8px -10px 6px;padding:6px 10px;border-bottom:1px solid rgba(127,127,127,.25)}
@@ -125,6 +127,18 @@
     return `<div class="row c cm" data-hash="${esc(c.hash)}" title="${esc(`${c.hash} ${c.subject} - ${c.author}`)}"><span class="g">${i < ahead ? '\u2191' : ''}</span><span class="s">${esc(c.subject)}</span>${pills}<span class="t"><span class="a">${G.relTime(c.ts, now)}${who}</span><span class="h">${esc(c.hash)}</span></span></div>`;
   };
 
+  // Commits of another local branch that are not on the current one: one collapsed row, click to list them.
+  const opened = new Set();   // branch names the user expanded; in memory only
+  const groupRows = (g, now) => {
+    const open = opened.has(g.name);
+    let h = `<div class="row c grp${open ? ' open' : ''}" data-grp="${esc(g.name)}" title="${esc(g.name)} (click to ${open ? 'collapse' : 'expand'})">${icon('branch')}<span class="s">${g.count} commit${g.count === 1 ? '' : 's'} on branch ${esc(g.name)}</span><span class="t">${G.relTime(g.ts, now)}</span></div>`;
+    if (open) {
+      h += g.commits.map((c) => `<div class="row c sub" data-hash="${esc(c.hash)}" title="${esc(`${c.hash} ${c.subject}`)}"><span class="s">${esc(c.subject)}</span><span class="t">${esc(c.hash)} · ${G.relTime(c.ts, now)}</span></div>`).join('');
+      if (g.count > g.commits.length) h += `<div class="row c sub"><span class="s o">+${g.count - g.commits.length} older</span></div>`;
+    }
+    return h;
+  };
+
   function view(s, now) {
     if (s.state === 'nodir') return '<div class="msg bad">The folder this widget points at no longer exists.<br>Close it and run <code>hatch widget open git</code> in a folder that exists.</div>';
     if (s.state === 'norepo') return '<div class="msg">Not a git repository.<br>Run <code>git init</code> here, or open the widget from inside a repository with <code>hatch widget open git</code> (it follows the shell\'s current directory).</div>';
@@ -145,13 +159,14 @@
     if (s.more) h += `<div class="more">+${s.more} more not shown</div>`;
     if (s.commits.length) {
       const f = folded.has('commits');
-      h += `<h3 class="${f ? 'fold' : ''}" data-sec="commits"><span class="car">▾</span>Recent commits <span class="n">(${s.commits.length})</span></h3>`;
+      h += `<h3 class="${f ? 'fold' : ''}" data-sec="commits"><span class="car">▾</span>${esc(G.commitsTitle(b))} <span class="n">(${s.commits.length})</span></h3>`;
       if (!f) h += s.commits.map((c, i) => commitRow(c, i, b.ahead, now, b.head, G.multiAuthor(s.commits))).join('');
-    } else h += '<h3 data-sec="none" style="cursor:default">Recent commits</h3><div class="empty">no commits yet</div>';
-    if (s.activity.length) {   // hidden when the reflog is empty or unavailable
+    } else h += '<h3 data-sec="none" style="cursor:default">${esc(G.commitsTitle(b))}</h3><div class="empty">no commits yet</div>';
+    const items = G.activityItems(s.activity, s.groups);
+    if (items.length) {   // hidden when the reflog is empty or unavailable and no other branch has commits of its own
       const f = folded.has('activity');
-      h += `<h3 class="${f ? 'fold' : ''}" data-sec="activity"><span class="car">▾</span>Recent activity <span class="n">(${s.activity.length})</span></h3>`;
-      if (!f) h += s.activity.map((a) => `<div class="row c"${a.hash ? ` data-hash="${esc(a.hash)}"` : ''} title="${esc(`${a.hash} ${a.text}`)}">${icon(a.kind)}<span class="s">${esc(a.text)}</span><span class="t">${G.relTime(a.ts, now)}</span></div>`).join('');
+      h += `<h3 class="${f ? 'fold' : ''}" data-sec="activity"><span class="car">▾</span>Recent activity <span class="n">(${items.length})</span></h3>`;
+      if (!f) h += items.map((a) => a.type === 'group' ? groupRows(a, now) : `<div class="row c"${a.hash ? ` data-hash="${esc(a.hash)}"` : ''} title="${esc(`${a.hash} ${a.text}`)}">${icon(a.kind)}<span class="s">${esc(a.text)}</span><span class="t">${G.relTime(a.ts, now)}</span></div>`).join('');
     }
     return h;
   }
@@ -361,6 +376,7 @@
       return;
     }
     if ((x = t.closest('h3[data-sec]'))) { if (x.dataset.sec === 'none') return; const id = x.dataset.sec; folded.has(id) ? folded.delete(id) : folded.add(id); return render(); }
+    if ((x = t.closest('.row[data-grp]'))) { const n = x.dataset.grp; opened.has(n) ? opened.delete(n) : opened.add(n); return render(); }
     if ((x = t.closest('.row[data-hash]'))) return openCommit(x.dataset.hash);
     if ((x = t.closest('.row[data-path]'))) openFile(x.dataset.mode, x.dataset.path, x.dataset.from, x.dataset.code);
   });
