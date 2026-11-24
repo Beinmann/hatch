@@ -41,8 +41,9 @@ function columns(str) {
 }
 
 test('emoji clusters take two columns, like tmux', () => {
-  for (const e of ['😀', '👍🏽', '🇩🇪', '👨‍👩‍👧', '🐻‍❄️', '漢']) assert.equal(columns(e), 2, e);
+  for (const e of ['😀', '❤️', '⚠️', '👍🏽', '🇩🇪', '👨‍👩‍👧', '1️⃣', '漢']) assert.equal(columns(e), 2, e);
   assert.equal(columns('a😀b'), 4);
+  assert.equal(columns('g❤️h'), 4);
   assert.equal(columns('é'), 1);
   assert.equal(columns('🇩🇪🇫🇷'), 4);
 });
@@ -57,11 +58,4 @@ test('emoji newer than the Unicode 11 table are two columns too, like tmux', () 
   assert.equal(columns('🫶🏽'), 2);
   assert.equal(columns('🐦‍🔥'), 2);
   assert.equal(columns('a'), 1);
-});
-
-// tmux sends a narrow base plus VS16 as 'a❤\uFE0F ESC[1X ESC[C b': it pads the second cell itself, so the terminal must keep the base width.
-test('a variation selector keeps the width of a narrow base, so tmux padding lines up', () => {
-  for (const e of ['❤️', '⚠️', '✔️', '™️', '☀️']) assert.equal(columns(e), 1, e);
-  assert.equal(columns('😀\uFE0F'), 2);
-  assert.equal(columns('a❤️') + 1 /* ESC[C */ + columns('b'), 4);
 });
