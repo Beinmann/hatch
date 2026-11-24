@@ -95,7 +95,7 @@ export default {
     };
     load();
     return {
-      el: root, focus() { frame.focus(); }, update() {}, destroy() { unregister?.(); removeEventListener('message', onMessage); closeAll(); frame.src = 'about:blank'; },
+      el: root, focus() { frame.focus(); post({ type: 'hatch-take-focus' }); }, // the page inside takes the keyboard too, not only the frame element update() {}, destroy() { unregister?.(); removeEventListener('message', onMessage); closeAll(); frame.src = 'about:blank'; },
       widgetChanged(info) { if (info.name === name) { reported = null; load(); firePath(); } },
       // title-bar path button (windows.js): called with the current path or null, now and on every change
       onPath(f) { pathListeners.add(f); f(currentPath()); },

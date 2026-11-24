@@ -370,17 +370,17 @@ test('commits list is the current branch only; other branches appear as grouped 
   commit('b', 'main two');
   let s = run();
   assert.deepEqual(s.commits.map((c) => c.subject).sort(), ['main one', 'main two', 'merge merged', 'to be merged'], 'only what HEAD reaches');
-  assert.equal(G.commitsTitle(s.branch), 'Commits on main');
+  assert.equal(G.commitsTitle(s.branch), 'Latest commits on main');
   assert.deepEqual(s.groups.map((g) => g.name), ['phone-upload'], 'a merged branch has no group');
   assert.equal(s.groups[0].count, 3); assert.deepEqual(s.groups[0].commits.map((c) => c.subject), ['side three', 'side two', 'side one']);
   assert.ok(s.groups[0].ts > 0 && s.groups[0].commits[0].hash);
   const items = G.activityItems(s.activity, s.groups); assert.ok(items.some((i) => i.type === 'group') && items.some((i) => i.type === 'event'));
   assert.ok(items.every((x, i) => !i || items[i - 1].ts >= x.ts), 'newest first');
   git(d, 'checkout', '-q', 'phone-upload'); s = run(); // from the side branch, main's own commits are the "other" group
-  assert.equal(G.commitsTitle(s.branch), 'Commits on phone-upload'); assert.deepEqual(s.commits.map((c) => c.subject)[0], 'side three');
+  assert.equal(G.commitsTitle(s.branch), 'Latest commits on phone-upload'); assert.deepEqual(s.commits.map((c) => c.subject)[0], 'side three');
   assert.ok(s.groups.some((g) => g.name === 'main' && g.count === 3));
   git(d, 'checkout', '-q', '--detach', 'main'); s = run();
-  assert.match(G.commitsTitle(s.branch), /^Commits on [0-9a-f]{7}$/); assert.equal(s.commits[0].subject, 'main two');
+  assert.match(G.commitsTitle(s.branch), /^Latest commits on [0-9a-f]{7}$/); assert.equal(s.commits[0].subject, 'main two');
   assert.ok(s.groups.some((g) => g.name === 'phone-upload'));
   for (let i = 0; i < 10; i++) { git(d, 'checkout', '-q', '-b', `b${i}`, 'main'); commit(`x${i}`, `x${i}`); }
   git(d, 'checkout', '-q', 'main'); s = run(); assert.ok(s.groups.length <= 4 && s.groups.every((g) => g.commits.length <= 6), 'capped');
