@@ -1,6 +1,7 @@
 import { isViewOnly } from './util.js';
 import { pickRestore } from './restore.js';
 import { touch, pickAfterClose } from './focus-history.js';
+import { focusWindowContent, wantsRetry } from './focus-target.js';
 import { planShowDesktop, rememberMinimized } from './show-desktop.js';
 import { step, listStep } from './direction.js';
 import { dockEmptied, dockIds, moveBefore, insertBefore, inRect, floatLanding, gapAt, orderPatches } from './dock-order.js';
@@ -40,7 +41,12 @@ export function createWindows({ floats, dock, split, chips, el, patch, close, ki
     for (const o of wins.values()) o.node.classList.toggle('focus', o === w);
     focusHistory = touch(focusHistory, w.panel.id);
     if (w.panel.placement === 'float') w.node.style.zIndex = String(++z);
-    if (keyboard) { w.node.focus({ preventScroll: true }); w.view.focus?.(); }
+    if (keyboard && !focusWindowContent(w, document)) {
+      // Layout or visibility may not be settled yet (a window just restored, the dock just opened): try once more next frame.
+      requestAnimationFrame(() => {
+        if (wantsRetry({ stillFocused: w.node.classList.contains('focus') && wins.get(w.panel.id) === w && shown(w), active: document.activeElement, body: document.body, node: w.node })) focusWindowContent(w, document);
+      });
+    }
     if (typeof paintChips === 'function') paintChips();
   }
 
