@@ -16,6 +16,7 @@ removing its files and its CLI case, palette entry and README bullet.
 |---|---|---|---|
 | tmux terminal in the page, reload re-attach | src/terminal.js, public/terminal.js, src/ptyhost.py | yes | the heart of it |
 | Any-file upload by drop/paste, path drag | app.js, panels/files.js | synthetic events | |
+| Upload button (file picker, touch-first devices only) | public/phone-upload.js, public/app.js | unit-tested detection and handler, page smoke | not tried on a real phone or in a browser |
 | Image paste and drop | src/uploads.js, public/app.js | yes (synthesized paste) | |
 | State dir, SSE events, windows | src/state.js, src/events.js, public/windows.js | yes | files are the source of truth |
 | hatch CLI | bin/ui.js | yes | |

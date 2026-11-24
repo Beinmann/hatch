@@ -1,4 +1,5 @@
 // Page glue: events (SSE snapshot + updates), the terminal, windows, image paste/drop, notifications, settings.
+import { isTouchFirst, uploadPicked } from './phone-upload.js';
 import { restarted } from './restart.js';
 import { el, isViewOnly } from './util.js';
 import { initTerminal } from './terminal.js';
@@ -484,6 +485,10 @@ document.addEventListener('paste', (e) => {
   e.preventDefault(); e.stopPropagation();
   items.forEach((f) => uploadImage(f, f.name));
 }, true);
+// Phones: a picker button (shown only on touch-first devices). Same functions as paste and drop, so same limits and result handling.
+$('uploadbtn').hidden = !isTouchFirst(window.matchMedia?.bind(window));
+$('uploadbtn').addEventListener('click', () => { if (isViewOnly()) return toast('This link is view-only', 'warn'); $('uploadinput').click(); });
+$('uploadinput').addEventListener('change', (e) => { const files = [...e.target.files]; e.target.value = ''; uploadPicked(files, { uploadImage, uploadFile }); }); // reset: the same file can be picked twice
 const wrap = $('termwrap');
 let dragDepth = 0;
 const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
