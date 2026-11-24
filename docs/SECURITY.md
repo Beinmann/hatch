@@ -72,7 +72,7 @@ trust, not a hardened service.
 - **Migration.** Old `?t=TOKEN` links and `hatch_token` cookies that hold the raw token still work: the link starts a session and
   redirects to the clean address; the cookie becomes a session on the next page load and is deleted. This is temporary.
 - `x-token` for the CLI, MCP server and API is unchanged.
-- **Watch-only (view) links** (`hatch-server url --view`, `--view-only`) are unchanged and may go away in a later version. They
+- **Watch-only (view) links** (`hatch-server url --view`, `--view-only`) are unchanged for now and may be removed in a future version. They
   still put a second long-lived token in a `?t=` link and a cookie, with the old weaknesses.
 
 ## Hosted pages and page windows

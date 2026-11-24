@@ -28,7 +28,7 @@ usage:
   hatch-server token touch [--state DIR]  record that you changed the token yourself (the page warns when the token is older than 30 days; rotate-token does this by itself)
   hatch-server rotate-token            make a new token, end every login, print the new token once
   hatch-server panic                  emergency: end every login, roll the token, remove the view token, drop a pending one-time code and hosted-page secrets; the new token is not printed (see \`token\`; also: hatch panic)
-  hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it (view links may go away in a later version)
+  hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it (watch-only links may be removed in a future version)
   hatch-server doctor [--state DIR]    check node, python3, tmux, state dir, server
   hatch-server service [--state DIR] [--port N] [--host H]   print a systemd user unit that starts hatch-server serve (nothing is installed)
   hatch-server --help | --version
