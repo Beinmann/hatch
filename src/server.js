@@ -96,7 +96,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
   const configGuard = createConfigGuard({ stateDir, current: () => ({ port: cfg.port, host }), log, ...guardOpts }); // repairs port/host in config.json if another writer clobbers them
   const sessions = createSessions({ file: path.join(stateDir, 'sessions.json'), warn: (m) => log(m) }); // login sessions (src/sessions.js)
   const limiter = createLimiter(loginLimit); // failed token checks per client address (src/rate-limit.js)
-  const codes = createCodes(); // single-use login codes, memory only
+  const codes = createCodes({ onBurn: () => log('login code invalidated after 5 wrong attempts; issue a new one with `hatch-server code`') }); // single-use login codes, memory only
   const hostSecrets = createHostSecrets(); // per-load secrets for hosted pages' sub-resources (src/host-secrets.js)
   let lock = null; // server.lock (src/instance-guard.js), taken on the first listen
   let state; // assigned below; the bus snapshot reads it lazily
@@ -545,20 +545,19 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     // hosted pages' sub-resources: token-free, the per-load secret in the path is the credential (see serveHostedResource)
     if (p.startsWith('/host-r/')) return serveHostedResource(req, res, p);
 
-    // ---- login page and one-time login links (no auth: they are how a browser gets one) ----
+    // ---- login page and login form (no auth: they are how a browser gets one) ----
     const key = clientKey(req);
     if (p === '/login') {
       const page = (status, note, mode) => { res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'content-security-policy': PAGE_CSP, 'x-frame-options': 'SAMEORIGIN', 'x-content-type-options': 'nosniff' }); res.end(m === 'HEAD' ? undefined : loginPage(note, { mode })); };
       if (m !== 'GET' && m !== 'HEAD' && m !== 'POST') throw new HttpError(405, 'method not allowed');
-      let code = m === 'POST' ? null : url.searchParams.get('code'); let token = null;
-      if (m === 'POST') { const f = new URLSearchParams((await readBody(req, 4096)).toString('utf8')); code = f.get('code'); token = f.get('token'); if (code !== null) code = code.trim(); }
-      if (m === 'POST' || code !== null) {
+      let code = null; let token = null;
+      if (m === 'POST') { const f = new URLSearchParams((await readBody(req, 4096)).toString('utf8')); code = f.get('code'); token = f.get('token'); }
+      if (m === 'POST') {
         const wait = limiter.wait(key); if (wait) return tooMany(res, wait, false);
-        const byCode = code !== null; // a code (link or typed in the code form) or the token
-        if (byCode ? codes.use(code) : tokenOk(token, cfg.token)) { limiter.success(key); log(`login: new session from ${key} (${byCode ? 'one-time code' : 'token'})`); return startSession(req, res, m === 'POST' ? 303 : 302, '/'); }
+        const byCode = code !== null; // a code typed in the code form, or the token
+        if (byCode ? codes.use(code) : tokenOk(token, cfg.token)) { limiter.success(key); log(`login: new session from ${key} (${byCode ? 'one-time code' : 'token'})`); return startSession(req, res, 303, '/'); }
         countFail(key, byCode ? 'login code' : 'login form');
-        if (m === 'POST') return page(401, byCode ? 'That code did not work: it was already used or has expired. Run `hatch-server url --once` for a new one.' : 'That token did not work.', byCode ? 'code' : 'token');
-        return page(401, 'That login link did not work: it was already used or has expired. Run `hatch-server url --once` for a new one (a newer link replaces the older one). To cancel an unused link: `hatch-server url --revoke-once`.');
+        return page(401, byCode ? 'That code did not work: it was already used or has expired. Run `hatch-server code` for a new one.' : 'That token did not work.', byCode ? 'code' : 'token');
       }
       if (url.searchParams.get('mode') === 'code') return page(200, '', 'code');
       return page(200, '');
@@ -980,7 +979,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         const def = widgetSource(g[1], g[2]);
         return sse(req, res, (fn) => sources.subscribe(def, fn));
       }
-      // ---- login administration (`hatch-server sessions|logout|rotate-token|panic|url --once|--revoke-once` call these; full access only, never in a view-only mirror) ----
+      // ---- login administration (`hatch-server sessions|logout|rotate-token|panic|code|code --revoke` call these; full access only, never in a view-only mirror) ----
       if (p === '/api/auth/sessions' && m === 'GET') return json(res, 200, sessions.list());
       if (p === '/api/auth/sessions' && m === 'DELETE') return json(res, 200, { ended: sessions.revokeAll() });
       if ((g = /^\/api\/auth\/sessions\/([a-f0-9]{1,64})$/.exec(p)) && m === 'DELETE') {

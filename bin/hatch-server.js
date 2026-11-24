@@ -20,14 +20,14 @@ usage:
   hatch-server clear [--state DIR] [--yes]   delete everything in the state dir except allowed-hosts (widgets, notes, trash, token) to recover from a bad state; asks first, refuses while a server uses it
   hatch-server update-widgets [NAME... | --all] [--state DIR]   refresh example widgets this instance already uses from the shipped copies (keeps data/, saves changed files as .bak); works while the server runs
   hatch-server url [--state DIR]       print the address to open (no token in it; log in with the token, see below)
-  hatch-server url --once              print a single-use login link (valid about 5 minutes; needs a running server); a newer link replaces the older one
-  hatch-server url --revoke-once       cancel the unused single-use link (also ended by: restart, rotate-token)
+  hatch-server code                    print a one-time login code (type it on the login page under "Use a one-time code instead"; valid 5 minutes, single use; needs a running server)
+  hatch-server code --revoke           cancel the unused one-time code (also ended by: restart, rotate-token, panic, five wrong attempts)
   hatch-server token [--state DIR]     print the login token, to paste into the login page
   hatch-server sessions                list browser logins (id, created, last seen, client)
   hatch-server logout ID | --all       end one login (the id from \`sessions\`) or all of them
   hatch-server token touch [--state DIR]  record that you changed the token yourself (the page warns when the token is older than 30 days; rotate-token does this by itself)
   hatch-server rotate-token            make a new token, end every login, print the new token once
-  hatch-server panic                  emergency: end every login, roll the token, remove the view token, drop pending one-time links and hosted-page secrets; the new token is not printed (see \`token\`; also: hatch panic)
+  hatch-server panic                  emergency: end every login, roll the token, remove the view token, drop a pending one-time code and hosted-page secrets; the new token is not printed (see \`token\`; also: hatch panic)
   hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it (view links may go away in a later version)
   hatch-server doctor [--state DIR]    check node, python3, tmux, state dir, server
   hatch-server service [--state DIR] [--port N] [--host H]   print a systemd user unit that starts hatch-server serve (nothing is installed)
@@ -51,7 +51,7 @@ function parse(argv) {
     else if (a === '--tmux-status') o['tmux-status'] = 'true';
     else if (a === '--yes') o.yes = 'true';
     else if (a === '--all') o.all = 'true';
-    else if (a === '--view' || a === '--revoke-view' || a === '--once' || a === '--revoke-once') o[a.slice(2)] = 'true';
+    else if (a === '--view' || a === '--revoke-view' || a === '--once' || a === '--revoke-once' || a === '--revoke') o[a.slice(2)] = 'true';
     else if (a.startsWith('--')) { const [k, v] = a.slice(2).split(/=(.*)/s); o[k] = v ?? argv[++i]; if (o[k] === undefined) fail(`--${k} needs a value`); }
     else o._.push(a);
   }
@@ -149,6 +149,20 @@ if (cmd === 'update-widgets') {
   process.exit(0);
 }
 if (cmd === 'doctor') { process.exit(printChecks(await doctor({ state: o.state })) ? 0 : 1); }
+// One-time login code: issue (default) or cancel. Shared by `code` and the old `url --once|--revoke-once` aliases.
+async function oneTimeCode(dir, revoke) {
+  if (revoke) {
+    const r = await admin(dir, 'DELETE', '/api/auth/once');
+    console.log(!r ? 'the server is not running: one-time codes live only in its memory, so none is valid' : r.revoked ? 'one-time code revoked: it no longer works' : 'no unused one-time code was pending');
+    process.exit(0);
+  }
+  const r = await admin(dir, 'POST', '/api/auth/once');
+  if (!r) fail('the server is not running: a one-time login code is kept in the running server\'s memory. Start it (`hatch-server start`) and run this again.');
+  console.log(r.code);
+  console.error(`One-time code: enter it on the login page under "Use a one-time code instead". Valid ${Math.round(r.expiresInSec / 60)} minutes, works once; five wrong attempts cancel it.\nTo cancel it before it is used: \`hatch-server code --revoke\` (restarting the server, \`rotate-token\` and \`panic\` also end it).`);
+  process.exit(0);
+}
+if (cmd === 'code') { await oneTimeCode(findStateDir({ state: o.state }), !!o.revoke); }
 if (cmd === 'url') {
   const dir = findStateDir({ state: o.state }); const c = readConfig(dir); const file = path.join(dir, 'config.json');
   const save = (cfg) => { const tmp = `${file}.${process.pid}.tmp`; fs.writeFileSync(tmp, `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 }); fs.renameSync(tmp, file); }; // temp + rename: a running server never reads half a file
@@ -157,21 +171,12 @@ if (cmd === 'url') {
     if (!c.viewToken) { c.viewToken = (await import('node:crypto')).randomBytes(16).toString('hex'); save(c); }
     console.log(`http://${linkHost(c.host)}:${c.port}/?t=${c.viewToken}`); if (isLoopbackHost(c.host)) console.error('Note: the server listens on this machine only, so this link works only here. Start it with --host 0.0.0.0 (or a Tailscale address) for other devices.'); console.log('Watch-only: this link can see the terminal and windows but cannot type, run, or read files.'); process.exit(0);
   }
-  if (process.argv.includes('--revoke-once')) {
-    const r = await admin(dir, 'DELETE', '/api/auth/once');
-    console.log(!r ? 'the server is not running: single-use links live only in its memory, so none is valid' : r.revoked ? 'single-use link revoked: it no longer works' : 'no unused single-use link was pending');
-    process.exit(0);
-  }
-  if (process.argv.includes('--once')) {
-    const r = await admin(dir, 'POST', '/api/auth/once');
-    if (!r) fail('the server is not running: a single-use login link is kept in the running server\'s memory. Start it (`hatch-server start`) and run this again.');
-    console.log(`http://${linkHost(c.host)}:${c.port}/login?code=${r.code}`);
-    console.log(`code: ${r.code}`);
-    console.error(`Single-use link: works once, expires in ${Math.round(r.expiresInSec / 60)} minutes. Open it in the browser you want to log in; or type the code at the login page (\"Use a one-time code instead\"). The link leaves no code in the address bar.\nTo cancel it before it is used: \`hatch-server url --revoke-once\` (restarting the server or \`rotate-token\` also ends it).`);
-    process.exit(0);
+  if (o.once || o['revoke-once']) { // old spelling: kept as aliases of `code`
+    console.error(`Note: \`url ${o.once ? '--once' : '--revoke-once'}\` is replaced by \`hatch-server code${o.once ? '' : ' --revoke'}\` (there is no login link any more).`);
+    await oneTimeCode(dir, !!o['revoke-once']);
   }
   console.log(`http://${linkHost(c.host)}:${c.port}/`);
-  console.error('Log in with the token (`hatch-server token` prints it) or use `hatch-server url --once` for a single-use link.');
+  console.error('Log in with the token (`hatch-server token` prints it) or use `hatch-server code` for a one-time code to type on the login page.');
   process.exit(0);
 }
 if (cmd === 'token' && o._[1] === 'touch') {
@@ -203,7 +208,7 @@ if (cmd === 'sessions' || cmd === 'logout' || cmd === 'rotate-token' || cmd === 
   if (cmd === 'panic') { // rotate-token plus: view token removed, pending links dropped. The new token is NOT printed (it may run in a shared terminal or from an agent): `hatch-server token` shows it.
     let r = await admin(dir, 'POST', '/api/auth/panic'); const live = !!r;
     if (!r) { try { const { rotateTokenFile } = await import('../src/token.js'); const view = !!readConfig(dir).viewToken; rotateTokenFile(dir, { dropViewToken: true }); r = { ended: offline().revokeAll(), links: 0, view }; } catch (e) { fail(e.message); } }
-    console.log(`PANIC done (${live ? 'server running' : 'server not running, files edited'}): ${r.ended} login${r.ended === 1 ? '' : 's'} ended, token rolled, ${r.view ? 'view token removed' : 'no view token was set'}, ${r.links ? 'pending one-time link dropped, ' : ''}hosted-page secrets cleared.`);
+    console.log(`PANIC done (${live ? 'server running' : 'server not running, files edited'}): ${r.ended} login${r.ended === 1 ? '' : 's'} ended, token rolled, ${r.view ? 'view token removed' : 'no view token was set'}, ${r.links ? 'pending one-time code dropped, ' : ''}hosted-page secrets cleared.`);
     console.log(`New token is in ${path.join(dir, 'config.json')} (mode 0600); \`hatch-server token\` prints it. \`hatch\` and Claude read it from that file. Open streams close within about 5 seconds.`);
     process.exit(0);
   }
@@ -272,7 +277,7 @@ process.on('SIGINT', stop); process.on('SIGTERM', stop);
 const shown = linkHost(host);
 console.log(`Hatch ${hatch.config.session ? '' : ''}is running (tmux session "${hatch.session}", state ${stateDir})`);
 console.log(`\n  http://${shown}:${actual}/\n`);
-console.log('Log in with the token: `hatch-server token` prints it (paste it at /login), `hatch-server url --once` makes a single-use login link.');
+console.log('Log in with the token: `hatch-server token` prints it (paste it at /login), `hatch-server code` makes a one-time login code.');
 console.log(isLoopbackHost(host) ? `Listening on ${host} only: reachable from this machine, not from the network. Use --host 0.0.0.0 (or a Tailscale address) to allow other devices.`
   : `Listening on ${host === '0.0.0.0' || host === '::' ? 'all interfaces' : host} over plain HTTP: anyone on this network who learns the token can run commands on this box, and the token and login cookie can be read on the wire. Use --host 127.0.0.1 with Tailscale or an HTTPS reverse proxy (docs/SECURITY.md).`);
 if (hatch.viewOnly) console.log('VIEW-ONLY: this page mirrors the terminal and panels; it cannot type, run, read files or change anything.');

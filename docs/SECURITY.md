@@ -47,14 +47,20 @@ trust, not a hardened service.
   codes and hosted-page secrets, and prints the new token once. With the server running these go through its API; without it
   they edit the files. Open streams (events, terminal) of an ended session are closed within about 5 seconds.
 - `hatch-server panic` (or `hatch panic`) is the emergency button: it does what `rotate-token` does and also removes the watch-only view
-  token and drops a pending one-time link, so nothing issued before keeps working. It prints what it did and where the new token is
+  token and drops a pending one-time code, so nothing issued before keeps working. It prints what it did and where the new token is
   (`hatch-server token` shows it), not the token itself. Open streams close within about 5 seconds. Like `rotate-token` it goes through
   the running server, or edits the files when none runs.
-- `hatch-server url --once` asks the running server for a **single-use code** (160 random bits, valid about 5 minutes, kept only
-  as a hash in memory, compared in constant time, forgotten in the same step that accepts it, so two simultaneous requests cannot
-  both use it). Only one code is pending at a time: a newer link replaces the older one. `GET /login?code=...` exchanges it for a
-  session and redirects. The code is not logged. To cancel an unused link run `hatch-server url --revoke-once`; a restart and
-  `rotate-token` also end it. A chat tool or browser that pre-fetches links can use the code before you do: then make another.
+- `hatch-server code` asks the running server for a **one-time code** to type into the login page (under "Use a one-time code
+  instead"). There is no login link: the browser often reaches the server under another address than the box sees, so a link
+  would point at the wrong place. The code is 8 characters from a 32-symbol alphabet without look-alikes (no 0/O, 1/I), made with
+  `crypto.randomInt` (40 random bits), shown as `ABCD-EFGH`; case, spaces and dashes are ignored when typing it. It is valid
+  5 minutes, works once, and is kept only as a SHA-256 hash in memory, compared in constant time (the same work is done whether or
+  not a code is pending) and forgotten in the same step that accepts it, so two simultaneous requests cannot both use it. Only
+  one code is pending at a time: a newer one replaces the older. Because it is short, guessing is capped: **5 wrong attempts in
+  total, from any address**, cancel the pending code (you must issue a new one); the server log says so, without the code. The
+  per-address limiter below applies as well, and the page gives the same generic message whether a code was wrong, used,
+  expired or cancelled. To cancel an unused code run `hatch-server code --revoke`; a restart, `rotate-token` and `panic` also
+  end it. `hatch-server url --once` and `--revoke-once` still work as aliases and print a note that `code` replaces them.
 - **Rate limit.** Wrong tokens from one client address (the socket address) lock that address out after 5 failures, for 30
   seconds, doubling with every further failure up to 15 minutes, forgotten after 15 quiet minutes; a log line records each
   lockout. It covers the login form, the `x-token` header, `?t=` and one-time codes. While locked out the token is not even
