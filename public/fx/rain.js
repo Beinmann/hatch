@@ -21,6 +21,7 @@ export const P = {
 let level = rainLevel(50);
 let cv = null, gl = null, ctx = null, raf = 0, last = 0, W = 1, H = 1, glass = null, animate = true, time = 0;
 let buf = null, base = null, sinceStyle = 99, lost = false, bandY = 0, lastRunner = null, prevBox = null, needFull = true, scratch = null, typingUntil = 0;
+let S = 1; // CSS px per canvas px: 1 up to a 1080 px tall viewport, larger above it, so the drops (sized in canvas px) look the same size on a 4k screen
 let gp = null, mapTex = null, bgTex = null, bgUrl = '', bgImg = null, style = null;
 
 const cssVar = (el, name) => getComputedStyle(el).getPropertyValue(name);
@@ -88,7 +89,7 @@ function render() {
   const u = gp.u, s = style, vw = globalThis.innerWidth || W, vh = globalThis.innerHeight || H;
   const bt = bgTransform(s.mode, bgImg?.naturalWidth, bgImg?.naturalHeight, vw, vh, s.rect.left, s.rect.top);
   gl.viewport(0, 0, W, H);
-  gl.uniform2f(u.uRes, W, H); gl.uniform4f(u.uBgX, bt.sx, bt.sy, bt.ox, bt.oy);
+  gl.uniform2f(u.uRes, W, H); gl.uniform4f(u.uBgX, bt.sx * S, bt.sy * S, bt.ox, bt.oy); // the map is in canvas px, the background transform in CSS px
   gl.uniform4f(u.uTint, s.tint[0], s.tint[1], s.tint[2], s.tint[3]); gl.uniform3f(u.uBase, s.base[0], s.base[1], s.base[2]);
   gl.uniform1f(u.uHasImg, bgImg ? 1 : 0); gl.uniform1f(u.uTile, s.mode === 'tile' ? 1 : 0);
   gl.uniform1f(u.uAlpha, level.alpha); gl.uniform1f(u.uTime, time); gl.uniform1f(u.uRain, P.RAIN * Math.min(1.5, level.alpha));
@@ -162,7 +163,8 @@ function refresh(dt) { // bring the water map up to date and draw: only changed 
 }
 function resize() {
   if (!cv) return;
-  W = cv.width = Math.max(1, cv.clientWidth); H = cv.height = Math.max(1, cv.clientHeight);
+  S = Math.max(1, (globalThis.innerHeight || 0) / 1080); // the CSS size of the canvas is unchanged: the browser stretches the smaller buffer
+  W = cv.width = Math.max(1, Math.round(cv.clientWidth / S)); H = cv.height = Math.max(1, Math.round(cv.clientHeight / S));
   glass.resize(W, H); buf = new Uint8Array(W * H * 4); base = new Uint8Array(W * H * 4);
   if (gl) readStyle();
   needFull = true; if (!animate) settle();
