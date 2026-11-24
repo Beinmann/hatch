@@ -14,6 +14,23 @@ test('list sorts dirs first, shows parent, rejects relative paths', () => {
   assert.throws(() => list(path.join(d, 'nope')), /no such file/);
 });
 
+test('list leaves dotfiles out unless hidden is asked for, and keeps the root check', async () => {
+  const d = tmp(); fs.mkdirSync(path.join(d, '.git')); fs.writeFileSync(path.join(d, '.env'), 'x'); fs.writeFileSync(path.join(d, 'a.txt'), 'x');
+  assert.deepEqual(list(d).entries.map((e) => e.name), ['a.txt']);
+  assert.deepEqual(list(d, { hidden: true }).entries.map((e) => e.name), ['.git', '.env', 'a.txt']);
+  const h = await startHatch(); const q = (v) => `/api/fs/list?path=${encodeURIComponent(d)}${v}`;
+  try {
+    assert.deepEqual((await h.call('GET', q(''))).data.entries.map((e) => e.name), ['a.txt']);
+    assert.equal((await h.call('GET', q('&hidden=1'))).data.entries.length, 3);
+    assert.equal((await h.call('GET', q('&hidden=0'))).data.entries.length, 1);
+    // hidden files persist as a window prop, and only a boolean is accepted
+    const p = (await h.call('POST', '/api/panels', { type: 'files', props: { path: d, hidden: true } })).data;
+    assert.equal(p.props.hidden, true);
+    assert.equal((await h.call('PATCH', `/api/panels/${p.id}`, { props: { hidden: false } })).data.props.hidden, false);
+    assert.equal((await h.call('POST', '/api/panels', { type: 'files', props: { hidden: 'yes' } })).status, 400);
+  } finally { await h.close(); }
+});
+
 test('readText refuses binaries and big files; writeText is atomic, keeps mode, detects conflicts', () => {
   const d = tmp(); const f = path.join(d, 's.sh');
   fs.writeFileSync(f, '#!/bin/sh\n', { mode: 0o755 });

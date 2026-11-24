@@ -18,3 +18,10 @@ test('previewUrl uses the image panel file route and is encoded', () => {
   assert.equal(previewUrl('/a b/c#.png'), '/api/file?path=%2Fa%20b%2Fc%23.png');
   assert.ok(PREVIEW_DELAY > 0 && PREVIEW_DELAY <= 300);
 });
+
+test('isHiddenToggleKey: plain Ctrl+H only', async () => {
+  const { isHiddenToggleKey } = await import('../public/panels/files-preview.js');
+  assert.ok(isHiddenToggleKey({ ctrlKey: true, code: 'KeyH', key: 'h' }));
+  assert.ok(isHiddenToggleKey({ ctrlKey: true, code: 'KeyH', key: 'Backspace' }), 'by code, whatever key the layout reports');
+  for (const e of [{ code: 'KeyH', key: 'h' }, { ctrlKey: true, shiftKey: true, code: 'KeyH' }, { ctrlKey: true, altKey: true, code: 'KeyH' }, { ctrlKey: true, metaKey: true, code: 'KeyH' }, { ctrlKey: true, code: 'KeyJ', key: 'j' }]) assert.ok(!isHiddenToggleKey(e), JSON.stringify(e));
+});

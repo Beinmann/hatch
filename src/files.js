@@ -26,10 +26,11 @@ export function abs(p) {
 }
 const wrap = (e, p) => { throw e instanceof FsError ? e : new FsError(e.code === 'ENOENT' ? 404 : e.code === 'EACCES' || e.code === 'EPERM' ? 403 : 400, `${e.code === 'ENOENT' ? 'no such file or directory' : e.code || e.message}: ${p}`); };
 
-export function list(p) {
+/** Lists a folder. Dotfiles are left out unless `hidden`; the path check is the same either way. */
+export function list(p, { hidden = false } = {}) {
   p = abs(p);
   try {
-    const entries = fs.readdirSync(p, { withFileTypes: true }).map((e) => {
+    const entries = fs.readdirSync(p, { withFileTypes: true }).filter((e) => hidden || !e.name.startsWith('.')).map((e) => {
       let st = null; try { st = fs.statSync(path.join(p, e.name)); } catch { /* broken link */ }
       return { name: e.name, type: st ? (st.isDirectory() ? 'dir' : 'file') : 'broken', link: e.isSymbolicLink(), size: st?.size ?? 0, mtime: st?.mtimeMs ?? 0 };
     });

@@ -2,7 +2,7 @@
 import { el, isViewOnly } from '../util.js';
 import { copyText } from '../terminal.js';
 
-import { IMG, PREVIEW_DELAY, previewTarget, previewUrl } from './files-preview.js';
+import { IMG, PREVIEW_DELAY, isHiddenToggleKey, previewTarget, previewUrl } from './files-preview.js';
 
 const human = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 const icon = (e) => (e.type === 'dir' ? '📁' : e.type === 'broken' ? '⚠️' : IMG.test(e.name) ? '🖼️' : '📄');
@@ -29,6 +29,7 @@ export default {
     let entries = []; let previewTimer = null; let shown = '';
     let sel = ''; // name of the keyboard-selected row ('..' for the parent row); kept across the 5 s refresh
     let parentDir = null; let rows = [];
+    let showHidden = panel.props.hidden === true; // kept in the window's props, so it survives reloads like the folder
     let dir = panel.props.path || ''; let requested = dir; let revision = 0; let loading = false; let destroyed = false;
 
     async function load(p) {
@@ -36,12 +37,13 @@ export default {
       const request = ++revision; requested = p || '/'; loading = true;
       root.setAttribute('aria-busy', 'true'); msg.hidden = false; msg.textContent = `Loading ${requested}…`;
       try {
-        const d = await ctx.api('GET', `/api/fs/list?path=${encodeURIComponent(p || '/')}`);
+        const d = await ctx.api('GET', `/api/fs/list?path=${encodeURIComponent(p || '/')}${showHidden ? '&hidden=1' : ''}`);
         if (destroyed || request !== revision) return;
         dir = requested = d.path; msg.hidden = true;
         tools.replaceChildren(
           el('button', { type: 'button', title: 'Create an empty file here', onclick: () => { const n = (window.prompt('New file name') || '').trim(); if (n && !n.includes('/')) act('newfile', { path: join(d.path, n) }, `Created ${n}`, d.path); } }, '+ file'),
-          el('button', { type: 'button', title: 'Create a folder here', onclick: () => { const n = (window.prompt('New folder name') || '').trim(); if (n && !n.includes('/')) act('mkdir', { path: join(d.path, n) }, `Created ${n}/`, d.path); } }, '+ folder'));
+          el('button', { type: 'button', title: 'Create a folder here', onclick: () => { const n = (window.prompt('New folder name') || '').trim(); if (n && !n.includes('/')) act('mkdir', { path: join(d.path, n) }, `Created ${n}/`, d.path); } }, '+ folder'),
+          el('button', { type: 'button', class: 'fhidden', 'aria-pressed': String(showHidden), title: 'Show or hide hidden files (Ctrl+H)', onclick: () => toggleHidden() }, showHidden ? '. hidden: shown' : '. hidden: off'));
         const parts = d.path.split('/').filter(Boolean);
         crumbs.replaceChildren(el('button', { type: 'button', onclick: () => go('/') }, '/'),
           ...parts.map((seg, i) => el('button', { type: 'button', onclick: () => go(`/${parts.slice(0, i + 1).join('/')}`) }, seg)));
@@ -55,7 +57,7 @@ export default {
               el('a', { href: `/api/fs/download?path=${encodeURIComponent(full)}`, title: 'Download', onclick: (ev) => ev.stopPropagation() }, '↓'),
               el('button', { type: 'button', title: 'Type the path into the terminal', onclick: (ev) => { ev.stopPropagation(); ctx.typePath ? ctx.typePath(full) : ctx.term?.sendText(`${full} `); } }, '⌨'),
               el('button', { type: 'button', title: 'Copy path', onclick: async (ev) => { ev.stopPropagation(); ctx.toast(await copyText(full) ? 'Path copied' : 'Copy failed'); } }, '⧉')] : [])];
-            return el('li', { class: e.type, title: full, draggable: e.type === 'file' ? 'true' : null, ondragstart: (ev) => { ev.dataTransfer.setData('application/x-hatch-path', full); ev.dataTransfer.setData('text/plain', full); }, 'data-name': e.name, onclick: () => { sel = e.type === 'dir' ? '' : e.name; open(e, full); } }, el('span', { class: 'ico' }, icon(e)), el('span', {}, e.type === 'dir' ? `${e.name}/` : e.name), el('span', { class: 'muted small' }, e.type === 'file' ? human(e.size) : ''), ...actions);
+            return el('li', { class: e.name.startsWith('.') ? `${e.type} dotfile` : e.type, title: full, draggable: e.type === 'file' ? 'true' : null, ondragstart: (ev) => { ev.dataTransfer.setData('application/x-hatch-path', full); ev.dataTransfer.setData('text/plain', full); }, 'data-name': e.name, onclick: () => { sel = e.type === 'dir' ? '' : e.name; open(e, full); } }, el('span', { class: 'ico' }, icon(e)), el('span', {}, e.type === 'dir' ? `${e.name}/` : e.name), el('span', { class: 'muted small' }, e.type === 'file' ? human(e.size) : ''), ...actions);
           }));
         rows = [...list.children]; paintSel(false);
       } catch (e) {
@@ -83,8 +85,15 @@ export default {
       }, PREVIEW_DELAY);
     }
     const move = (n) => { if (!rows.length) return; const i = rows.findIndex((r) => r.dataset.name === sel); sel = rows[Math.max(0, Math.min(rows.length - 1, i < 0 ? (n > 0 ? 0 : rows.length - 1) : i + n))].dataset.name; paintSel(); };
+    function toggleHidden() {
+      showHidden = !showHidden;
+      if (!showHidden && sel.startsWith('.')) sel = '';
+      ctx.patch(panel.id, { props: { hidden: showHidden } }).catch(() => {});
+      load(dir || ctx.cwd());
+    }
     // vim keys: j/k move, h = parent folder, l = enter a folder or open a file. Ignored while typing and with modifiers.
     root.addEventListener('keydown', (ev) => {
+      if (isHiddenToggleKey(ev) && !ev.target.closest?.('input,textarea,select,[contenteditable]')) { ev.preventDefault(); ev.stopPropagation(); toggleHidden(); return; } // only with this window focused
       if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.target.closest?.('input,textarea,select,[contenteditable]') || loading) return;
       const k = ev.key;
       if (k === 'j' || k === 'ArrowDown') move(1);
@@ -125,6 +134,6 @@ export default {
 
     const timer = setInterval(() => { if (!destroyed && !loading && dir && root.offsetParent) load(dir); }, 5000); // pick up changes made in the terminal
     load(dir || ctx.cwd());
-    return { el: root, focus() { root.focus({ preventScroll: true }); }, update(p) { if (p.props.path && p.props.path !== requested) load(p.props.path); }, destroy() { destroyed = true; clearTimeout(previewTimer); revision++; clearInterval(timer); } };
+    return { el: root, focus() { root.focus({ preventScroll: true }); }, update(p) { if ((p.props.hidden === true) !== showHidden) { showHidden = p.props.hidden === true; load(dir || ctx.cwd()); } if (p.props.path && p.props.path !== requested) load(p.props.path); }, destroy() { destroyed = true; clearTimeout(previewTimer); revision++; clearInterval(timer); } };
   },
 };

@@ -158,6 +158,7 @@ html .win.docked,html.has-tr .win.docked,html.has-tr .win.docked iframe{backgrou
 @container (max-width:420px){.fpreview{display:none}}
 .flist{list-style:none;margin:0;padding:4px;font:13px var(--mono)}
 .flist li{display:flex;gap:8px;align-items:center;padding:5px 8px;margin:1px 0;border-radius:6px;border-left:3px solid transparent;cursor:pointer} .flist li:hover{background:var(--accent-soft)}
+.flist li.dotfile{opacity:.6} .fhidden[aria-pressed=true]{background:var(--accent-soft)}
 .flist li.sel{background:var(--accent-soft);border-left-color:var(--accent)}
 .files:focus-within .flist li.sel{box-shadow:inset 0 0 0 1px var(--accent)}
 .flist .ico{flex:none;width:1.4em;text-align:center;font-size:14px}

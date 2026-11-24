@@ -141,6 +141,7 @@ export function checkPanel(p, id) {
   if (p.type === 'editor' && typeof props.path !== 'string') return { error: 'editor panels need props.path' };
   if (p.type === 'page' && typeof props.path !== 'string') return { error: 'page panels need props.path (an HTML file)' };
   if (p.type === 'files' && props.path !== undefined && typeof props.path !== 'string') return { error: 'files panels take an optional props.path' };
+  if (p.type === 'files' && props.hidden !== undefined && typeof props.hidden !== 'boolean') return { error: 'files panels take an optional boolean props.hidden (show dotfiles)' };
   const num = (v) => (Number.isFinite(v) ? Math.round(v) : undefined);
   const out = {
     id, type: p.type, title: typeof p.title === 'string' ? p.title : p.type,

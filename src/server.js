@@ -683,7 +683,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       }
       if (p === '/api/file' && m === 'GET') return serveImage(res, url.searchParams.get('path') || '');
 
-      if (p === '/api/fs/list' && m === 'GET') return json(res, 200, fsapi.list(url.searchParams.get('path') || cwd));
+      if (p === '/api/fs/list' && m === 'GET') return json(res, 200, fsapi.list(url.searchParams.get('path') || cwd, { hidden: url.searchParams.get('hidden') === '1' }));
       if (p === '/api/fs/resolve' && m === 'GET') {
         // a path printed in the terminal: relative ones are tried against the server dir and the tmux pane's current dir
         const want = url.searchParams.get('path') || ''; const tries = [];
