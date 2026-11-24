@@ -401,7 +401,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
     if (!fs.existsSync(dir)) { fs.cpSync(path.join(EXAMPLES, name), dir, { recursive: true }); recordShipped(stateDir, name); }
     if (name === 'log-tail') useReadableLog(name);
     const windowOptions = {};
-    for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
+    for (const key of ['w', 'h', 'autoFocus', 'maximized', 'ws', 'placement', 'minimized']) if (options?.[key] !== undefined) windowOptions[key] = options[key];
     state.rescan(); return state.createPanel({ type: 'widget', props: { name }, ...windowOptions });
   }
   // "top" is a real terminal window (keyboard works): htop when installed, else plain top

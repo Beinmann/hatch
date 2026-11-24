@@ -57,6 +57,7 @@ progress
   progress steps set FILE|-         replace steps.json
   progress step "TITLE|ID" STATUS [--detail TEXT] [--group NAME]
                                     STATUS: ${STEP_STATUS.join(' | ')}
+noise [brown|pink|white|stop]      play that noise (default brown) in the Noise widget now, or stop it; reuses an open Noise window as it is, else opens one minimized; nothing is brought forward
 widgets   (see \`hatch widget new --help\` for the postMessage SDK)
   widget new NAME [--from example]  scaffold widgets/NAME: from an example (cpu, log-tail, ...) or, without --from, a minimal one
   widget add NAME [DIR|FILE] [--dock]  register and open (a single HTML file becomes index.html)
@@ -656,6 +657,18 @@ async function main(argv) {
       need(sub, 'usage: note "markdown" [--title T]');
       const p = await api('POST', '/api/panels', { type: 'note', title: o.title || 'Note', props: { markdown: sub === '-' ? fs.readFileSync(0, 'utf8') : sub } });
       return console.log(`note open as ${p.id}`);
+    }
+    case 'noise': { // drives the open Noise page through its `say` source; the widget plays (Web Audio runs in the browser)
+      const what = sub || 'brown'; need(['brown', 'pink', 'white', 'stop'].includes(what), 'usage: noise [brown|pink|white|stop]');
+      const here = ws || 'main'; const meta = new Map((await api('GET', '/api/widgets')).map((w) => [w.name, w]));
+      let win = (await api('GET', '/api/panels')).find((p) => p.type === 'widget' && (p.ws || 'main') === here && (p.props?.name === 'noise' || meta.get(p.props?.name)?.copyOf === 'noise'));
+      if (!win) {
+        if (what === 'stop') return console.log('noise is not open, nothing to stop');
+        win = await api('POST', '/api/examples/noise/open', { minimized: true, autoFocus: false }); // copies the example on first use
+      }
+      const r = await api('POST', '/api/call', { widget: win.props.name, source: 'say', arg: what });
+      if (r.value?.code) throw new CliError(`could not tell the noise widget (${r.value.error || 'the command failed'}); if it is an old copy, refresh it with: hatch-server update-widgets noise`);
+      return console.log(what === 'stop' ? 'noise stopped' : `${what} noise started in ${win.id}; if the browser blocks audio, click Play in the Noise window once`);
     }
     case 'panels': {
       const list = await api('GET', '/api/panels');

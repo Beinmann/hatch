@@ -16,6 +16,19 @@
    "json": true,
    "timeoutMs": 10000,
    "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; case \"$HATCH_ARG\" in *.s) ;; *) echo \"not a noise file\" >&2; exit 1;; esac; printf '%s' \"$HATCH_ARG\" | grep -qE '^(brown|pink|white|deep|rain)\\.[0-9]{1,3}\\.[0-9]{1,3}\\.s$' || { echo \"bad noise file\" >&2; exit 1; }; rm -f \"$D\"/*.s; : > \"$D/$HATCH_ARG\"; printf '{}'"
+  },
+  {
+   "name": "cmd",
+   "kind": "exec",
+   "json": true,
+   "everyMs": 1000,
+   "cmd": "cat {{state}}/widgets/{{widget}}/data/cmd 2>/dev/null || printf '{}'"
+  },
+  {
+   "name": "say",
+   "kind": "exec",
+   "json": true,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; case \"$HATCH_ARG\" in brown|pink|white|stop) ;; *) echo \"bad command\" >&2; exit 1;; esac; printf '{\"c\":\"%s\",\"t\":%s}' \"$HATCH_ARG\" \"$(date +%s%3N)\" > \"$D/cmd\"; printf '{}'"
   }
  ]
 }
