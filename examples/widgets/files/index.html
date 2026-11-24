@@ -3,7 +3,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- Read-only file browser: a list on the left, a preview on the right. It lists and reads files only through the `ls` and
      `peek` sources in widget.json (a widget iframe cannot touch the filesystem). Nothing here writes, renames or deletes.
-     Keys: j/k or arrows move, l/Enter/Right enter a folder, h/Left/Backspace go up, . toggles hidden files, g/G first/last, r reloads.
+     Keys: j/k or arrows move, l/Enter/Right enter a folder, h/Left/Backspace go up, . toggles hidden files, g/gg/G first/last, - parent, y copies the path, r reloads, ? shows the key help.
      Pure logic lives in model.js (also used by the tests). -->
 <style>
   html,body{height:100%;margin:0;background:var(--bg,#111);color:var(--fg,#eee);font:12px/1.5 var(--mono,monospace)}
@@ -30,10 +30,14 @@
   #pv pre{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit}
   #pv h4{margin:0 0 6px;font:inherit;font-weight:bold;word-break:break-all}
   .kv{display:flex;gap:8px}.kv .k{flex:none;width:9ch;color:var(--muted,#888)}.kv .v{min-width:0;word-break:break-all}
+  #help{position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:8px}
+  #help .box{background:var(--bg,#111);border:1px solid var(--accent,#4fd1c0);border-radius:4px;padding:8px 12px;max-width:100%;max-height:100%;overflow:auto}
+  #help h4{margin:0 0 6px;font:inherit;font-weight:bold}
+  #help .kv .k{width:20ch}
   .note{color:var(--muted,#888);margin:6px 0}
 </style>
 <div id="app" tabindex="0">
-  <div class="bar"><button id="up" title="Parent folder (h)">&uarr;</button><span class="path" id="path"><bdi></bdi></span><span class="tag" id="tag"></span></div>
+  <div class="bar"><button id="up" title="Parent folder (h)">&uarr;</button><span class="path" id="path"><bdi></bdi></span><span class="tag" id="tag"></span><button id="helpbtn" title="Keyboard help (?)">?</button></div>
   <div class="main"><div id="list"></div><div id="pv"></div></div>
 </div>
 <script src="/sdk.js"></script>
@@ -156,17 +160,38 @@
     renderList(); previewSoon();
   };
 
+  // ---- help overlay and path copy ----
+  let helpEl = null;
+  function toggleHelp(force) {
+    const want = force === undefined ? !helpEl : force;
+    if (!want) { helpEl?.remove(); helpEl = null; $('app').focus(); return; }
+    if (helpEl) return;
+    const box = mk('div', 'box'); box.append(mk('h4', '', 'Files keys'));
+    for (const [k, d] of M.HELP) box.append(kv(k, d));
+    helpEl = mk('div'); helpEl.id = 'help'; helpEl.append(box);
+    helpEl.addEventListener('click', (e) => { if (e.target === helpEl) toggleHelp(false); });
+    document.body.append(helpEl);
+  }
+  let flashTimer = null;
+  function flash(t) { tag.textContent = t; clearTimeout(flashTimer); flashTimer = setTimeout(renderBar, 2000); }
+  function copyPath() {
+    const e = current()[sel]; if (!e || !cwd) return flash('nothing selected');
+    const full = M.joinPath(cwd, e.name);
+    const fallback = () => { // a sandboxed frame may refuse the async clipboard; execCommand works on a user gesture
+      const ta = document.createElement('textarea'); ta.value = full; ta.style.cssText = 'position:fixed;opacity:0'; document.body.append(ta); ta.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch { /* ignore */ } ta.remove(); $('app').focus();
+      flash(ok ? 'path copied' : 'copy blocked: ' + full);
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(full).then(() => flash('path copied'), fallback); else fallback();
+  }
+  const ACTIONS = { down: () => go(1), up: () => go(-1), parent: up, enter, hidden: toggleHidden, top: () => go(-current().length), bottom: () => go(current().length),
+    pagedown: () => go(10), pageup: () => go(-10), reload: () => cwd && open(cwd, current()[sel]?.name), copy: copyPath, help: () => toggleHelp() };
   addEventListener('keydown', (e) => {
-    if (e.ctrlKey || e.altKey || e.metaKey) return;
-    const k = e.key; const n = current().length;
-    const acted = ({
-      j: () => go(1), ArrowDown: () => go(1), k: () => go(-1), ArrowUp: () => go(-1),
-      h: up, ArrowLeft: up, Backspace: up, l: enter, ArrowRight: enter, Enter: enter,
-      '.': toggleHidden, g: () => go(-n), Home: () => go(-n), G: () => go(n), End: () => go(n),
-      PageDown: () => go(10), PageUp: () => go(-10), r: () => cwd && open(cwd, current()[sel]?.name),
-    })[k];
-    if (acted) { e.preventDefault(); acted(); }
+    if (helpEl && (e.key === 'Escape' || e.key === '?')) { e.preventDefault(); toggleHelp(false); return; }
+    const a = M.keyAction(e);
+    if (a && !(helpEl && a !== 'help')) { e.preventDefault(); ACTIONS[a](); }
   });
+  $('helpbtn').addEventListener('click', () => toggleHelp());
   listEl.addEventListener('click', (e) => {
     const r = e.target.closest('.row'); if (!r) return;
     sel = Number(r.dataset.i); renderList(); previewSoon(); $('app').focus();

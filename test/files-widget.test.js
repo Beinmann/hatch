@@ -142,3 +142,18 @@ test('widget open files: opens in the caller folder through the CLI, reuses it, 
     assert.equal((await h.call('POST', '/api/call', { widget: name, source: 'ls', arg: 'a\nb' })).status, 400);
   } finally { await h.close(); }
 });
+
+test('keyAction maps the Files widget keys and ignores Ctrl/Alt/Meta', () => {
+  const k = (key, o = {}) => ctx.FilesModel.keyAction({ key, ...o });
+  assert.equal(k('?', { shiftKey: true }), 'help'); assert.equal(k('G', { shiftKey: true }), 'bottom'); assert.equal(k('g'), 'top');
+  assert.equal(k('-'), 'parent'); assert.equal(k('Backspace'), 'parent'); assert.equal(k('y'), 'copy'); assert.equal(k('r'), 'reload'); assert.equal(k('.'), 'hidden');
+  for (const m of ['ctrlKey', 'altKey', 'metaKey']) { assert.equal(k('?', { [m]: true }), null); assert.equal(k('j', { [m]: true }), null); }
+  assert.equal(k('x'), null); assert.equal(k('toString'), null); assert.equal(k('constructor'), null);
+});
+
+test('every key in the help list is bound, and every bound action is described', () => {
+  const M = ctx.FilesModel; const text = M.HELP.map(([k]) => k).join(' ');
+  for (const key of ['j', 'k', 'h', 'l', 'Enter', 'Backspace', '-', 'g', 'G', 'Home', 'End', 'PageUp', 'PageDown', '.', 'r', 'y', '?']) assert.ok(text.includes(key), `help mentions ${key}`);
+  const widget = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
+  for (const a of new Set(Object.values(M.KEYS))) assert.match(widget, new RegExp(`\\b${a}\\s*[:,]`), `index.html handles ${a}`);
+});

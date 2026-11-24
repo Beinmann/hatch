@@ -89,5 +89,17 @@
     return { ...r, kind: 'binary' };
   }
 
-  root.FilesModel = { LIST_LIMIT, pathOk, parentOf, joinPath, baseName, extOf, imageMime, parseLs, sortEntries, visible, listing, move, indexOfName, formatSize, formatTime, parsePeek };
+  /** Key to action name, or null. No Ctrl/Alt/Meta (those stay with the page and the host); Shift is fine (`G`, `?`). */
+  const KEYS = { j: 'down', ArrowDown: 'down', k: 'up', ArrowUp: 'up', h: 'parent', ArrowLeft: 'parent', Backspace: 'parent', '-': 'parent',
+    l: 'enter', ArrowRight: 'enter', Enter: 'enter', '.': 'hidden', g: 'top', Home: 'top', G: 'bottom', End: 'bottom',
+    PageDown: 'pagedown', PageUp: 'pageup', r: 'reload', y: 'copy', '?': 'help' };
+  function keyAction(e) {
+    if (!e || e.ctrlKey || e.altKey || e.metaKey) return null;
+    return Object.prototype.hasOwnProperty.call(KEYS, e.key) ? KEYS[e.key] : null;
+  }
+  /** Rows of the `?` help: [keys, what]. */
+  const HELP = [['j k / Down Up', 'move the selection'], ['l Enter Right', 'enter a folder, preview a file'], ['h Left Backspace -', 'parent folder (the folder you came from stays selected)'],
+    ['g gg Home / G End', 'first / last entry'], ['PageUp PageDown', 'move by 10'], ['.', 'show or hide hidden files'], ['r', 'reload the listing'], ['y', 'copy the selected entry\'s full path'], ['?', 'show or hide this help (Esc closes it)']];
+
+  root.FilesModel = { KEYS, keyAction, HELP, LIST_LIMIT, pathOk, parentOf, joinPath, baseName, extOf, imageMime, parseLs, sortEntries, visible, listing, move, indexOfName, formatSize, formatTime, parsePeek };
 })(typeof window !== 'undefined' ? window : globalThis);
