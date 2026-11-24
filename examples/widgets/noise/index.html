@@ -130,5 +130,16 @@
   $('v').onchange = save;
   $('sleep').onchange = () => { arm(); save(); };
   addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); $('go').click(); } });
+  // `hatch noise` writes a command (type or stop, time in ms) through the `say` source; this page polls it. A command older than
+  // 20 s is not run (a reopened page must not replay it). The browser may refuse audio without a click: then say so instead of staying silent.
+  let lastCmd = 0;
+  hatch.ready(() => hatch.on('cmd', (v) => {
+    const m = v && v.json; if (!m || !m.c || !(m.t > lastCmd) || Date.now() - m.t > 20000) return;
+    lastCmd = m.t;
+    if (m.c === 'stop') { stop(); render(); return; }
+    if (!TYPES.includes(m.c)) return;
+    type = m.c; play(); arm(); render(); save();
+    setTimeout(() => { if (playing() && ctx.state !== 'running') { stop(); render(); $('sub').textContent = 'The browser blocked audio: click Play once.'; } }, 500);
+  }));
   render(); load();
 </script>
