@@ -7,14 +7,15 @@ import { atomicWrite } from './state.js';
 export const TOKEN_MAX_AGE_DAYS = 30;
 const STAMP = 'token-changed'; // one ISO timestamp; the token itself is never read to make it
 
-/** Writes a fresh 128-bit token (file mode 0600) and returns it. Throws when config.json cannot be read as a JSON object. */
-export function rotateTokenFile(stateDir) {
+/** Writes a fresh 128-bit token (file mode 0600) and returns it; `dropViewToken` also removes the watch-only token (panic). Throws when config.json cannot be read as a JSON object. */
+export function rotateTokenFile(stateDir, { dropViewToken = false } = {}) {
   const file = path.join(stateDir, 'config.json');
   let cfg;
   try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`cannot read ${file}: ${e.message}`); }
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error(`${file} must hold a JSON object`);
   const token = crypto.randomBytes(16).toString('hex');
-  atomicWrite(file, `${JSON.stringify({ ...cfg, token }, null, 2)}\n`, { mode: 0o600 });
+  const next = { ...cfg, token }; if (dropViewToken) delete next.viewToken;
+  atomicWrite(file, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
   touchTokenStamp(stateDir);
   return token;
 }

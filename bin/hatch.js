@@ -35,6 +35,12 @@ import { LAYOUT_FILE, entriesFromPanels, writeLayout, readLayout } from '../src/
   }
 }
 
+// `hatch panic` is the same emergency command as `hatch-server panic` (it works on the instance's files and server, not on a page); delegate, no notice.
+{
+  const argv = process.argv.slice(2); const i = firstCommandIndex(argv);
+  if (i >= 0 && argv[i] === 'panic') process.exit(spawnSync(process.execPath, [fileURLToPath(new URL('./hatch-server.js', import.meta.url)), ...argv], { stdio: 'inherit' }).status ?? 1);
+}
+
 const EXAMPLES = fileURLToPath(new URL('../examples/widgets/', import.meta.url));
 
 // every `hatch widget SUB`; anything else is a widget name (`hatch widget NAME` opens it)
@@ -156,6 +162,7 @@ other
   notify "text" [--level info|warn|done]
   upload-dir                        where pasted images land
   doctor                            check tmux, python3, node, server
+  panic                             emergency: end all logins, roll the token, remove the view token and pending links (same as hatch-server panic)
 window options: --size WIDTHxHEIGHT, --full (or --fullscreen), --no-focus
 options: --state DIR, --ws WORKSPACE (windows opened by this command go there; default $HATCH_WORKSPACE, set in each workspace's terminals, else main), --json (listings), --help`;
 

@@ -269,3 +269,38 @@ test('ending a session closes its open event stream within about 5 seconds; a st
     assert.equal(await tokenStream, false, 'the x-token stream was still open when the timeout aborted it');
   } finally { await h.close(); }
 });
+
+test('panic: sessions, token, view token, pending link and hosted-page secrets all stop; other config keys stay; the answer has no token', async () => {
+  const h = await startHatch();
+  try {
+    const old = h.hatch.token; const session = sid(await fetch(`${h.base}/login`, form(old)));
+    const cfgFile = path.join(h.stateDir, 'config.json'); const view = 'v'.repeat(32);
+    fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')), allowedHosts: ['box.example'], viewToken: view }));
+    assert.equal((await fetch(`${h.base}/api/health`, { headers: { 'x-token': view } })).status, 200, 'the view token works before');
+    const { code } = (await h.call('POST', '/api/auth/once')).data;
+    const r = await h.call('POST', '/api/auth/panic'); assert.equal(r.status, 200); assert.deepEqual(r.data, { ended: 1, links: 1, view: true });
+    const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8')); assert.match(cfg.token, /^[a-f0-9]{32}$/); assert.notEqual(cfg.token, old); assert.equal(cfg.viewToken, undefined); assert.deepEqual(cfg.allowedHosts, ['box.example']); assert.equal(fs.statSync(cfgFile).mode & 0o777, 0o600);
+    assert.equal((await fetch(`${h.base}/api/health`, { headers: { 'x-token': cfg.token } })).status, 200);
+    for (const bad of [{ 'x-token': old }, { 'x-token': view }, { cookie: `hatch_session=${session}` }]) assert.equal((await fetch(`${h.base}/api/health`, { headers: bad })).status, 401);
+    assert.equal((await fetch(`${h.base}/login?code=${code}`, { redirect: 'manual' })).status, 401, 'the pending link is dead');
+  } finally { await h.close(); }
+});
+
+test('hatch-server panic and hatch panic: with a server and without one; the new token is never printed', async () => {
+  const h = await startHatch(); const home = path.dirname(h.stateDir); const cfgFile = path.join(h.stateDir, 'config.json');
+  const HATCH = new URL('../bin/hatch.js', import.meta.url).pathname;
+  const run = (...a) => cli([...a, '--state', h.stateDir], home);
+  const old = h.hatch.token; const session = sid(await fetch(`${h.base}/login`, form(old)));
+  fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')), viewToken: 'w'.repeat(32) }));
+  const out = await run('panic'); const fresh = JSON.parse(fs.readFileSync(cfgFile, 'utf8')).token;
+  assert.equal(out.status, 0); assert.match(out.stdout, /PANIC done \(server running\): 1 login ended, token rolled, view token removed/); assert.ok(!out.stdout.includes(fresh) && !out.stderr.includes(fresh)); assert.match(out.stdout, /config\.json/);
+  assert.notEqual(fresh, old); assert.equal((await fetch(`${h.base}/api/health`, { headers: { cookie: `hatch_session=${session}` } })).status, 401);
+  const viaHatch = await new Promise((resolve) => execFile('node', [HATCH, 'panic', '--state', h.stateDir], { env: { ...process.env, HOME: home, HATCH_STATE: '', HATCH_URL: '' } }, (err, stdout, stderr) => resolve({ status: err ? err.code : 0, stdout, stderr })));
+  assert.equal(viaHatch.status, 0); assert.match(viaHatch.stdout, /PANIC done/);
+  const second = JSON.parse(fs.readFileSync(cfgFile, 'utf8')).token; assert.notEqual(second, fresh);
+  await h.close();
+  fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')), viewToken: 'z'.repeat(32) }));
+  const off = await run('panic'); const third = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+  assert.equal(off.status, 0); assert.match(off.stdout, /server not running, files edited\): 0 logins ended, token rolled, view token removed/); assert.notEqual(third.token, second); assert.equal(third.viewToken, undefined); assert.ok(!off.stdout.includes(third.token));
+  assert.match((await run('--help')).stdout, /hatch-server panic/);
+});

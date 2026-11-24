@@ -980,7 +980,7 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
         const def = widgetSource(g[1], g[2]);
         return sse(req, res, (fn) => sources.subscribe(def, fn));
       }
-      // ---- login administration (`hatch-server sessions|logout|rotate-token|url --once|--revoke-once` call these; full access only, never in a view-only mirror) ----
+      // ---- login administration (`hatch-server sessions|logout|rotate-token|panic|url --once|--revoke-once` call these; full access only, never in a view-only mirror) ----
       if (p === '/api/auth/sessions' && m === 'GET') return json(res, 200, sessions.list());
       if (p === '/api/auth/sessions' && m === 'DELETE') return json(res, 200, { ended: sessions.revokeAll() });
       if ((g = /^\/api\/auth\/sessions\/([a-f0-9]{1,64})$/.exec(p)) && m === 'DELETE') {
@@ -993,6 +993,11 @@ export function createHatch({ tmuxStatus = false, viewOnly = false, root = null,
       if (p === '/api/auth/rotate-token' && m === 'POST') {
         const next = rotateTokenFile(stateDir); cfg.token = next; const ended = sessions.revokeAll(); codes.clear(); hostSecrets.clear(); log(`token rotated: ${ended} session${ended === 1 ? '' : 's'} ended`);
         return json(res, 200, { token: next, ended });
+      }
+      if (p === '/api/auth/panic' && m === 'POST') { // emergency: nothing issued before this moment keeps working
+        const view = !!readViewToken(); const next = rotateTokenFile(stateDir, { dropViewToken: true }); cfg.token = next; const ended = sessions.revokeAll(); const links = codes.clear(); hostSecrets.clear();
+        log(`PANIC: token rolled, view token ${view ? 'removed' : 'absent'}, ${ended} session${ended === 1 ? '' : 's'} ended`);
+        return json(res, 200, { ended, links, view });
       }
       throw new HttpError(404, `no such API route: ${m} ${p}`);
     }

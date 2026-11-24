@@ -141,4 +141,5 @@ Effects are per workspace: `GET /api/fx?ws=NAME` and a `ws` field in the `POST` 
 
 - `GET /api/auth/sessions` lists `[{id, created, lastSeen, expires, hint}]` (`id` is the first 8 characters of the stored hash; ids are never returned); `DELETE /api/auth/sessions/ID` ends one (at least 4 characters of `id`; 404 unknown, 400 ambiguous or too short) and `DELETE /api/auth/sessions` ends all (`{ended}`).
 - `POST /api/auth/once` makes a single-use login code: `{code, expiresInSec}`; the link is `/login?code=CODE`. Only one is pending: a new code replaces the old one. `DELETE /api/auth/once` cancels the pending code (`{revoked: 0|1}`).
+- `POST /api/auth/panic` does what rotate-token does and also removes `viewToken` from `config.json` and drops a pending one-time code; answers `{ended, links, view}` (no token in the answer).
 - `POST /api/auth/rotate-token` writes a new token to `config.json` (mode 0600), ends every session, code and hosted-page secret, and answers `{token, ended}`; the new token is shown only in this response.

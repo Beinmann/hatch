@@ -27,6 +27,7 @@ usage:
   hatch-server logout ID | --all       end one login (the id from \`sessions\`) or all of them
   hatch-server token touch [--state DIR]  record that you changed the token yourself (the page warns when the token is older than 30 days; rotate-token does this by itself)
   hatch-server rotate-token            make a new token, end every login, print the new token once
+  hatch-server panic                  emergency: end every login, roll the token, remove the view token, drop pending one-time links and hosted-page secrets; the new token is not printed (see \`token\`; also: hatch panic)
   hatch-server url --view              print a watch-only URL (makes a separate view token the first time); --revoke-view removes it (view links may go away in a later version)
   hatch-server doctor [--state DIR]    check node, python3, tmux, state dir, server
   hatch-server service [--state DIR] [--port N] [--host H]   print a systemd user unit that starts hatch-server serve (nothing is installed)
@@ -178,7 +179,7 @@ if (cmd === 'token' && o._[1] === 'touch') {
   console.log(`token change recorded: ${touchTokenStamp(dir)} (in ${path.join(dir, 'token-changed')})`); process.exit(0);
 }
 if (cmd === 'token') { console.log(readConfig(findStateDir({ state: o.state })).token); process.exit(0); }
-if (cmd === 'sessions' || cmd === 'logout' || cmd === 'rotate-token') {
+if (cmd === 'sessions' || cmd === 'logout' || cmd === 'rotate-token' || cmd === 'panic') {
   const dir = findStateDir({ state: o.state });
   const { createSessions } = await import('../src/sessions.js');
   const offline = () => createSessions({ file: path.join(dir, 'sessions.json'), warn: (m) => console.error(`hatch-server: ${m}`) }); // no server running: nobody else writes the file
@@ -198,6 +199,13 @@ if (cmd === 'sessions' || cmd === 'logout' || cmd === 'rotate-token') {
     let r = await admin(dir, 'DELETE', route);
     if (!r) { try { const n = id ? offline().revoke(id) : offline().revokeAll(); if (id && !n) fail(`no session with id ${id} (see \`hatch-server sessions\`)`); r = { ended: n }; } catch (e) { fail(e.message); } }
     console.log(`ended ${r.ended} login${r.ended === 1 ? '' : 's'}`); process.exit(0);
+  }
+  if (cmd === 'panic') { // rotate-token plus: view token removed, pending links dropped. The new token is NOT printed (it may run in a shared terminal or from an agent): `hatch-server token` shows it.
+    let r = await admin(dir, 'POST', '/api/auth/panic'); const live = !!r;
+    if (!r) { try { const { rotateTokenFile } = await import('../src/token.js'); const view = !!readConfig(dir).viewToken; rotateTokenFile(dir, { dropViewToken: true }); r = { ended: offline().revokeAll(), links: 0, view }; } catch (e) { fail(e.message); } }
+    console.log(`PANIC done (${live ? 'server running' : 'server not running, files edited'}): ${r.ended} login${r.ended === 1 ? '' : 's'} ended, token rolled, ${r.view ? 'view token removed' : 'no view token was set'}, ${r.links ? 'pending one-time link dropped, ' : ''}hosted-page secrets cleared.`);
+    console.log(`New token is in ${path.join(dir, 'config.json')} (mode 0600); \`hatch-server token\` prints it. \`hatch\` and Claude read it from that file. Open streams close within about 5 seconds.`);
+    process.exit(0);
   }
   let r = await admin(dir, 'POST', '/api/auth/rotate-token');
   if (!r) { try { const { rotateTokenFile } = await import('../src/token.js'); r = { token: rotateTokenFile(dir), ended: offline().revokeAll() }; } catch (e) { fail(e.message); } }

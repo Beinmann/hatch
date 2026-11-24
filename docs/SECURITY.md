@@ -46,6 +46,10 @@ trust, not a hardened service.
   `hatch-server logout ID` and `logout --all` end them; `hatch-server rotate-token` writes a new token (0600), ends all sessions,
   codes and hosted-page secrets, and prints the new token once. With the server running these go through its API; without it
   they edit the files. Open streams (events, terminal) of an ended session are closed within about 5 seconds.
+- `hatch-server panic` (or `hatch panic`) is the emergency button: it does what `rotate-token` does and also removes the watch-only view
+  token and drops a pending one-time link, so nothing issued before keeps working. It prints what it did and where the new token is
+  (`hatch-server token` shows it), not the token itself. Open streams close within about 5 seconds. Like `rotate-token` it goes through
+  the running server, or edits the files when none runs.
 - `hatch-server url --once` asks the running server for a **single-use code** (160 random bits, valid about 5 minutes, kept only
   as a hash in memory, compared in constant time, forgotten in the same step that accepts it, so two simultaneous requests cannot
   both use it). Only one code is pending at a time: a newer link replaces the older one. `GET /login?code=...` exchanges it for a

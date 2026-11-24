@@ -28,6 +28,7 @@ Zero npm dependencies: Node 20+, python3 (standard library, for the pty), tmux, 
 ./install.sh                 # links hatch (and its short alias ha), hatch-server, hatch-mcp (and the deprecated hatch-ui) into ~/.local/bin
 hatch-server start                  # one instance per user, state in ~/.hatch (created silently the first time); prints  http://<box-ip>:7070/
 hatch-server token                  # prints the login token: open the address above and paste it at /login (or: hatch-server url --once for a single-use link)
+hatch-server panic                  # emergency: end every login, roll the token, drop the view token and pending links (also: hatch panic)
 ```
 
 (`hatch-server serve` does the same in the foreground. 7070 taken: the next free port, saved in config.json.)
