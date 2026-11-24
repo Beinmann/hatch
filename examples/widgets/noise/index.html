@@ -1,11 +1,11 @@
 <!doctype html>
 <meta charset="utf-8">
-<!-- Noise: brown, pink or white noise generated with Web Audio (no network, no libraries). Play starts it (browsers need a
-     click to allow audio); the type and the volume can be changed while it plays. Nothing is saved: a widget iframe has no storage. -->
+<!-- Noise: brown, pink, white, deep (low-passed brown) or rain (filtered pink with a slow swell) generated with Web Audio (no network, no libraries). Play starts it (browsers need a
+     click to allow audio); the type and the volume can be changed while it plays. Type, volume and the sleep timer setting are saved as a file name (exec sources, like the timer widget). -->
 <style>
   *{box-sizing:border-box}
   body{margin:0;padding:14px;background:var(--bg,#111);color:var(--fg,#eee);font-family:var(--mono,monospace);user-select:none}
-  #types{display:flex;gap:8px;justify-content:center}
+  #types{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
   button{font:inherit;color:inherit;background:transparent;border:1px solid color-mix(in srgb,var(--fg,#eee) 22%,transparent);border-radius:999px;height:32px;padding:0 14px;cursor:pointer;transition:all .15s}
   button:hover{border-color:var(--accent,#4fd1c0);color:var(--accent,#4fd1c0)}
   #types button.on{border-color:var(--accent,#4fd1c0);color:var(--accent,#4fd1c0);background:color-mix(in srgb,var(--accent,#4fd1c0) 14%,transparent)}
@@ -13,17 +13,26 @@
   #go:hover{color:var(--bg,#111);filter:brightness(1.1)}
   #vol{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted,#888)}
   #vol input{flex:1;accent-color:var(--accent,#4fd1c0)}
+  #sl{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted,#888);margin-top:10px}
+  #sl select{font:inherit;color:inherit;background:transparent;border:1px solid color-mix(in srgb,var(--fg,#eee) 22%,transparent);border-radius:6px;padding:2px 6px}
+  #sl option{background:var(--bg,#111)}
   #sub{margin-top:12px;text-align:center;font-size:11px;color:var(--muted,#888);min-height:14px}
 </style>
 <div id="types"></div>
 <button id="go">Play</button>
 <label id="vol">Volume <input id="v" type="range" min="0" max="100" value="40" aria-label="Volume"></label>
+<label id="sl">Sleep timer <select id="sleep"><option value="0">off</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select></label>
 <div id="sub"></div>
 <script src="/sdk.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
-  const TYPES = ['brown', 'pink', 'white'];
-  let type = 'brown', ctx = null, src = null, gain = null;
+  const TYPES = ['brown', 'pink', 'white', 'deep', 'rain'];
+  let type = 'brown', ctx = null, src = null, gain = null, extras = [];
+  let endsAt = 0, tick = 0;
+  const FADE = 10000, UNIT = location.hash === '#fast' ? 1000 : 60000; // #fast: a timer minute lasts one second (for testing)
+  // deep and rain reuse a base buffer and shape it with filters; trim evens out the loudness lost to filtering.
+  const BASE = { brown: 'brown', pink: 'pink', white: 'white', deep: 'brown', rain: 'pink' };
+  const TRIM = { brown: 1, pink: 1, white: 1, deep: 2.2, rain: 1.6 };
 
   // A few seconds of looping noise is enough; it is a seamless loop because every sample is independent (brown: leaky integral, so
   // the seam is a tiny step at most, inaudible). Brown and pink are scaled to roughly the loudness of white.
@@ -45,18 +54,64 @@
   const level = () => $('v').value / 100;
   const playing = () => !!src;
 
-  function stop() {
+  function stop() { disarm(); halt(); }
+  function halt() {
     if (!src) return;
     const s = src; src = null;
     try { s.stop(); } catch { /* already stopped */ }
     s.disconnect();
+    for (const n of extras) { try { n.stop?.(); } catch { /* already stopped */ } n.disconnect(); }
+    extras = [];
+  }
+  // Sleep timer: counts down while playing, fades the volume over the last FADE ms, then stops.
+  function disarm() { clearInterval(tick); tick = 0; endsAt = 0; if (gain) gain.gain.value = level(); $('sub').textContent = ''; }
+  function arm() {
+    disarm(); const m = +$('sleep').value; if (!m || !playing()) return;
+    endsAt = Date.now() + m * UNIT;
+    tick = setInterval(() => {
+      const left = endsAt - Date.now();
+      if (left <= 0) { stop(); render(); return; }
+      if (gain) gain.gain.value = level() * Math.min(1, left / FADE);
+      const sec = Math.ceil(left / (UNIT / 60));
+      $('sub').textContent = `Stops in ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    }, 250);
+  }
+  // Persistence: one file name "type.volume.minutes.s" in the widget's data dir.
+  const call = (source, arg) => hatch.call(source, arg).then((v) => { if (!v || v.error || v.code) throw new Error((v && v.error) || 'the command failed'); return v.json; });
+  const save = () => call('put', `${type}.${$('v').value}.${$('sleep').value}.s`).catch(() => {});
+  function load() {
+    call('get').then((l) => {
+      const m = /^(\w+)\.(\d+)\.(\d+)\.s$/.exec((l && l[0]) || '');
+      if (!m || !TYPES.includes(m[1]) || playing()) return;
+      type = m[1]; $('v').value = Math.min(100, +m[2]); if ([...$('sleep').options].some((o) => o.value === m[3])) $('sleep').value = m[3];
+      render();
+    }).catch(() => {});
+  }
+  // Builds the node chain from the looping source to the volume gain; returns the node the source connects to.
+  function chain(c, kind) {
+    const trim = c.createGain(); trim.gain.value = TRIM[kind]; extras.push(trim);
+    let head = trim, tail = trim;
+    const add = (n) => { tail.connect(n); tail = n; extras.push(n); };
+    if (kind === 'deep') {
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 350; lp.Q.value = 0.7; add(lp);
+    } else if (kind === 'rain') {
+      const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 500; add(hp);
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7000; add(lp);
+      // a slow, shallow swell so it breathes like gusting rain: gain 0.8 +- 0.2 at about 0.12 Hz
+      const swell = c.createGain(); swell.gain.value = 0.8; add(swell);
+      const lfo = c.createOscillator(), depth = c.createGain();
+      lfo.frequency.value = 0.12; depth.gain.value = 0.2; lfo.connect(depth); depth.connect(swell.gain); lfo.start();
+      extras.push(lfo, depth);
+    }
+    tail.connect(gain);
+    return head;
   }
   function play() {
     try {
       ctx ||= new AudioContext(); if (ctx.state === 'suspended') ctx.resume();
       if (!gain) { gain = ctx.createGain(); gain.connect(ctx.destination); } gain.gain.value = level();
-      stop();
-      src = ctx.createBufferSource(); src.buffer = makeBuffer(ctx, type); src.loop = true; src.connect(gain); src.start();
+      halt();
+      src = ctx.createBufferSource(); src.buffer = makeBuffer(ctx, BASE[type]); src.loop = true; src.connect(chain(ctx, type)); src.start();
       $('sub').textContent = '';
     } catch (e) { src = null; $('sub').textContent = `Audio is not available: ${e.message}`; }
   }
@@ -67,11 +122,13 @@
 
   for (const t of TYPES) {
     const b = document.createElement('button'); b.textContent = t; b.dataset.t = t;
-    b.onclick = () => { type = t; if (playing()) play(); render(); };
+    b.onclick = () => { type = t; if (playing()) play(); render(); save(); };
     $('types').appendChild(b);
   }
-  $('go').onclick = () => { playing() ? stop() : play(); render(); };
+  $('go').onclick = () => { if (playing()) stop(); else { play(); arm(); } render(); };
   $('v').oninput = () => { if (gain) gain.gain.value = level(); };
+  $('v').onchange = save;
+  $('sleep').onchange = () => { arm(); save(); };
   addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); $('go').click(); } });
-  render();
+  render(); load();
 </script>
