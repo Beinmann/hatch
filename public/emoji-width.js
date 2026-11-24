@@ -1,4 +1,5 @@
-// Cell widths for the browser terminal, matching tmux: an emoji cluster (emoji + VS16, skin tone, ZWJ sequence, flag) takes two columns.
+// Cell widths for the browser terminal, matching tmux: an emoji cluster (skin tone, ZWJ sequence, flag) takes two columns.
+// A variation selector keeps the width of its cell: for a narrow base (❤️ ⚠️ ™️) tmux itself erases and skips the second cell (ESC[1X ESC[C), so widening it here would push the following text one column too far right.
 // Wraps a Unicode 11 width provider (xterm's addon); only the joining rules are added. Property values are xterm's:
 // (kind << 3) | (width << 1) | shouldJoin. A joining character keeps the width of the cell it joins, or widens it.
 const KIND_ZWJ = 1, KIND_RI = 2;
@@ -16,7 +17,7 @@ export function emojiWidthProvider(base) {
     wcwidth: (cp) => (base.wcwidth(cp) === 1 && newerEmoji(cp) ? 2 : base.wcwidth(cp)),
     charProperties(cp, preceding) {
       const pw = widthOf(preceding), pk = kindOf(preceding);
-      if (cp === 0xFE0F && pw > 0) return prop(0, 2, true);          // emoji presentation selector: the cell becomes wide
+      if (cp === 0xFE0F && pw > 0) return prop(0, pw, true);          // emoji presentation selector: joins, the cell keeps its width
       if (cp === 0x200D && pw > 0) return prop(KIND_ZWJ, pw, true);   // zero width joiner
       if (pk === KIND_ZWJ && pw > 0) return prop(0, pw, true);        // the character after a joiner joins the cluster
       if (cp >= 0x1F3FB && cp <= 0x1F3FF && pw > 0) return prop(0, pw, true); // skin tone modifier
