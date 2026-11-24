@@ -12,5 +12,5 @@ export function previewTarget(dir, entries, name) {
   return dir === '/' ? `/${e.name}` : `${dir}/${e.name}`;
 }
 
-/** Ctrl+H in a Files window shows or hides dotfiles. Plain Ctrl+H only (Shift/Alt/Meta combinations stay free). */
-export const isHiddenToggleKey = (e) => !!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && (e.code === 'KeyH' || String(e.key).toLowerCase() === 'h');
+/** A plain `.` in a Files window shows or hides dotfiles. Not with Ctrl/Alt/Meta, and not while a text field has the key (filter, rename). */
+export const isHiddenToggleKey = (e) => e.key === '.' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.target?.closest?.('input,textarea,select,[contenteditable]');

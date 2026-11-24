@@ -43,7 +43,7 @@ export default {
         tools.replaceChildren(
           el('button', { type: 'button', title: 'Create an empty file here', onclick: () => { const n = (window.prompt('New file name') || '').trim(); if (n && !n.includes('/')) act('newfile', { path: join(d.path, n) }, `Created ${n}`, d.path); } }, '+ file'),
           el('button', { type: 'button', title: 'Create a folder here', onclick: () => { const n = (window.prompt('New folder name') || '').trim(); if (n && !n.includes('/')) act('mkdir', { path: join(d.path, n) }, `Created ${n}/`, d.path); } }, '+ folder'),
-          el('button', { type: 'button', class: 'fhidden', 'aria-pressed': String(showHidden), title: 'Show or hide hidden files (Ctrl+H)', onclick: () => toggleHidden() }, showHidden ? '. hidden: shown' : '. hidden: off'));
+          el('button', { type: 'button', class: 'fhidden', 'aria-pressed': String(showHidden), title: 'Show or hide hidden files (.)', onclick: () => toggleHidden() }, showHidden ? '. hidden: shown' : '. hidden: off'));
         const parts = d.path.split('/').filter(Boolean);
         crumbs.replaceChildren(el('button', { type: 'button', onclick: () => go('/') }, '/'),
           ...parts.map((seg, i) => el('button', { type: 'button', onclick: () => go(`/${parts.slice(0, i + 1).join('/')}`) }, seg)));
@@ -93,7 +93,7 @@ export default {
     }
     // vim keys: j/k move, h = parent folder, l = enter a folder or open a file. Ignored while typing and with modifiers.
     root.addEventListener('keydown', (ev) => {
-      if (isHiddenToggleKey(ev) && !ev.target.closest?.('input,textarea,select,[contenteditable]')) { ev.preventDefault(); ev.stopPropagation(); toggleHidden(); return; } // only with this window focused
+      if (isHiddenToggleKey(ev)) { ev.preventDefault(); ev.stopPropagation(); toggleHidden(); return; } // only with this window focused
       if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.target.closest?.('input,textarea,select,[contenteditable]') || loading) return;
       const k = ev.key;
       if (k === 'j' || k === 'ArrowDown') move(1);
