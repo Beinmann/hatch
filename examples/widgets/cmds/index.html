@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { font: 12px/1.4 var(--mono, ui-monospace, monospace); color: var(--fg, #ddd); background: var(--bg, #1b1b1b); display: flex; flex-direction: column; }
+  #bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid color-mix(in srgb, var(--muted, #888) 40%, transparent); }
+  #title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #count { color: var(--muted, #888); }
+  button { font: inherit; color: inherit; background: transparent; cursor: pointer; padding: 2px 10px; border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--muted, #888) 60%, transparent); }
+  button:hover { border-color: var(--accent, #6af); }
+  button.primary { border-color: var(--accent, #6af); color: var(--accent, #6af); }
+  button:disabled { opacity: .4; cursor: default; }
+  #body { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+  .grp { margin-bottom: 14px; }
+  .gh { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .gh b { flex: 1; color: var(--accent, #6af); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+  .card { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; margin-bottom: 4px; border-radius: 6px;
+    background: color-mix(in srgb, var(--fg, #ddd) 8%, var(--bg, #1b1b1b)); border: 1px solid color-mix(in srgb, var(--muted, #888) 40%, transparent); }
+  .card.next { border-color: var(--accent, #6af); }
+  .card.done { opacity: .5; }
+  .card .n { flex: none; width: 1.6em; color: var(--muted, #888); text-align: right; padding-top: 1px; }
+  .card .t { flex: 1; min-width: 0; }
+  .card pre { margin: 0; white-space: pre-wrap; word-break: break-all; user-select: text; font: inherit; }
+  .card .note { color: var(--muted, #888); margin-top: 2px; white-space: pre-wrap; }
+  .card.done pre { text-decoration: line-through; }
+  .empty { color: var(--muted, #888); padding: 20px 8px; white-space: pre-wrap; }
+  #msg { color: var(--muted, #888); font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="bar"><span id="title"></span><span id="count"></span><button id="next" class="primary">Copy next</button><button id="reset">Reset</button></div>
+<div id="body"></div>
+<script src="/sdk.js"></script>
+<script>
+  // data/cmds.json (written by the AI or by hand):
+  //   { "id": "optional, change it per list", "title": "optional",
+  //     "groups": [ { "label": "on the NAS", "commands": [ { "cmd": "df -h", "note": "optional why" } ] } ] }
+  // "commands" may also hold plain strings. The page only copies; it never runs anything.
+  var data = null, copied = {}; // copied: key -> true; the key includes the list id so a new list starts clean
+  var bodyEl = document.getElementById('body'), titleEl = document.getElementById('title'), countEl = document.getElementById('count');
+  var nextBtn = document.getElementById('next');
+
+  function norm(d) {
+    if (!d || typeof d !== 'object' || !Array.isArray(d.groups)) return null;
+    var groups = d.groups.map(function (g) {
+      var cmds = (g && Array.isArray(g.commands) ? g.commands : []).map(function (c) {
+        return typeof c === 'string' ? { cmd: c } : { cmd: String((c && c.cmd) || ''), note: c && c.note ? String(c.note) : '' };
+      }).filter(function (c) { return c.cmd.trim() !== ''; });
+      return { label: g && g.label ? String(g.label) : '', commands: cmds };
+    }).filter(function (g) { return g.commands.length; });
+    return { id: d.id == null ? '' : String(d.id), title: d.title ? String(d.title) : '', groups: groups };
+  }
+  function key(g, c) { return data.id + '\u0001' + data.title + '\u0001' + g.label + '\u0001' + c.cmd; }
+  function all() { var r = []; data.groups.forEach(function (g) { g.commands.forEach(function (c) { r.push({ g: g, c: c }); }); }); return r; }
+  function firstTodo() { return all().find(function (x) { return !copied[key(x.g, x.c)]; }); }
+
+  // Clipboard: the iframe is sandboxed, so navigator.clipboard may be refused; fall back to a hidden textarea.
+  function copyText(t) {
+    var ok = false;
+    try { var ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0'; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (e) {}
+    if (!ok) { try { navigator.clipboard.writeText(t); ok = true; } catch (e) {} }
+    return ok;
+  }
+  function flash(t) { countEl.textContent = t; setTimeout(render, 1200); }
+  function copyItems(items) {
+    // joined with newlines, no trailing newline: pasted into a terminal nothing runs until you press Enter
+    if (!items.length) return;
+    if (copyText(items.map(function (x) { return x.c.cmd; }).join('\n'))) { items.forEach(function (x) { copied[key(x.g, x.c)] = true; }); render(); }
+    else flash('copy blocked by the browser');
+  }
+
+  function render() {
+    bodyEl.textContent = '';
+    if (!data) { titleEl.textContent = 'Commands'; countEl.textContent = ''; nextBtn.disabled = true; var e = document.createElement('div'); e.className = 'empty'; e.textContent = 'No commands yet. The AI writes them to this widget\'s data/cmds.json.'; bodyEl.appendChild(e); return; }
+    titleEl.textContent = data.title || 'Commands';
+    var list = all(), done = list.filter(function (x) { return copied[key(x.g, x.c)]; }).length, nxt = firstTodo();
+    countEl.textContent = done + ' / ' + list.length + ' copied';
+    nextBtn.disabled = !nxt; nextBtn.textContent = nxt ? 'Copy next' : 'All copied';
+    var n = 0;
+    data.groups.forEach(function (g) {
+      var box = document.createElement('div'); box.className = 'grp';
+      var gh = document.createElement('div'); gh.className = 'gh';
+      var b = document.createElement('b'); b.textContent = g.label || ''; gh.appendChild(b);
+      if (g.commands.length > 1) { var ga = document.createElement('button'); ga.textContent = 'Copy group'; ga.onclick = function () { copyItems(g.commands.map(function (c) { return { g: g, c: c }; })); }; gh.appendChild(ga); }
+      if (g.label || g.commands.length > 1) box.appendChild(gh);
+      g.commands.forEach(function (c) {
+        n++;
+        var card = document.createElement('div'), k = key(g, c);
+        card.className = 'card' + (copied[k] ? ' done' : '') + (nxt && nxt.c === c ? ' next' : '');
+        var num = document.createElement('span'); num.className = 'n'; num.textContent = copied[k] ? '✓' : String(n);
+        var t = document.createElement('div'); t.className = 't';
+        var pre = document.createElement('pre'); pre.textContent = c.cmd; t.appendChild(pre);
+        if (c.note) { var nt = document.createElement('div'); nt.className = 'note'; nt.textContent = c.note; t.appendChild(nt); }
+        var btn = document.createElement('button'); btn.textContent = 'Copy'; btn.onclick = function () { copyItems([{ g: g, c: c }]); };
+        card.append(num, t, btn); box.appendChild(card);
+      });
+      bodyEl.appendChild(box);
+    });
+    if (!list.length) { var e2 = document.createElement('div'); e2.className = 'empty'; e2.textContent = 'The list is empty.'; bodyEl.appendChild(e2); }
+  }
+
+  nextBtn.onclick = function () { var x = firstTodo(); if (x) copyItems([x]); };
+  document.getElementById('reset').onclick = function () { copied = {}; render(); };
+
+  var lastRaw = null;
+  hatch.on('list', function (v) {
+    // the source repeats every second: only rebuild when the file changed
+    var raw = JSON.stringify(v && v.json);
+    if (raw === lastRaw) return; lastRaw = raw;
+    data = norm(v && v.json);
+    render();
+  });
+  render();
+</script>
+</body>
+</html>

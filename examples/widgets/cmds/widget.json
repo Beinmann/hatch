@@ -1,0 +1,15 @@
+{
+ "title": "Commands",
+ "w": 640,
+ "h": 460,
+ "placement": "float",
+ "sources": [
+  {
+   "name": "list",
+   "kind": "exec",
+   "json": true,
+   "everyMs": 1000,
+   "cmd": "F='{{state}}/widgets/{{widget}}/data/cmds.json'; if [ -s \"$F\" ]; then cat \"$F\"; else printf 'null'; fi"
+  }
+ ]
+}
