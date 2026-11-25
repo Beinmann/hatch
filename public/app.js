@@ -4,6 +4,7 @@ import { isTouchFirst, uploadPicked } from './phone-upload.js';
 import { restarted } from './restart.js';
 import { el, isViewOnly } from './util.js';
 import { initTerminal } from './terminal.js';
+import { createClipboardBridge } from './clipboard-bridge.js';
 import { createWindows } from './windows.js';
 import image from './panels/image.js';
 import iframe from './panels/iframe.js';
@@ -370,15 +371,37 @@ function showAsk() {
 const dropAsk = (id) => { const i = pendingAsks.findIndex((a) => a.id === id); if (i >= 0) { pendingAsks.splice(i, 1); askDrafts.delete(id); if (i === 0) showAsk(); } };
 
 // ---- clipboard bridge: text from the box (hatch copy, terminal OSC 52) to this browser's clipboard ----
-// Browsers only allow clipboard writes after a user gesture, so when the direct write fails a toast with a Copy button is shown.
+// Browsers only allow clipboard writes after a user gesture (or in a focused secure page). When the write is refused the text waits
+// and is written on the next click or key press (see clipboard-bridge.js); the toast also has a Copy button.
+const clipBridge = createClipboardBridge({
+  write: (t) => navigator.clipboard.writeText(t),
+  fallback: async (t) => (await import('./terminal.js')).copyText(t),
+});
+let clipToast = null; let clipTimer = 0;
+const dropClipToast = () => { clipToast?.remove(); clipToast = null; clearTimeout(clipTimer); };
 async function clipboardIn(text, label) {
   if (typeof text !== 'string' || !text) return;
+  const r = await clipBridge.receive(text);
+  if (r === 'duplicate') return;
   remember('clips', text.slice(0, 2000), 20);
-  try { await navigator.clipboard.writeText(text); toast(`Copied ${text.length} characters from the box${label ? ` (${label})` : ''}`); return; } catch { /* needs a click */ }
-  const t = el('div', { class: 'toast warn', role: 'status' }, `The box wants to copy ${text.length} characters${label ? ` (${label})` : ''}: `,
-    el('button', { type: 'button', onclick: async () => { const { copyText } = await import('./terminal.js'); toast((await copyText(text)) ? 'Copied' : 'Copy failed', 'info'); t.remove(); } }, 'Copy'));
-  $('toasts').append(t); setTimeout(() => t.remove(), 30000);
+  dropClipToast();
+  const what = `${text.length} characters${label ? ` (${label})` : ''}`;
+  if (r === 'copied') { toast(`Copied ${what}`, 'info', 1500); return; }
+  clipToast = el('div', { class: 'toast warn', role: 'status' }, `Not copied yet (${what}): press any key or click, or `,
+    el('button', { type: 'button', onclick: () => flushClip() }, 'Copy'));
+  $('toasts').append(clipToast);
+  clipTimer = setTimeout(() => { clipBridge.clear(); dropClipToast(); }, 30000);
 }
+async function flushClip() {
+  const ok = await clipBridge.flush();
+  if (ok === null) return;
+  if (ok) { dropClipToast(); toast('Copied', 'info', 1500); }
+  else toast('Copy failed: the browser denied clipboard access', 'bad');
+}
+// Any click or plain key press completes a waiting copy. Not Ctrl/Cmd combos (the user may be copying something else) and not
+// modifier or Escape keys (they do not count as a gesture for the clipboard).
+document.addEventListener('pointerdown', () => { if (clipBridge.hasPending()) flushClip(); }, true);
+document.addEventListener('keydown', (e) => { if (e.ctrlKey || e.metaKey || ['Shift', 'Control', 'Alt', 'Meta', 'Escape'].includes(e.key)) return; if (clipBridge.hasPending()) flushClip(); }, true);
 
 // ---- terminal ----
 // One terminal per workspace, created the first time the workspace is shown and kept connected afterwards (switching only

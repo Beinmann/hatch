@@ -65,6 +65,7 @@ export function initTerminal({ host, api, toast, onCopy = () => {}, onBell = () 
   });
   // OSC 52 (tmux set-clipboard, vim/neovim yank over ssh): the program asks the terminal to set the clipboard.
   term.parser.registerOscHandler(52, (data) => {
+    if (replaying) return true; // old output replayed after a reload: not a new copy request
     const i = data.indexOf(';'); const payload = i >= 0 ? data.slice(i + 1) : '';
     if (payload && payload !== '?') { try { onClipboard(new TextDecoder().decode(Uint8Array.from(atob(payload), (c) => c.charCodeAt(0)))); } catch { /* not valid base64 */ } }
     return true;
