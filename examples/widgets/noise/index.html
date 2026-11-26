@@ -1,7 +1,9 @@
 <!doctype html>
 <meta charset="utf-8">
 <!-- Noise: brown, pink, white, deep (low-passed brown) or rain (filtered pink with a slow swell) generated with Web Audio (no network, no libraries). Play starts it (browsers need a
-     click to allow audio); the type and the volume can be changed while it plays. Type, volume and the sleep timer setting are saved as a file name (exec sources, like the timer widget). -->
+     click to allow audio); the type and the volume can be changed while it plays. Type, volume and the sleep timer setting are saved as a file name (exec sources, like the timer widget).
+     While playing it also touches a "playing" file every 30 s (type + sleep timer end). A page that loads while that file is younger than RESUME_S picks the noise up again, so a reload or
+     a server restart does not silence it, while a reboot or a long suspend (stale file) does not start it. Every stop deletes the file. -->
 <style>
   *{box-sizing:border-box}
   body{margin:0;padding:14px;background:var(--bg,#111);color:var(--fg,#eee);font-family:var(--mono,monospace);user-select:none}
@@ -28,7 +30,8 @@
   const $ = (id) => document.getElementById(id);
   const TYPES = ['brown', 'pink', 'white', 'deep', 'rain'];
   let type = 'brown', ctx = null, src = null, gain = null, extras = [];
-  let endsAt = 0, tick = 0;
+  let endsAt = 0, tick = 0, beating = false, beatTimer = 0;
+  const RESUME_S = 300, BEAT_MS = 30000; // longer than a hidden tab's throttled timers (about 1/min) and a server restart, shorter than a suspend
   const FADE = 10000, UNIT = location.hash === '#fast' ? 1000 : 60000; // #fast: a timer minute lasts one second (for testing)
   // deep and rain reuse a base buffer and shape it with filters; trim evens out the loudness lost to filtering.
   const BASE = { brown: 'brown', pink: 'pink', white: 'white', deep: 'brown', rain: 'pink' };
@@ -65,9 +68,9 @@
   }
   // Sleep timer: counts down while playing, fades the volume over the last FADE ms, then stops.
   function disarm() { clearInterval(tick); tick = 0; endsAt = 0; if (gain) gain.gain.value = level(); $('sub').textContent = ''; }
-  function arm() {
-    disarm(); const m = +$('sleep').value; if (!m || !playing()) return;
-    endsAt = Date.now() + m * UNIT;
+  function arm(until) { // until: absolute end time of a timer that was already running (a resumed page), else a fresh one from the select
+    disarm(); const m = +$('sleep').value; if (!playing() || (!until && !m)) return;
+    endsAt = until || Date.now() + m * UNIT;
     tick = setInterval(() => {
       const left = endsAt - Date.now();
       if (left <= 0) { stop(); render(); return; }
@@ -85,7 +88,26 @@
       if (!m || !TYPES.includes(m[1]) || playing()) return;
       type = m[1]; $('v').value = Math.min(100, +m[2]); if ([...$('sleep').options].some((o) => o.value === m[3])) $('sleep').value = m[3];
       render();
+    }).catch(() => {}).then(resume);
+  }
+  // Heartbeat: while playing, tell the server so (type + timer end); when playing stopped, delete that note. Called from render(), which every state change goes through.
+  function sync() {
+    if (playing()) {
+      call('beat', `${type}.${endsAt}`).catch(() => {}); beating = true;
+      beatTimer ||= setInterval(() => { if (playing()) call('beat', `${type}.${endsAt}`).catch(() => {}); }, BEAT_MS);
+    } else if (beating) {
+      beating = false; clearInterval(beatTimer); beatTimer = 0; call('idle').catch(() => {});
+    }
+  }
+  // After a reload or restart: if the last heartbeat is recent and its sleep timer (if any) has not run out, play again. The browser may refuse audio without a click.
+  function resume() {
+    return call('last').then((n) => {
+      if (!n || !TYPES.includes(n.c) || playing() || !(n.age >= 0 && n.age < RESUME_S) || (n.e && n.e <= Date.now())) return;
+      type = n.c; play(); if (n.e) arm(n.e); render(); blockedCheck();
     }).catch(() => {});
+  }
+  function blockedCheck() {
+    setTimeout(() => { if (playing() && ctx.state !== 'running') { stop(); render(); $('sub').textContent = 'The browser blocked audio: click Play once.'; } }, 500);
   }
   // Builds the node chain from the looping source to the volume gain; returns the node the source connects to.
   function chain(c, kind) {
@@ -118,6 +140,7 @@
   function render() {
     $('go').textContent = playing() ? 'Stop' : 'Play';
     for (const b of $('types').children) b.classList.toggle('on', b.dataset.t === type);
+    sync();
   }
 
   for (const t of TYPES) {
@@ -128,7 +151,7 @@
   $('go').onclick = () => { if (playing()) stop(); else { play(); arm(); } render(); };
   $('v').oninput = () => { if (gain) gain.gain.value = level(); };
   $('v').onchange = save;
-  $('sleep').onchange = () => { arm(); save(); };
+  $('sleep').onchange = () => { arm(); save(); sync(); };
   addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); $('go').click(); } });
   // `hatch noise` writes a command (type or stop, time in ms) through the `say` source; this page polls it. A command older than
   // 20 s is not run (a reopened page must not replay it). The browser may refuse audio without a click: then say so instead of staying silent.
@@ -138,8 +161,7 @@
     lastCmd = m.t;
     if (m.c === 'stop') { stop(); render(); return; }
     if (!TYPES.includes(m.c)) return;
-    type = m.c; play(); arm(); render(); save();
-    setTimeout(() => { if (playing() && ctx.state !== 'running') { stop(); render(); $('sub').textContent = 'The browser blocked audio: click Play once.'; } }, 500);
+    type = m.c; play(); arm(); render(); save(); blockedCheck();
   }));
   render(); load();
 </script>

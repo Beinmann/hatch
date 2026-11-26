@@ -29,6 +29,27 @@
    "kind": "exec",
    "json": true,
    "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; case \"$HATCH_ARG\" in brown|pink|white|stop) ;; *) echo \"bad command\" >&2; exit 1;; esac; printf '{\"c\":\"%s\",\"t\":%s}' \"$HATCH_ARG\" \"$(date +%s%3N)\" > \"$D/cmd\"; printf '{}'"
+  },
+  {
+   "name": "beat",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 10000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; printf \"%s\" \"$HATCH_ARG\" | grep -qE \"^(brown|pink|white|deep|rain)\\.[0-9]{1,15}$\" || { echo \"bad beat\" >&2; exit 1; }; printf \"%s\" \"$HATCH_ARG\" > \"$D/playing\"; printf \"{}\""
+  },
+  {
+   "name": "idle",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 10000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; rm -f \"$D/playing\"; printf \"{}\""
+  },
+  {
+   "name": "last",
+   "kind": "exec",
+   "json": true,
+   "timeoutMs": 10000,
+   "cmd": "D={{state}}/widgets/{{widget}}/data; mkdir -p \"$D\"; F=\"$D/playing\"; grep -qE \"^(brown|pink|white|deep|rain)\\.[0-9]{1,15}$\" \"$F\" 2>/dev/null || { printf \"{}\"; exit 0; }; IFS=. read -r c e < \"$F\"; printf \"{\\\"c\\\":\\\"%s\\\",\\\"e\\\":%s,\\\"age\\\":%s}\" \"$c\" \"$e\" \"$(( $(date +%s) - $(stat -c %Y \"$F\") ))\""
   }
  ]
 }

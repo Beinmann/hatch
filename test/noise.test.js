@@ -67,3 +67,54 @@ test('noise widget: runs a fresh command once, ignores old ones, reports blocked
   state = 'running'; handler({ json: { c: 'white', t: Date.now() + 5 } }); assert.equal(vm.runInContext('playing()', ctx), true);
   handler({ json: { c: 'stop', t: Date.now() + 10 } }); assert.equal(vm.runInContext('playing()', ctx), false);
 });
+
+// The widget's exec sources run the way the server runs them (sh -c with HATCH_ARG), against a temp state dir.
+const source = (name, arg, state) => {
+  const w = JSON.parse(fs.readFileSync(path.join(path.dirname(NOISE), 'widget.json'), 'utf8'));
+  const cmd = w.sources.find((s) => s.name === name).cmd.replaceAll('{{state}}', state).replaceAll('{{widget}}', 'noise');
+  return new Promise((resolve) => {
+    const p = spawn('sh', ['-c', cmd], { env: { ...process.env, HATCH_ARG: arg ?? '' } });
+    let out = ''; let err = ''; p.stdout.on('data', (d) => { out += d; }); p.stderr.on('data', (d) => { err += d; });
+    p.on('close', (status) => resolve({ status, out, err }));
+  });
+};
+
+test('noise sources: beat writes the playing note, last reports it with its age, idle removes it, bad input is refused', async () => {
+  const state = tmp(); const note = path.join(state, 'widgets/noise/data/playing');
+  assert.equal((await source('last', '', state)).out, '{}', 'nothing playing');
+  assert.equal((await source('beat', 'rain.0', state)).status, 0);
+  let r = JSON.parse((await source('last', '', state)).out); assert.equal(r.c, 'rain'); assert.equal(r.e, 0); assert.ok(r.age >= 0 && r.age < 5);
+  const old = new Date(Date.now() - 600000); fs.utimesSync(note, old, old);
+  r = JSON.parse((await source('last', '', state)).out); assert.ok(r.age >= 599, 'age comes from the file time, so a stale note reads as old');
+  for (const bad of ['loud.1', 'brown', 'brown.x', 'brown.1; rm -rf x', '']) assert.equal((await source('beat', bad, state)).status, 1, `refuses ${bad}`);
+  fs.writeFileSync(note, 'brown.12; echo hi'); assert.equal((await source('last', '', state)).out, '{}', 'a hand-edited bad note is ignored');
+  assert.equal((await source('idle', '', state)).status, 0); assert.ok(!fs.existsSync(note));
+});
+
+test('noise widget: resumes a recent heartbeat with the remaining sleep time, ignores stale or expired ones, beats while playing and clears on stop', async () => {
+  const script = [...fs.readFileSync(NOISE, 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)].pop()[1];
+  const run = async (last, audio = 'running') => {
+    const el = () => ({ textContent: '', value: '40', children: [], dataset: {}, classList: { toggle() {} }, appendChild() {}, options: [{ value: '0' }, { value: '15' }] });
+    const els = new Map(); const dom = { getElementById: (id) => { if (!els.has(id)) els.set(id, el()); return els.get(id); }, createElement: el };
+    const calls = []; let played = 0;
+    const hatch = { ready() {}, on() {}, call: async (s, a) => { calls.push([s, a]); return { json: s === 'last' ? last : [] }; } };
+    class AudioContext { get state() { return audio; } resume() {} createGain() { return { gain: {}, connect() {}, disconnect() {} }; } createBuffer() { return { getChannelData: () => new Float32Array(1) }; }
+      createBufferSource() { return { start() { played++; }, stop() {}, connect() {}, disconnect() {} }; } get destination() { return {}; } get sampleRate() { return 1; } }
+    const timers = [];
+    const c = vm.createContext({ hatch, document: dom, AudioContext, location: { hash: '' }, addEventListener() {}, setInterval: (f, ms) => timers.push([f, ms]), clearInterval() {}, setTimeout: (f) => f(), Date, Math, Float32Array, Promise });
+    vm.runInContext(script, c); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+    return { c, calls, played: () => played, els, timers };
+  };
+  const in10min = Date.now() + 600000;
+  let t = await run({ c: 'brown', e: in10min, age: 20 });
+  assert.equal(t.played(), 1); assert.equal(vm.runInContext('type', t.c), 'brown'); assert.equal(vm.runInContext('endsAt', t.c), in10min, 'keeps the running sleep timer');
+  assert.ok(t.calls.some(([s, a]) => s === 'beat' && a === `brown.${in10min}`), 'beats right away');
+  assert.ok(t.timers.some(([, ms]) => ms === 30000), 'and keeps beating');
+  vm.runInContext('stop(); render()', t.c); assert.ok(t.calls.some(([s]) => s === 'idle'), 'stop clears the note');
+  t = await run({ c: 'pink', e: 0, age: 20 }); assert.equal(t.played(), 1); assert.equal(vm.runInContext('endsAt', t.c), 0, 'no timer stays no timer');
+  t = await run({ c: 'pink', e: 0, age: 7200 }); assert.equal(t.played(), 0, 'a stale note (reboot, long suspend) does not play');
+  t = await run({ c: 'pink', e: Date.now() - 1000, age: 20 }); assert.equal(t.played(), 0, 'a timer that has run out does not play');
+  t = await run({}); assert.equal(t.played(), 0); assert.ok(!t.calls.some(([s]) => s === 'beat' || s === 'idle'), 'idle page sends nothing');
+  t = await run({ c: 'pink', e: 0, age: 20 }, 'suspended');
+  assert.equal(vm.runInContext('playing()', t.c), false); assert.match(t.els.get('sub').textContent, /click Play/);
+});
