@@ -5,6 +5,7 @@ This box runs Hatch. You can show things to the user in their browser with the `
 - `hatch progress set diagram.mmd` optionally adds a Mermaid diagram alongside the step journey.
 - `hatch image PATH` shows an image (screenshots, plots). Pasted images arrive as files; the user types the path.
 - `hatch widget new NAME --from cpu|git|top|sysinfo|log-tail` scaffolds a live widget, `hatch widget open NAME` shows it. See `hatch widget new --help` for the postMessage SDK and data sources (metric, exec, tail, file). Editing the files reloads the widget.
+- `hatch widget open cmds` shows a list of commands for the user to copy one by one and run themselves (another machine, no AI there). You write `widgets/cmds/data/cmds.json` in the state dir; the format is in `widgets/cmds/README.md` there. Only when the user asks for it.
 - `hatch note "markdown"`, `hatch files DIR`, `hatch edit FILE` open a note, a file browser, a text editor.
 - `hatch open FILE|DIR|URL` opens images, text files, HTML pages (rendered in a sandboxed window; `hatch edit FILE` edits the source), directories or a dev-server iframe. A localhost URL is proxied to this box.
 - `hatch run "npm test" --wait` runs a command in its own output window and returns its exit code.
